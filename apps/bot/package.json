@@ -1,0 +1,21 @@
+{
+  "name": "@kidan/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "grammy": "1.45.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.4",
+    "tsx": "4.21.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "share": "disabled",
+  "instructions": [
+    "AGENTS.md",
+    "docs/product-principles.md",
+    "docs/architecture.md",
+    "docs/security-and-privacy.md",
+    "docs/questionnaire-analysis.md",
+    "docs/HANDOFF.md"
+  ]
+}
