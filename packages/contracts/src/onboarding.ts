@@ -141,6 +141,20 @@ export const onboardingSubmitRequestSchema = z.object({
   consent: consentDraftSchema,
 });
 
+export const draftResponseSchema = z.object({
+  schemaVersion: z.string(),
+  currentStep: onboardingStepSchema,
+  payload: z.record(z.string(), z.unknown()),
+  version: z.number().int().min(0),
+  submitted: z.boolean(),
+  identityComplete: z.boolean(),
+});
+
+export const draftSaveResponseSchema = z.object({
+  version: z.number().int().min(1),
+  currentStep: onboardingStepSchema,
+});
+
 export const onboardingFieldVisibility = {
   "privateIdentity.fullName": "admin_only",
   "privateIdentity.dateOfBirth": "admin_only",

@@ -22,10 +22,42 @@ export const telegramAuthResponseSchema = z.object({
 
 export const sessionStatusSchema = z.object({
   authenticated: z.literal(true),
+  csrfToken: z.string().min(32),
   profileStatus: sessionProfileStatusSchema,
   expiresAt: z.iso.datetime(),
 });
 
+export const apiErrorCodeSchema = z.enum([
+  "INVALID_REQUEST",
+  "UNAUTHENTICATED",
+  "ACCOUNT_UNAVAILABLE",
+  "INVALID_CSRF",
+  "INVALID_ORIGIN",
+  "DRAFT_VERSION_CONFLICT",
+  "REAL_SUBMISSIONS_DISABLED",
+  "DRAFT_NOT_FOUND",
+  "DRAFT_ALREADY_SUBMITTED",
+  "IDENTITY_INCOMPLETE",
+  "ADULT_ELIGIBILITY_REQUIRED",
+  "INVALID_ONBOARDING_STATE",
+  "MALFORMED_INIT_DATA",
+  "INVALID_SIGNATURE",
+  "STALE_INIT_DATA",
+  "INVALID_USER",
+  "NOT_FOUND",
+  "INTERNAL_ERROR",
+]);
+
+export const apiErrorSchema = z.object({
+  code: z.string(),
+  requestId: z.string(),
+});
+
+export const apiErrorEnvelopeSchema = z.object({ error: apiErrorSchema });
+
 export type TelegramAuthRequest = z.infer<typeof telegramAuthRequestSchema>;
 export type TelegramAuthResponse = z.infer<typeof telegramAuthResponseSchema>;
 export type SessionStatus = z.infer<typeof sessionStatusSchema>;
+export type ApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
+export type ApiErrorBody = z.infer<typeof apiErrorSchema>;
+export type ApiErrorEnvelope = z.infer<typeof apiErrorEnvelopeSchema>;

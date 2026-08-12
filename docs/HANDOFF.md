@@ -52,10 +52,11 @@ Configure via repository Settings → Branches/Rulesets (or `gh api` if permitte
 ## Next tasks, in order
 1. ~~Re-verify the fix commit against PostgreSQL~~ — Done: CI run `31607920446` (commit `90614b4`) passed both jobs, including the PostgreSQL 17 integration suite (21 tests). Recorded in HANDOFF and `docs/reviews/COMMIT_90614b4_REVIEW.txt`.
 2. *Pending repository administration:* configure `main` branch protection/rulesets to require the `check` and `integration` jobs and block force pushes (see the Branch protection note above).
-3. Threat-model and build separate administrator authentication/review before enabling real submissions; users must never self-approve.
-3. Add consent withdrawal, profile pause/correction/export/deletion, audit events, and approved retention jobs.
-4. Implement discovery/mutual-decision queries with review and bidirectional-block predicates, then the restricted in-app introduction.
-5. Add private verification-photo storage only after its upload authorization, re-encoding, malware scanning, 30-day deletion, backup expiry, and exceptional-hold controls are approved.
+3. **Phase 02 (in progress, WIP, uncommitted):** Mini App ↔ API integration — Workstream A (typed API client, auth/session state provider, CSRF-on-session-restore) and Workstream B foundation (resumable public drafts). Contracts scaffolding is already edited (green typecheck); full plan and resume steps are in `docs/PHASE_02_WIP.md`. Keep `ENABLE_REAL_SUBMISSIONS=false`; real identity/photo/approval/matching/messaging remain disabled.
+4. Threat-model and build separate administrator authentication/review before enabling real submissions; users must never self-approve.
+5. Add consent withdrawal, profile pause/correction/export/deletion, audit events, and approved retention jobs.
+6. Implement discovery/mutual-decision queries with review and bidirectional-block predicates, then the restricted in-app introduction.
+7. Add private verification-photo storage only after its upload authorization, re-encoding, malware scanning, 30-day deletion, backup expiry, and exceptional-hold controls are approved.
 
 ## Change log
 - 2026-08-12 — Initial scaffold, OpenCode instructions, specialist agent, synthetic discovery, Telegram validation, generic-only bot, and privacy-oriented schema.
