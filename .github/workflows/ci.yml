@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: kidan
+          POSTGRES_USER: kidan_dev
+          POSTGRES_PASSWORD: kidan_dev_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kidan_dev -d kidan"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://kidan_dev:kidan_dev_only@127.0.0.1:5432/kidan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type checks
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Builds
+        run: npm run build
+      - name: PostgreSQL integration tests (disposable databases)
+        run: npm run db:test
+      - name: Dependency audit
+        run: npm audit --audit-level=low
+      - name: Diff hygiene
+        run: git diff --check
