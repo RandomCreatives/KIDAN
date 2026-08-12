@@ -12,7 +12,7 @@ export interface DemoProfile extends DiscoveryProfile {
 
 export const demoProfiles: DemoProfile[] = [
   {
-    id: "68d44db3-5e31-44c6-8282-4d06ca1f3f68",
+    id: "KD-7M4Q9X",
     publicCode: "KD-7M4Q9X",
     age: 27,
     gender: "female",
@@ -31,7 +31,7 @@ export const demoProfiles: DemoProfile[] = [
     familyNote: "Close to family • Open to growing together",
   },
   {
-    id: "f2b2ba15-e6af-41fb-ad8a-269c67d25e56",
+    id: "KD-R8H2WP",
     publicCode: "KD-R8H2WP",
     age: 30,
     gender: "male",
@@ -50,7 +50,7 @@ export const demoProfiles: DemoProfile[] = [
     familyNote: "Marriage-minded • Values mutual respect",
   },
   {
-    id: "b2bc7571-c5a3-4de1-ab37-ec97c7b12886",
+    id: "KD-3N7F6C",
     publicCode: "KD-3N7F6C",
     age: 29,
     gender: "female",
@@ -65,7 +65,7 @@ export const demoProfiles: DemoProfile[] = [
     verified: true,
     photoMode: "values_only",
     visual: { accent: "#806b99", surface: "#e3ddeb", monogram: "29" },
-    faithNote: "Active faith • Kidusan Kurban intention",
+    faithNote: "Active faith • Values service and prayer",
     familyNote: "Ready for commitment • Open to relocation",
   },
 ];

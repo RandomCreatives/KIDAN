@@ -36,7 +36,7 @@ export const marriageIntentionSchema = z.enum([
 ]);
 
 export const discoveryProfileSchema = z.object({
-  id: z.string().uuid(),
+  id: publicProfileCodeSchema,
   publicCode: publicProfileCodeSchema,
   age: z.number().int().min(18).max(90),
   gender: genderSchema,
@@ -67,8 +67,4 @@ export const partnerPreferencesSchema = z
   });
 
 export type DiscoveryProfile = z.infer<typeof discoveryProfileSchema>;
-export type Gender = z.infer<typeof genderSchema>;
-export type MarriageIntention = z.infer<typeof marriageIntentionSchema>;
 export type PartnerPreferences = z.infer<typeof partnerPreferencesSchema>;
-export type ProfileStatus = z.infer<typeof profileStatusSchema>;
-export type ValueTag = z.infer<typeof valueTagSchema>;

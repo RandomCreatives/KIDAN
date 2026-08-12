@@ -3,53 +3,49 @@
 Last updated: 2026-08-12
 
 ## Current state
-- GitHub target: `https://github.com/RandomCreatives/KIDAN.git`; this Arena session is working on branch `arena/019ff3e3-kidan`.
-- Clean monorepo scaffold created; prior uploads and derived screenshot deleted.
-- Working product name is **Kidan** and is intentionally replaceable.
-- Mini App contains a functional seven-step onboarding and synthetic discovery prototype.
-- Onboarding uses in-memory draft state, field-visibility labels, structured inputs, exact public preview, and separated consent choices; it sends and stores nothing.
-- API contains health, Telegram init-data validation, and an optional PostgreSQL-backed opaque-session foundation.
-- The Telegram auth route still supports validation-only mode when no session store is configured; when persistence is configured it returns only an opaque session token and a non-identity principal.
-- PostgreSQL persistence includes an `app_session` migration, keyed session-token hashes, encrypted Telegram ID storage, and keyed Telegram lookup hashes in the identity vault.
-- Bot contains generic-only `/start` and notification patterns.
-- Shared contracts and privacy-oriented database migrations are present.
-- No real personal data, scraping, media, admin review UI, or messaging is implemented.
+- Public repository target: `https://github.com/RandomCreatives/KIDAN`.
+- Local `main` includes the verified onboarding/contract baseline at `0b18b6e`; remote history still needs the owner to publish that commit and the persistence milestone without force-pushing.
+- The Mini App remains a synthetic, values-first, photo-free prototype.
+- The API now has a persistence foundation: PostgreSQL Compose config, ordered checksum-tracked migrations, readiness checks, strict environment parsing, a PostgreSQL repository, opaque cookie sessions, CSRF/origin controls, resumable public drafts, separately encrypted private identity, consent receipts, and review-pending submission.
+- Discovery projections use neutral public codes rather than internal UUIDs and explicitly allowlist output fields.
+- Real identity and onboarding submission are disabled unless `ENABLE_REAL_SUBMISSIONS=true`; keep this false until admin review, hosting, legal, retention, and operational controls are approved.
+- Verification-photo upload, admin UI/authentication, live discovery queries, restricted introduction messaging, consent-withdrawal endpoints, and deletion/export workflows remain unimplemented.
+- Arena has no Docker, Docker Compose, or `psql`; all TypeScript and in-memory/HTTP tests can run here, but real PostgreSQL migration/repository behavior is not yet integration-tested.
 
-## Decisions
-- First-release eligibility is limited to adult Ethiopian Orthodox Tewahedo Church candidates.
-- Discovery is values-only and displays no candidate photo.
-- The canonical storage value for the Kidusan Kurban marriage intention is `kidusan_kurban`; the ambiguous `kurban` slug is rejected.
-- The admin-only verification photo is scheduled for deletion 30 days after approval.
-- A successful approval sequence opens a restricted in-app introduction, not name/phone/Telegram disclosure.
-- Any later contact reveal needs a new mutual-consent ceremony.
-- Neutral random public codes; old channel codes are never reused.
-- Bot notifications contain no profile or contact data.
-- Discovery and identity data are separate trust domains.
-- Browser demo mode uses synthetic data only.
+## Persistence and security decisions
+- Telegram raw `initData` is validated server-side and exchanged for a random 32-byte opaque token in an HttpOnly, SameSite=Strict cookie (Secure in production).
+- Only keyed HMAC-SHA-256 session/CSRF hashes are stored; sessions expire, can be revoked, and are denied for suspended/deleted users.
+- Telegram mapping, name, phone, and date of birth use AES-256-GCM. Encryption contexts bind ciphertext to a field (and to the user where a user ID exists); keyed lookup hashes use a separate key.
+- Public draft JSON rejects identity keys and uses optimistic version checks. Private identity and public drafts are separate repository operations and tables.
+- Submission locks the draft, writes consent receipts with policy version/time, projects public/matching fields, and sets both profile and user to pending review. There is no user approval route.
+- Review approval and identity approval are both required for discovery; blocks override discovery and introduction eligibility.
+- Internal database UUIDs, Telegram IDs, names, phone numbers, dates of birth, matching preferences, and contacts do not appear in auth/discovery responses.
+- PostgreSQL remains loopback-only in local Compose. Production database location is undecided pending Ethiopian data-residency/legal review.
 
-## Next tasks, in order
-1. Verify the PostgreSQL migration and session store against a real PostgreSQL instance; Docker/PostgreSQL were not available in this environment.
-2. Build the separate admin identity/profile review surface and threat model it before enabling real submissions.
-3. Implement mutual decisions, admin connection review, and both final confirmations with integration tests.
-4. Specify and build the restricted in-app introduction with retention, report, and block controls.
-5. Add encrypted identity/profile draft persistence only after retention, key-management, and admin-access policies are approved.
-6. Keep payments out of the MVP; the 100 ETB accepted-connection concept remains an unimplemented backlog item.
+## Locked product decisions
+- First-release eligibility: adult Ethiopian Orthodox Tewahedo Church candidates only.
+- Discovery: values-only with no candidate photo.
+- Verification photo: administrator-only evidence, delete 30 days after approval except an exceptional documented hold.
+- Connection: mutual interest + administrator approval + both final confirmations opens only a restricted in-app introduction; it does not reveal name, phone, Telegram username, or a direct-message link.
+- Launch is free. A possible 100 ETB accepted-match charge remains backlog-only.
 
 ## Verification
-- 2026-08-12 — `npm run check` passed after onboarding: strict type checks, 12 tests, and production builds for contracts, Mini App, API, and bot.
-- 2026-08-12 — `npm audit --audit-level=low` reported 0 vulnerabilities after pinning the patched esbuild release.
-- 2026-08-12 — Vite preview responded successfully on port 5173.
-- 2026-08-12 — Confirmed `origin/main` HEAD is `231cb36e72bf3c09541be418092c47bb9b1922a8` before persistence work.
-- 2026-08-12 — `npm install` completed with 0 vulnerabilities after adding PostgreSQL client dependencies.
-- 2026-08-12 — `npm run check` passed: contracts, Mini App, API, and bot type checks; 15 tests; production builds.
-- 2026-08-12 — `npm audit --audit-level=low` reported 0 vulnerabilities.
-- 2026-08-12 — Privacy inspection found no raw session-token persistence, no Telegram IDs in auth responses, no bot/profile/contact notification leaks, and only synthetic identity literals in tests/demo onboarding. PostgreSQL integration remains unverified because this environment does not provide Docker/PostgreSQL.
+- 2026-08-12 — Latest fully verified committed baseline `0b18b6e`: strict source/test type checks, 16 tests, all production builds, and 0 audit vulnerabilities.
+- 2026-08-12 — Persistence foundation full `npm run check` passed: strict source/test type checking, 37 tests (11 contracts, 25 API, 1 bot), and all production builds.
+- 2026-08-12 — `npm audit --audit-level=low` reported 0 vulnerabilities and `git diff --check` passed.
+- Tests cover stale/tampered Telegram data, secure cookie/CSRF behavior, session expiry/revocation, cross-user draft isolation, optimistic conflict/submission locking, review/block gates, encryption tamper/context checks, and projection exclusions.
+- The staged diff passed a privacy review: no committed secrets, raw identity logging, database-row serialization, or internal user IDs in auth/discovery responses were found.
+- Real PostgreSQL migration and repository integration remain explicitly unverified in Arena.
+
+## Next tasks, in order
+1. In an environment with Docker/PostgreSQL, run `npm run db:up`, `npm run db:migrate`, exercise `/ready`, and add real repository integration tests (including concurrency and rollback).
+2. Threat-model and build separate administrator authentication/review before enabling real submissions; users must never self-approve.
+3. Add consent withdrawal, profile pause/correction/export/deletion, audit events, and approved retention jobs.
+4. Implement discovery/mutual-decision queries with review and bidirectional-block predicates, then the restricted in-app introduction.
+5. Add private verification-photo storage only after its upload authorization, re-encoding, malware scanning, 30-day deletion, backup expiry, and exceptional-hold controls are approved.
 
 ## Change log
-- 2026-08-12 — Initial scaffold by Arena agent. OpenCode project instructions, handoff command, and read-only security reviewer added.
-- 2026-08-12 — Added working anonymous swipe prototype, detail sheet, connection-review journey, and profile/privacy surface.
-- 2026-08-12 — Added shared domain contracts, Telegram init-data verification with tests, generic-only bot notifications, and initial privacy-oriented SQL schema.
-- 2026-08-12 — Reviewed the existing Google Form and manual admin process. Added a normalized onboarding, data-classification, privacy, verification-media, and deferred-payment analysis in `docs/questionnaire-analysis.md`; source screenshots were deleted.
-- 2026-08-12 — Product owner confirmed the upload is an admin-only verification photo and selected EOTC-only eligibility, values-only discovery, 30-day photo deletion, and restricted in-app introduction after all approval gates.
-- 2026-08-12 — Corrected marriage-intention contracts to use `kidusan_kurban` canonically across discovery/onboarding and reject the legacy `kurban` slug.
-- 2026-08-12 — Added PostgreSQL session-persistence foundation with opaque session tokens, HMAC token storage, encrypted Telegram ID vault storage, keyed lookup hashes, API wiring, tests, and environment documentation.
+- 2026-08-12 — Initial scaffold, OpenCode instructions, specialist agent, synthetic discovery, Telegram validation, generic-only bot, and privacy-oriented schema.
+- 2026-08-12 — Analyzed the prior questionnaire; deleted source uploads; locked EOTC-only eligibility, free initial launch, values-only discovery, admin-only verification media, and restricted introductions.
+- 2026-08-12 — Added seven-step local-only onboarding and canonicalized marriage intention as `teklil`, `kidusan_kurban`, or `orthodox_church_marriage`.
+- 2026-08-12 — Added the persistence foundation described above; live PostgreSQL verification remains pending outside Arena.

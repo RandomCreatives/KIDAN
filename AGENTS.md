@@ -45,6 +45,8 @@ npm install
 npm run dev
 npm run dev:api
 npm run dev:bot
+npm run db:up
+npm run db:migrate
 npm run typecheck
 npm test
 npm run build
@@ -52,4 +54,4 @@ npm run check
 ```
 
 ## Current scope
-The scaffold uses synthetic demo profiles. Real persistence, identity collection, media upload, admin UI, and contact reveal are intentionally not implemented until their threat model and retention rules are approved. Read `docs/questionnaire-analysis.md` before changing onboarding, profile contracts, faith fields, verification media, or payment states.
+The browser prototype uses synthetic profiles. The API has a PostgreSQL persistence foundation, opaque sessions, encrypted identity storage, consent receipts, and review-pending onboarding; real identity/submission routes remain disabled unless `ENABLE_REAL_SUBMISSIONS=true`. Verification-photo upload, production hosting, admin UI, restricted introductions, and contact reveal are not implemented. Docker/PostgreSQL integration must be checked outside Arena. Read `docs/questionnaire-analysis.md` before changing onboarding, profile contracts, faith fields, verification media, or payment states.

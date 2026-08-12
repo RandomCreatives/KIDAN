@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { TelegramValidationError, validateTelegramInitData } from "../src/auth/telegramInitData.js";
+import { validateTelegramInitData } from "../src/auth/telegramInitData.js";
 
 const botToken = "123456:TEST_ONLY_TOKEN";
 const now = new Date("2026-08-12T09:00:00.000Z");
@@ -33,14 +33,14 @@ describe("validateTelegramInitData", () => {
     const tampered = new URLSearchParams(signedInitData());
     tampered.set("auth_date", String(Math.floor(now.getTime() / 1000) - 1));
     expect(() => validateTelegramInitData(tampered.toString(), { botToken, now })).toThrowError(
-      expect.objectContaining<TelegramValidationError>({ code: "INVALID_SIGNATURE" }),
+      expect.objectContaining({ code: "INVALID_SIGNATURE" }),
     );
   });
 
   it("rejects stale data", () => {
     const oldDate = String(Math.floor(now.getTime() / 1000) - 301);
     expect(() => validateTelegramInitData(signedInitData({ auth_date: oldDate }), { botToken, now })).toThrowError(
-      expect.objectContaining<TelegramValidationError>({ code: "STALE_INIT_DATA" }),
+      expect.objectContaining({ code: "STALE_INIT_DATA" }),
     );
   });
 });

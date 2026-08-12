@@ -2,23 +2,24 @@
 
 Repository: <https://github.com/RandomCreatives/KIDAN>
 
-A privacy-first Telegram Mini App scaffold for intentional Orthodox Christian introductions.
+A privacy-first Telegram Mini App for intentional Orthodox Christian introductions.
 
 > **Working name:** Kidan is a placeholder and can be changed without affecting the architecture.
 
 ## What is included
 
-- Seven-step privacy-labeled onboarding prototype with synthetic in-memory draft data
+- Seven-step privacy-labeled onboarding prototype with synthetic browser data
+- Modern values-first, photo-free discovery prototype
 - Exact anonymous public-profile preview before consent
-- Modern mobile-first discovery experience with swipe and accessible action buttons
-- Anonymous, synthetic values-first profiles
-- Connection states that reflect mutual interest and admin review
-- Telegram Mini App bridge with browser-safe fallback
-- Fastify API scaffold with server-side Telegram init-data validation and optional opaque PostgreSQL sessions
+- Server-validated Telegram authentication exchanged for opaque cookie sessions
+- PostgreSQL migrations, checksum tracking, and resumable onboarding drafts
+- Encrypted identity-vault boundary separated from public and matching data
+- Consent receipts and review-pending submission workflow
+- Mutual-interest, administrator-review, final-confirmation, and block policy gates
 - grammY bot scaffold that sends generic notifications only
-- Shared Zod contracts
-- Privacy-oriented PostgreSQL migrations for identity separation, discovery, audit, and session foundations
-- OpenCode collaboration files (`AGENTS.md`, `opencode.json`, specialist agent, handoff log)
+- Shared Zod contracts and durable OpenCode collaboration files
+
+Real identity submission remains disabled by default. Verification-photo upload, admin review UI, direct contact reveal, and production database hosting are not implemented.
 
 ## Quick start
 
@@ -36,14 +37,35 @@ npm run dev:api
 npm run dev:bot
 ```
 
-Copy `.env.example` to `.env` only when configuring local services. PostgreSQL-backed Telegram sessions require `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `IDENTITY_ENCRYPTION_KEY_BASE64`, `IDENTITY_LOOKUP_PEPPER`, and `SESSION_TOKEN_PEPPER`. Never commit `.env`.
+The API loads a root `.env` file when present. Copy `.env.example` to `.env` only for local configuration; never commit `.env`.
+
+## Local PostgreSQL
+
+Docker Compose starts PostgreSQL on the loopback interface only:
+
+```bash
+npm run db:up
+npm run db:migrate
+npm run dev:api
+```
+
+Generate three independent 32-byte keys for `.env` (do not reuse a value):
+
+```bash
+openssl rand -base64 32
+```
+
+Use `GET /health` for process liveness and `GET /ready` for database readiness. Stop the local database with `npm run db:down`. The Compose password is development-only.
 
 ## Verification
 
 ```bash
 npm run check
+npm audit --audit-level=low
 ```
+
+Arena does not provide Docker or PostgreSQL, so migration execution and PostgreSQL integration must also be verified in a local or CI environment with PostgreSQL available.
 
 ## Important boundaries
 
-The scaffold does not ingest channel profiles and contains no real personal data. Contact details are not part of discovery payloads. See `docs/security-and-privacy.md` before adding authentication persistence, photos, admin access, or messaging.
+The repository contains no real personal data and does not ingest channel profiles. Discovery responses use explicit allowlisted projections and public codes, never database rows or internal user IDs. Names, phone numbers, dates of birth, Telegram IDs, matching preferences, and verification media are excluded from discovery. See `docs/security-and-privacy.md` before enabling real submissions, media, admin access, or introductions.

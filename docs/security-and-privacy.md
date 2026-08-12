@@ -17,8 +17,6 @@ Blocks, reports, moderation actions, review evidence, and audit events. Never ex
 - Constant-time compare the computed and received hash.
 - Reject stale `auth_date` and malformed or bot users.
 - Exchange successful validation for a short-lived opaque application session.
-- Persist only keyed hashes of session tokens; never store raw tokens in PostgreSQL.
-- Store Telegram identifiers inside the identity vault as encrypted values plus keyed lookup hashes; do not copy them into discovery tables, audit metadata, or client-visible tokens.
 - Never log raw init data, because it contains account attributes.
 
 ## Authorization
@@ -43,8 +41,16 @@ Any future discovery-photo feature requires a different upload and separate cons
 ## Logging
 Structured allowlist logging only. Redact request bodies on auth, identity, reports, and contact reveal routes. Admin identity access is always audited.
 
+## Persistence foundation
+- Application sessions are random opaque tokens; PostgreSQL stores only keyed HMAC-SHA-256 hashes and supports expiry and revocation.
+- Identity values use AES-256-GCM with field-bound associated data and an independent keyed lookup hash. Keys must come from a managed secret service in production, not `.env` files.
+- Public onboarding drafts exclude identity fields and use optimistic version checks.
+- Submission creates explicit consent receipts and only transitions the user/profile to review-pending. No user route can approve a profile.
+- Discovery identifiers are neutral public codes; internal database UUIDs are not part of discovery responses.
+- Real identity and submission handling is feature-disabled by default. Production hosting remains blocked on Ethiopian data-residency and legal review.
+
 ## User controls
-Provide profile pause, consent withdrawal, correction, export, and deletion. Retention periods and Ethiopian data-residency/cross-border requirements must be approved before real-user launch.
+Provide profile pause, consent withdrawal, correction, export, and deletion. The schema records consent withdrawal time, but these user-control workflows are not implemented yet. Retention periods and Ethiopian data-residency/cross-border requirements must be approved before real-user launch.
 
 ## Prohibited
 - Profile scraping/import for population

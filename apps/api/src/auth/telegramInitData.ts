@@ -2,7 +2,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 const telegramUserSchema = z.object({
-  id: z.union([z.number().int().positive(), z.string().regex(/^\d+$/)]),
+  id: z.union([
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    z.string().regex(/^\d+$/),
+  ]),
   is_bot: z.boolean().optional(),
 });
 

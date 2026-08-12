@@ -50,7 +50,6 @@ The `connected` state opens a restricted in-app introduction. It does not reveal
 - Parse all boundary input with contracts from `@kidan/contracts`.
 - Return an envelope with `data` or a stable error object.
 - Use opaque server-side sessions in production; no Telegram identifiers in client tokens.
-- When PostgreSQL persistence is configured, hash session tokens with an application pepper and store Telegram IDs only through the encrypted identity vault plus keyed lookup hashes.
 - Use idempotency keys for decisions and approvals.
 
 ## Public profile code

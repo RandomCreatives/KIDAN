@@ -14,4 +14,13 @@ describe("health route", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.json().data.status).toBe("ok");
   });
+
+  it("reports dependency readiness without leaking the dependency error", async () => {
+    const app = await buildApp({ readinessCheck: async () => { throw new Error("database hostname secret"); } });
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/ready" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json().error.code).toBe("SERVICE_NOT_READY");
+    expect(response.body).not.toContain("hostname");
+  });
 });

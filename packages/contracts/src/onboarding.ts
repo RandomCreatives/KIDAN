@@ -116,6 +116,31 @@ export const onboardingDraftSchema = z.object({
   consent: consentDraftSchema,
 });
 
+export const publicOnboardingPayloadSchema = z.object({
+  eligibility: eligibilitySchema,
+  publicProfile: publicProfileDraftSchema,
+  faithAndFamily: faithAndFamilyDraftSchema,
+  partnerPreferences: partnerPreferencesDraftSchema,
+});
+
+export const onboardingProgressPatchSchema = z.object({
+  schemaVersion: z.literal("2026-08-12.v1"),
+  expectedVersion: z.number().int().min(0),
+  currentStep: onboardingStepSchema.exclude(["private_identity", "consent", "submitted"]),
+  patch: publicOnboardingPayloadSchema.partial(),
+});
+
+export const privateIdentitySaveRequestSchema = z.object({
+  fullName: privateIdentityDraftSchema.shape.fullName,
+  dateOfBirth: privateIdentityDraftSchema.shape.dateOfBirth,
+  phoneNumber: privateIdentityDraftSchema.shape.phoneNumber,
+});
+
+export const onboardingSubmitRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  consent: consentDraftSchema,
+});
+
 export const onboardingFieldVisibility = {
   "privateIdentity.fullName": "admin_only",
   "privateIdentity.dateOfBirth": "admin_only",
@@ -151,6 +176,12 @@ export const onboardingFieldVisibility = {
 export type EducationLevel = z.infer<typeof educationLevelSchema>;
 export type EmploymentStatus = z.infer<typeof employmentStatusSchema>;
 export type MaritalStatus = z.infer<typeof maritalStatusSchema>;
+export type MarriageIntention = z.infer<typeof marriageIntentionSchema>;
+export type ValueTag = z.infer<typeof valueTagSchema>;
 export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>;
+export type PublicOnboardingPayload = z.infer<typeof publicOnboardingPayloadSchema>;
+export type OnboardingProgressPatch = z.infer<typeof onboardingProgressPatchSchema>;
+export type PrivateIdentitySaveRequest = z.infer<typeof privateIdentitySaveRequestSchema>;
+export type OnboardingSubmitRequest = z.infer<typeof onboardingSubmitRequestSchema>;
 export type OnboardingStep = z.infer<typeof onboardingStepSchema>;
 export type FieldVisibility = z.infer<typeof fieldVisibilitySchema>;
