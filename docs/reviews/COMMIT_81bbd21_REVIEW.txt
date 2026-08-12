@@ -1,0 +1,192 @@
+KIDAN PLATFORM REVIEW - COMMIT 81bbd21
+Reviewed: 2026-08-12
+Full commit: 81bbd21b50469da8957f9e6c0822a7ff07aa67ea
+Commit title: feat(api): add PostgreSQL integration validation (Phase 01 draft)
+Remote status: main points to this commit
+CI run: https://github.com/RandomCreatives/KIDAN/actions/runs/31596008799
+Verdict: REQUEST CHANGES - useful draft, but CI is red and Phase 01 is not complete
+
+EXECUTIVE SUMMARY
+The commit is directionally good. It publishes a first GitHub Actions workflow, refactors migration execution into a reusable function, starts PostgreSQL 17 in CI, and adds a broad real-database integration suite. npm ci, strict type checks, all existing unit tests, and all builds passed in GitHub Actions.
+
+The PostgreSQL integration step failed. The failure exposed a real production repository SQL defect in touchSession. The integration tests also contain deterministic/flaky fixture problems that will surface after that SQL defect is fixed. The workflow needs basic supply-chain hardening before it should become a required branch check.
+
+WHAT PASSED IN GITHUB ACTIONS
+- PostgreSQL 17 service startup
+- npm ci
+- Strict type checks
+- Existing unit tests
+- Production builds
+
+WHAT FAILED
+- PostgreSQL integration tests
+- Dependency audit and diff-hygiene steps were skipped because they were later in the same failed sequential job
+
+POSITIVE CHANGES
+1. applyMigrations(pool, directory?) is reusable and retains a single session-scoped advisory lock.
+2. Migration checksum, no-op, and modified-migration tests are included.
+3. Integration databases are random and disposable.
+4. The proposed repository coverage is broad and focused on privacy/state boundaries.
+5. Unit and integration Vitest configurations are separated clearly.
+6. The workflow uses synthetic development-only database credentials.
+7. No real submissions, verification photos, or production deployment were enabled.
+8. The persistence foundation is now published in the remote history through parent commit 72101b1.
+
+BLOCKER 1 - INVALID touchSession SQL
+Location: apps/api/src/persistence/postgresRepository.ts, around line 145
+Current query:
+UPDATE app_session SET last_seen_at = $2
+WHERE id = $1 AND last_seen_at < $2 - interval '5 minutes'
+
+GitHub Actions error:
+operator does not exist: timestamp with time zone < interval
+PostgreSQL code: 42883
+
+Required correction:
+Explicitly cast the repeated parameter and group the arithmetic, for example:
+UPDATE app_session
+SET last_seen_at = $2::timestamptz
+WHERE id = $1
+  AND last_seen_at < ($2::timestamptz - interval '5 minutes')
+
+After correction, add a specific test that calls touchSession twice and verifies that a recent last_seen_at is not rewritten while an older value is updated.
+
+BLOCKER 2 - PUBLIC-CODE COLLISION TEST GENERATES INVALID CODES
+Location: postgresRepository.integration.test.ts
+The test creates codes with randomBytes(3).toString("hex").toUpperCase(). Hex output can contain 0 and 1, but Kidan public codes intentionally exclude those characters. The live CI already failed with KD-E960EB violating app_user_public_code_check.
+
+Required correction:
+Use deterministic valid codes from the approved alphabet, for example:
+- KD-ABCDEF
+- KD-GHJKLM
+Or call generatePublicCode and assert the two generated values are distinct before use. Deterministic constants are better for this collision test.
+
+BLOCKER 3 - REUSED PHONE FIXTURE WILL VIOLATE THE UNIQUE LOOKUP HASH
+Location: completeSubmission and several private-identity test calls
+Many tests use +251900000000. identity_vault.phone_lookup_hash is UNIQUE, and all tests in the repository integration file share one disposable database. Once touchSession is fixed, the second candidate using that number will fail with a unique constraint violation.
+
+Required correction:
+Create a deterministic synthetic phone generator that returns a different valid number for each test user. Do not remove the production uniqueness constraint. Add one dedicated test proving that a duplicate normalized phone is handled according to the approved account-recovery/privacy policy.
+
+BLOCKER 4 - CI IS RED
+Commit 81bbd21 must not be described as a completed PostgreSQL validation milestone. Do not make the failed check a release baseline. Push a normal follow-up commit, let GitHub Actions execute it, and require a green result before Phase 01 completion.
+
+MAJOR FINDING 1 - TELEGRAM CIPHERTEXT TEST USES THE WRONG ID
+The test increments nextTelegramId into a local telegramId, then calls newUser(), which increments and uses a different ID. The assertion compares stored ciphertext to an unrelated plaintext ID and therefore cannot prove the intended mapping.
+
+Required correction:
+Issue the session with the exact local telegramId and retrieve that same user's row, or change newUser() to return both user and telegramId.
+
+MAJOR FINDING 2 - EXPIRY IS NOT TESTED INDEPENDENTLY
+The test revokes a session and then checks it at a time after expiry. The second null result can be caused entirely by revocation.
+
+Required correction:
+Use one session tested past expiry without revoking it, and a separate active session tested before and after explicit revocation.
+
+MAJOR FINDING 3 - DELETED-USER SESSION CASE IS MISSING
+The service is intended to deny suspended and deleted users. The new integration suite checks suspension only.
+
+Required correction:
+Add an independent deleted-user case for both new-session issuance and continuation of an existing session.
+
+MAJOR FINDING 4 - HARNESS LEAKS A DATABASE IF MIGRATION SETUP FAILS
+createIntegrationHarness creates a database and pool, then calls applyMigrations. If migration application throws, the function exits without ending the pool or dropping the disposable database.
+
+Required correction:
+Wrap pool creation/migration in try/catch. On setup failure, close the pool, connect through the base admin URL, DROP DATABASE ... WITH (FORCE), then rethrow the original error. Keep cleanup idempotent.
+
+MAJOR FINDING 5 - CI ACTIONS ARE NOT PINNED AND PERMISSIONS ARE IMPLICIT
+Current workflow uses actions/checkout@v4 and actions/setup-node@v4. GitHub emitted a Node.js 20 deprecation warning. Tags are mutable supply-chain references, and the workflow does not declare minimal token permissions.
+
+Required correction:
+- Add top-level permissions: contents: read
+- Upgrade to reviewed Node 24-based action releases and pin to full commit SHAs.
+- Current tags observed during review:
+  actions/checkout v6 -> d23441a48e516b6c34aea4fa41551a30e30af803
+  actions/setup-node v6 -> 249970729cb0ef3589644e2896645e5dc5ba9c38
+- Add a documented process for reviewing/updating pinned SHAs.
+- Add timeout-minutes to the job.
+- Add workflow concurrency with cancel-in-progress for superseded branch/PR runs.
+
+MAJOR FINDING 6 - ONE SEQUENTIAL JOB HIDES AUDIT RESULTS
+When integration failed, dependency audit and diff hygiene were skipped.
+
+Recommended correction:
+Split static/unit/build/audit and PostgreSQL integration into separate jobs, or use carefully designed always() conditions and an aggregate required check. Parallel jobs provide clearer results and avoid one failure masking another.
+
+MAJOR FINDING 7 - HANDOFF DOCUMENTATION IS NOW STALE
+HANDOFF says PostgreSQL is verified in CI on every push while the first CI run failed. It also says the integration execution is pending, which was true at commit time but is no longer accurate after the run.
+
+Required correction:
+Record:
+- CI run 31596008799 executed and failed
+- Exact SQL/test-fixture causes
+- Unit/type/build checks passed
+- Phase 01 remains in progress
+- New green run URL and commit after fixes
+
+TEST QUALITY IMPROVEMENTS
+- Assert the response status of the initial User A PUT in the route-isolation test before checking User B.
+- Test touchSession throttling directly.
+- Strengthen raw token tests by querying the exact created session/hash rather than relying only on unequal buffer lengths.
+- Remove temporary copied migration directories after the anti-tamper test.
+- Add a no-orphan assertion after a deliberately failed harness migration/setup.
+- Add test cleanup diagnostics that contain database names only, never credentials or identity values.
+- Keep all fixtures synthetic and unique.
+
+CI HARDENING CHECKLIST
+- permissions: contents: read
+- Pinned full action SHAs
+- Node 24-based checkout/setup actions
+- timeout-minutes
+- concurrency/cancel-in-progress
+- Separate quality and integration jobs
+- npm ci
+- Strict source and test type checks
+- Unit tests
+- Production builds
+- PostgreSQL integration
+- npm audit --audit-level=low
+- git diff --check
+- No secrets on untrusted pull-request jobs
+- No database dumps or sensitive artifacts uploaded
+
+DOMAIN SCREENSHOT REVIEW - kidan.pro.et
+Observed:
+- Domain kidan.pro.et appears active in the registrar dashboard.
+- Registrar Lock is shown as Disabled.
+- Expiration Date is blank in the visible panel.
+
+Required domain actions:
+1. Enable Registrar Lock if the provider supports it.
+2. Confirm the actual expiration/renewal date and enable renewal reminders or auto-renew under a controlled account.
+3. Enable MFA on the registrar account.
+4. Review account recovery email/phone and avoid shared credentials.
+5. Enable DNSSEC if supported by the .et registrar/provider.
+6. Add restrictive CAA records after the certificate authority is selected.
+7. Do not expose DNS/API credentials in screenshots or chat.
+8. Treat domain registration separately from production hosting. The domain being Ethiopian does not by itself prove compliant application/database/media residency.
+9. Do not point real users to production until hosting, legal, admin, retention, and security gates are approved.
+
+RECOMMENDED DNS/ORIGIN PLAN
+- kidan.pro.et: candidate Mini App and same-origin /api reverse proxy where practical
+- www.kidan.pro.et: redirect to the canonical candidate origin
+- admin.kidan.pro.et: later separate administrator application with a separate auth/cookie boundary
+- status.kidan.pro.et: optional later status page with no candidate data
+
+Avoid wildcard DNS unless operationally required. Keep administrator and candidate cookies host-only and never share identity sessions across subdomains.
+
+RECOMMENDED NEXT COMMIT
+A normal follow-up commit should contain only:
+1. touchSession SQL correction and focused test
+2. Valid deterministic public-code fixtures
+3. Unique phone fixture generator
+4. Correct Telegram-ID and independent expiry/deleted tests
+5. Harness failure cleanup
+6. CI permissions, pinned v6 actions, timeout/concurrency, and job split
+7. HANDOFF update with failed and replacement CI run evidence
+
+Do not amend or force-push 81bbd21. Preserve the failed run as useful validation history and push a reviewable fix commit.
+
+APPROVAL CONDITION
+Approve Phase 01 only after the follow-up commit produces a fully green GitHub Actions run, all PostgreSQL tests pass, npm audit runs rather than being skipped, and HANDOFF records the evidence accurately.

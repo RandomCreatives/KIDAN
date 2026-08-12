@@ -1,0 +1,80 @@
+KIDAN PLATFORM REVIEW - COMMIT 90614b4
+Reviewed: 2026-08-12
+Full commit: 90614b48330f00620e1a173bb9764975111c741e
+Parent: 81bbd21b50469da8957f9e6c0822a7ff07aa67ea
+Commit title: fix(api): resolve Phase 01 integration defects and harden CI
+Remote status: main points to this commit
+CI run: https://github.com/RandomCreatives/KIDAN/actions/runs/31607920446
+Verdict: APPROVED WITH MINOR FOLLOW-UP
+
+SUMMARY
+This follow-up correctly addresses the blocking defects found in 81bbd21. Both GitHub Actions jobs completed successfully. Real PostgreSQL 17 integration tests now execute in CI and pass. The quality job also completed type checking, unit tests, builds, npm audit, and diff hygiene successfully.
+
+VERIFIED GREEN CHECKS
+- Typecheck, unit tests, build, audit: success
+- PostgreSQL integration tests: success
+- npm ci: success in both jobs
+- PostgreSQL 17 service and disposable database harness: success
+- 21 PostgreSQL integration tests are present (18 repository plus 3 migration tests)
+- Existing 37 unit/contract/bot tests remain in the baseline suite
+
+CORRECTLY RESOLVED
+1. touchSession now uses an explicit timestamptz cast and grouped five-minute interval arithmetic.
+2. Public-code collision fixtures now use generatePublicCode and avoid forbidden characters.
+3. Private-identity test calls use unique Ethiopian-format synthetic phone numbers.
+4. Telegram ciphertext test now checks the actual Telegram ID used for the stored user.
+5. Session expiry and revocation are tested independently.
+6. Deleted-user session denial is tested in addition to suspension.
+7. The harness closes its pool and attempts to drop the disposable database if migration setup fails.
+8. CI declares permissions: contents: read.
+9. CI uses full action commit SHAs, concurrency cancellation, job timeouts, and separate quality/integration jobs.
+10. Audit and diff hygiene are no longer masked by an integration-job failure.
+
+PRIVACY/SECURITY ASSESSMENT
+- No real personal data was added.
+- No production credentials were committed.
+- Synthetic CI database credentials are isolated to the ephemeral GitHub runner service.
+- No real submissions, verification photos, payments, admin routes, discovery, or messaging were enabled.
+- The fix preserves opaque session hashes, encrypted identity separation, review-pending submission, and public-code boundaries.
+
+MINOR FOLLOW-UP 1 - UPDATE DEPRECATED ACTION VERSIONS
+The workflow pins checkout/setup-node v4 commits. GitHub reports that these actions target deprecated Node.js 20 internals and are being forced onto Node.js 24.
+
+Recommended normal follow-up:
+- actions/checkout v6 pinned to d23441a48e516b6c34aea4fa41551a30e30af803
+- actions/setup-node v6 pinned to 249970729cb0ef3589644e2896645e5dc5ba9c38
+
+Review the upstream release notes before changing. Keep full-SHA pinning and the human-readable version comment.
+
+MINOR FOLLOW-UP 2 - CACHE WARNINGS
+Both jobs received GitHub cache service warnings (restore 400 / temporary save service unavailable), but npm ci and all checks passed. This appears to be a GitHub cache-service issue rather than a repository failure. Monitor future runs; do not weaken checks to hide it.
+
+MINOR FOLLOW-UP 3 - HANDOFF IS STALE AFTER THE GREEN RUN
+The committed HANDOFF accurately says re-verification was pending at commit time, but CI has now passed. Update it to record:
+- Verified commit 90614b4
+- Green run 31607920446
+- Both job names and successful conclusions
+- PostgreSQL 17 integration is now verified in CI
+- Phase 01 status/exit decision
+
+MINOR FOLLOW-UP 4 - BROKEN DOCUMENT REFERENCE
+HANDOFF references COMMIT_81bbd21_REVIEW.txt, but that file is not tracked in the GitHub commit. Either add the reviewed non-sensitive document under docs/reviews/ or replace the reference with the public failed CI run URL and a concise in-file summary. Do not reference local/untracked planning files as if repository readers can access them.
+
+MINOR FOLLOW-UP 5 - BRANCH PROTECTION
+Configure main branch protection/rulesets so both checks are required before merging:
+- Typecheck, unit tests, build, audit
+- PostgreSQL integration tests
+
+Also require pull requests, prevent force pushes, and restrict direct bypasses according to the owner workflow. This is a repository setting rather than a code change.
+
+PHASE 01 DECISION
+The central technical exit gate is now met in CI: migrations run from zero, checksum/no-op/anti-tamper tests pass, and the PostgreSQL repository integration suite is green. Phase 01 can be marked technically complete after HANDOFF is updated and branch protection is configured or explicitly recorded as pending repository administration.
+
+RECOMMENDED NEXT CHANGE
+Use a small platform/documentation commit only:
+1. Upgrade pinned actions to reviewed v6 SHAs.
+2. Update HANDOFF with green CI evidence and correct Phase 01 status.
+3. Fix the absent review-document reference.
+4. Record required branch-protection settings.
+
+Do not combine that cleanup with Phase 02 product integration work.
