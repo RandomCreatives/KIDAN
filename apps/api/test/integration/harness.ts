@@ -15,8 +15,21 @@ function quoteIdentifier(name: string): string {
 }
 
 /**
+ * Drops the named disposable database if it exists, using a short-lived admin pool.
+ */
+async function dropDatabase(baseUrl: string, databaseName: string): Promise<void> {
+  const dropAdmin = new Pool({ connectionString: baseUrl, max: 1 });
+  try {
+    await dropAdmin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)} WITH (FORCE)`);
+  } finally {
+    await dropAdmin.end();
+  }
+}
+
+/**
  * Creates a disposable PostgreSQL database, applies all migrations from zero,
  * and returns a pool bound to it. Safe to run several harnesses concurrently.
+ * Drops the database if migrations fail so a failed run leaves no orphans.
  */
 export async function createIntegrationHarness(): Promise<IntegrationHarness> {
   const baseUrl = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -34,20 +47,21 @@ export async function createIntegrationHarness(): Promise<IntegrationHarness> {
   const url = new URL(baseUrl);
   url.pathname = `/${databaseName}`;
   const pool = createDatabasePool(url.toString());
-  const applied = await applyMigrations(pool, undefined);
-  if (applied.length === 0) throw new Error("Integration harness applied no migrations");
+  try {
+    const applied = await applyMigrations(pool, undefined);
+    if (applied.length === 0) throw new Error("Integration harness applied no migrations");
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    await dropDatabase(baseUrl, databaseName).catch(() => undefined);
+    throw error;
+  }
 
   return {
     pool,
     databaseName,
     cleanup: async () => {
       await pool.end();
-      const dropAdmin = new Pool({ connectionString: baseUrl, max: 1 });
-      try {
-        await dropAdmin.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)} WITH (FORCE)`);
-      } finally {
-        await dropAdmin.end();
-      }
+      await dropDatabase(baseUrl, databaseName);
     },
   };
 }

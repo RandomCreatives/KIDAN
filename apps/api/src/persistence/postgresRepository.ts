@@ -142,7 +142,10 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
 
   async touchSession(sessionId: string, now: Date): Promise<void> {
     await this.pool.query(
-      "UPDATE app_session SET last_seen_at = $2 WHERE id = $1 AND last_seen_at < $2 - interval '5 minutes'",
+      `UPDATE app_session
+       SET last_seen_at = $2::timestamptz
+       WHERE id = $1
+         AND last_seen_at < ($2::timestamptz - interval '5 minutes')`,
       [sessionId, now],
     );
   }

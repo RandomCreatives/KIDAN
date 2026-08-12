@@ -5,9 +5,40 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    name: Typecheck, unit tests, build, audit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Type checks
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Builds
+        run: npm run build
+      - name: Dependency audit
+        run: npm audit --audit-level=low
+      - name: Diff hygiene
+        run: git diff --check
+
+  integration:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -25,21 +56,13 @@ jobs:
     env:
       TEST_DATABASE_URL: postgresql://kidan_dev:kidan_dev_only@127.0.0.1:5432/kidan
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Type checks
+      - name: Type checks (integration sources)
         run: npm run typecheck
-      - name: Unit tests
-        run: npm test
-      - name: Builds
-        run: npm run build
       - name: PostgreSQL integration tests (disposable databases)
         run: npm run db:test
-      - name: Dependency audit
-        run: npm audit --audit-level=low
-      - name: Diff hygiene
-        run: git diff --check

@@ -8,6 +8,7 @@ import { OnboardingService } from "../../src/onboarding/onboardingService.js";
 import { PostgresPersistenceRepository } from "../../src/persistence/postgresRepository.js";
 import type { UserRecord } from "../../src/persistence/types.js";
 import { IdentityCipher, SecretHasher } from "../../src/security/crypto.js";
+import { generatePublicCode } from "../../src/security/publicCode.js";
 import { createIntegrationHarness, type IntegrationHarness } from "./harness.js";
 
 const encryptionKey = randomBytes(32);
@@ -63,6 +64,13 @@ let harness: IntegrationHarness;
 let services: Services;
 let app: FastifyInstance | undefined;
 let nextTelegramId = 900_719_925_474_000n;
+let phoneCounter = 0;
+
+/** Returns a unique, syntactically valid Ethiopian E.164 number per call. */
+function uniquePhone(): string {
+  phoneCounter += 1;
+  return `+2519${(10_000_000 + phoneCounter).toString().padStart(8, "0")}`;
+}
 
 function makeServices(real = true): Services {
   const repository = new PostgresPersistenceRepository(harness.pool);
@@ -82,7 +90,7 @@ async function newUser(servicesToUse: Services): Promise<UserRecord> {
 async function completeSubmission(user: UserRecord, want: "yes" | "no" | "open_to_discussion" = "yes"): Promise<void> {
   const draft = await services.onboarding.saveProgress(user.id, makePatch(want));
   await services.onboarding.savePrivateIdentity(user.id, {
-    fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: "+251900000000",
+    fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: uniquePhone(),
   });
   await services.onboarding.submit(user.id, { expectedVersion: draft.version, consent: consentAll });
 }
@@ -121,8 +129,9 @@ describe("PostgreSQL repository integration", () => {
   });
 
   it("retries a public-code collision without leaving orphan users", async () => {
-    const codeA = `KD-${randomBytes(3).toString("hex").toUpperCase()}`;
-    const codeB = `KD-${randomBytes(3).toString("hex").toUpperCase()}`;
+    const codeA = generatePublicCode();
+    let codeB = generatePublicCode();
+    while (codeB === codeA) codeB = generatePublicCode();
     const hashA = services.cipher.lookupHash("telegram:col-a");
     await services.repository.findOrCreateUserByTelegram({
       telegramLookupHash: hashA,
@@ -152,7 +161,10 @@ describe("PostgreSQL repository integration", () => {
 
   it("stores Telegram IDs only as ciphertext and a keyed lookup hash", async () => {
     const telegramId = nextTelegramId++;
-    const user = await newUser(services);
+    const issued = await services.sessions.issueForTelegramUser(telegramId, new Date());
+    const session = await services.sessions.authenticate(issued.sessionToken);
+    if (!session) throw new Error("session creation failed");
+    const user = session.user;
     const row = (await harness.pool.query<{
       telegram_id_ciphertext: Buffer; telegram_id_lookup_hash: Buffer;
     }>("SELECT telegram_id_ciphertext, telegram_id_lookup_hash FROM identity_vault WHERE user_id = $1", [user.id])).rows[0];
@@ -179,16 +191,20 @@ describe("PostgreSQL repository integration", () => {
     }
   });
 
-  it("authenticates active sessions and rejects expired and revoked ones", async () => {
+  it("authenticates active sessions and rejects revoked ones", async () => {
     const issued = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date());
     expect(await services.sessions.authenticate(issued.sessionToken)).not.toBeNull();
 
     await services.sessions.revoke(issued.sessionToken);
     expect(await services.sessions.authenticate(issued.sessionToken)).toBeNull();
-    expect(await services.sessions.authenticate(
-      issued.sessionToken,
-      new Date(issued.expiresAt.getTime() + 1_000),
-    )).toBeNull();
+  });
+
+  it("rejects expired sessions independently of revocation", async () => {
+    const issued = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date());
+    expect(await services.sessions.authenticate(issued.sessionToken)).not.toBeNull();
+
+    const afterExpiry = new Date(issued.expiresAt.getTime() + 1_000);
+    expect(await services.sessions.authenticate(issued.sessionToken, afterExpiry)).toBeNull();
   });
 
   it("denies suspended users new and continuing sessions", async () => {
@@ -198,6 +214,17 @@ describe("PostgreSQL repository integration", () => {
     if (!session) throw new Error("expected active session");
 
     await harness.pool.query("UPDATE app_user SET status = 'suspended' WHERE id = $1", [session.user.id]);
+    await expect(services.sessions.issueForTelegramUser(telegramId, new Date())).rejects.toThrow(SessionAccessError);
+    expect(await services.sessions.authenticate(issued.sessionToken)).toBeNull();
+  });
+
+  it("denies deleted users new and continuing sessions", async () => {
+    const telegramId = nextTelegramId++;
+    const issued = await services.sessions.issueForTelegramUser(telegramId, new Date());
+    const session = await services.sessions.authenticate(issued.sessionToken);
+    if (!session) throw new Error("expected active session");
+
+    await harness.pool.query("UPDATE app_user SET status = 'deleted' WHERE id = $1", [session.user.id]);
     await expect(services.sessions.issueForTelegramUser(telegramId, new Date())).rejects.toThrow(SessionAccessError);
     expect(await services.sessions.authenticate(issued.sessionToken)).toBeNull();
   });
@@ -255,7 +282,7 @@ describe("PostgreSQL repository integration", () => {
 
     await expect(services.onboarding.saveProgress(user.id, makePatch("yes"))).rejects.toThrow("DRAFT_ALREADY_SUBMITTED");
     await expect(services.onboarding.savePrivateIdentity(user.id, {
-      fullName: "Changed Later", dateOfBirth: "1990-01-01", phoneNumber: "+251911111111",
+      fullName: "Changed Later", dateOfBirth: "1990-01-01", phoneNumber: uniquePhone(),
     })).rejects.toThrow("DRAFT_ALREADY_SUBMITTED");
   });
 
@@ -263,7 +290,7 @@ describe("PostgreSQL repository integration", () => {
     const user = await newUser(services);
     await services.onboarding.saveProgress(user.id, makePatch("yes"));
     await services.onboarding.savePrivateIdentity(user.id, {
-      fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: "+251900000000",
+      fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: uniquePhone(),
     });
 
     await expect(services.repository.submitOnboarding({
@@ -327,7 +354,7 @@ describe("PostgreSQL repository integration", () => {
   it("binds identity ciphertext to its field and user context", async () => {
     const user = await newUser(services);
     await services.onboarding.savePrivateIdentity(user.id, {
-      fullName: "Context Bound", dateOfBirth: "1996-01-01", phoneNumber: "+251900000000",
+      fullName: "Context Bound", dateOfBirth: "1996-01-01", phoneNumber: uniquePhone(),
     });
     const stored = (await harness.pool.query<{ legal_name_ciphertext: Buffer }>(
       "SELECT legal_name_ciphertext FROM identity_vault WHERE user_id = $1", [user.id])).rows[0];
