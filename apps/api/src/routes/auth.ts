@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { telegramAuthRequestSchema } from "@kidan/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import { TelegramValidationError, validateTelegramInitData } from "../auth/telegramInitData.js";
+import { AccountUnavailableError, type TelegramSessionStore } from "../persistence/sessionStore.js";
 
 interface AuthRouteOptions {
   botToken: string;
+  sessionStore?: TelegramSessionStore;
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
@@ -15,21 +17,40 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     }
 
     try {
-      validateTelegramInitData(parsed.data.initData, { botToken: options.botToken });
+      const principal = validateTelegramInitData(parsed.data.initData, { botToken: options.botToken });
 
-      // Persistence is intentionally the next milestone. Do not place Telegram IDs
-      // into a client token or response. Exchange validation for an opaque DB-backed
-      // session before using this route for real authentication.
+      if (!options.sessionStore) {
+        return reply.code(200).send({
+          data: {
+            validated: true,
+            requestId: randomUUID(),
+            sessionReady: false,
+          },
+        });
+      }
+
+      const session = await options.sessionStore.createTelegramSession({
+        telegramUserId: principal.telegramUserId,
+        authDate: principal.authDate,
+      });
+
       return reply.code(200).send({
         data: {
           validated: true,
           requestId: randomUUID(),
-          sessionReady: false,
+          sessionReady: true,
+          session: {
+            token: session.sessionToken,
+            principal: session.principal,
+          },
         },
       });
     } catch (error) {
       if (error instanceof TelegramValidationError) {
         return reply.code(401).send({ error: { code: error.code, requestId: request.id } });
+      }
+      if (error instanceof AccountUnavailableError) {
+        return reply.code(403).send({ error: { code: "ACCOUNT_UNAVAILABLE", requestId: request.id } });
       }
       throw error;
     }

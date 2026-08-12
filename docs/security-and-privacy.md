@@ -17,6 +17,8 @@ Blocks, reports, moderation actions, review evidence, and audit events. Never ex
 - Constant-time compare the computed and received hash.
 - Reject stale `auth_date` and malformed or bot users.
 - Exchange successful validation for a short-lived opaque application session.
+- Persist only keyed hashes of session tokens; never store raw tokens in PostgreSQL.
+- Store Telegram identifiers inside the identity vault as encrypted values plus keyed lookup hashes; do not copy them into discovery tables, audit metadata, or client-visible tokens.
 - Never log raw init data, because it contains account attributes.
 
 ## Authorization

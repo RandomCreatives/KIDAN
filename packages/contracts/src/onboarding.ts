@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { genderSchema, valueTagSchema } from "./profile.js";
+import { genderSchema, marriageIntentionSchema, valueTagSchema } from "./profile.js";
 
 export const fieldVisibilitySchema = z.enum([
   "admin_only",
@@ -70,12 +70,6 @@ export const publicProfileDraftSchema = z.object({
   hasChildren: z.boolean(),
   heightCm: z.number().int().min(120).max(230).nullable(),
 });
-
-export const marriageIntentionSchema = z.enum([
-  "teklil",
-  "kidusan_kurban",
-  "orthodox_church_marriage",
-]);
 
 export const faithAndFamilyDraftSchema = z.object({
   faithTradition: z.literal("ethiopian_orthodox_tewahedo"),
@@ -157,8 +151,6 @@ export const onboardingFieldVisibility = {
 export type EducationLevel = z.infer<typeof educationLevelSchema>;
 export type EmploymentStatus = z.infer<typeof employmentStatusSchema>;
 export type MaritalStatus = z.infer<typeof maritalStatusSchema>;
-export type MarriageIntention = z.infer<typeof marriageIntentionSchema>;
-export type ValueTag = z.infer<typeof valueTagSchema>;
 export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>;
 export type OnboardingStep = z.infer<typeof onboardingStepSchema>;
 export type FieldVisibility = z.infer<typeof fieldVisibilitySchema>;

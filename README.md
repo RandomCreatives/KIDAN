@@ -14,10 +14,10 @@ A privacy-first Telegram Mini App scaffold for intentional Orthodox Christian in
 - Anonymous, synthetic values-first profiles
 - Connection states that reflect mutual interest and admin review
 - Telegram Mini App bridge with browser-safe fallback
-- Fastify API scaffold with server-side Telegram init-data validation
+- Fastify API scaffold with server-side Telegram init-data validation and optional opaque PostgreSQL sessions
 - grammY bot scaffold that sends generic notifications only
 - Shared Zod contracts
-- Initial privacy-oriented PostgreSQL migration
+- Privacy-oriented PostgreSQL migrations for identity separation, discovery, audit, and session foundations
 - OpenCode collaboration files (`AGENTS.md`, `opencode.json`, specialist agent, handoff log)
 
 ## Quick start
@@ -36,7 +36,7 @@ npm run dev:api
 npm run dev:bot
 ```
 
-Copy `.env.example` to `.env` only when configuring local services. Never commit `.env`.
+Copy `.env.example` to `.env` only when configuring local services. PostgreSQL-backed Telegram sessions require `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `IDENTITY_ENCRYPTION_KEY_BASE64`, `IDENTITY_LOOKUP_PEPPER`, and `SESSION_TOKEN_PEPPER`. Never commit `.env`.
 
 ## Verification
 
