@@ -66,6 +66,11 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
 
   async touchSession(_sessionId: string, _now: Date): Promise<void> {}
 
+  async updateSessionCsrf(tokenHash: Buffer, csrfTokenHash: Buffer, _now: Date): Promise<void> {
+    const session = this.sessions.get(tokenHash.toString("hex"));
+    if (session) session.csrfTokenHash = Buffer.from(csrfTokenHash);
+  }
+
   async getDraft(userId: string): Promise<DraftRecord | null> {
     const draft = this.drafts.get(userId);
     return draft ? structuredClone(draft) : null;

@@ -65,6 +65,17 @@ export class SessionService {
     return Boolean(csrfToken && csrfToken.length <= 128 && this.sessionHasher.matches(`csrf:${csrfToken}`, session.csrfTokenHash));
   }
 
+  async rotateCsrf(sessionToken: string | undefined, now = new Date()): Promise<{ csrfToken: string } | null> {
+    if (!sessionToken || sessionToken.length > 128) return null;
+    const tokenHash = this.sessionHasher.hash(`session:${sessionToken}`);
+    const session = await this.repository.findActiveSession(tokenHash, now);
+    if (!session) return null;
+    if (session.user.status === "suspended" || session.user.status === "deleted") return null;
+    const csrfToken = randomBytes(32).toString("base64url");
+    await this.repository.updateSessionCsrf(tokenHash, this.sessionHasher.hash(`csrf:${csrfToken}`), now);
+    return { csrfToken };
+  }
+
   async revoke(sessionToken: string, now = new Date()): Promise<void> {
     await this.repository.revokeSession(this.sessionHasher.hash(`session:${sessionToken}`), now);
   }

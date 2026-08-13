@@ -50,11 +50,15 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
   });
 
   app.get("/v1/session", async (request, reply) => {
-    const session = await options.sessionService.authenticate(request.cookies[options.cookieName]);
+    const token = request.cookies[options.cookieName];
+    const session = await options.sessionService.authenticate(token);
     if (!session) return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
+    const rotated = await options.sessionService.rotateCsrf(token);
+    if (!rotated) return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
     return reply.send({
       data: {
         authenticated: true,
+        csrfToken: rotated.csrfToken,
         profileStatus: session.user.status,
         expiresAt: session.expiresAt.toISOString(),
       },

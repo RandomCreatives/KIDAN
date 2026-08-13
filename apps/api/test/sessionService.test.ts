@@ -43,4 +43,22 @@ describe("SessionService", () => {
     expect(service.verifyCsrf(session!, issued.csrfToken)).toBe(true);
     expect(service.verifyCsrf(session!, issued.sessionToken)).toBe(false);
   });
+
+  it("rotates a CSRF token on demand and invalidates the previous token", async () => {
+    const { service } = fixture();
+    const issued = await service.issueForTelegramUser(1n, new Date());
+    const rotated = await service.rotateCsrf(issued.sessionToken);
+    expect(rotated).not.toBeNull();
+    expect(rotated!.csrfToken).toHaveLength(43);
+    expect(rotated!.csrfToken).not.toBe(issued.csrfToken);
+    const session = await service.authenticate(issued.sessionToken);
+    expect(session).not.toBeNull();
+    expect(service.verifyCsrf(session!, rotated!.csrfToken)).toBe(true);
+    expect(service.verifyCsrf(session!, issued.csrfToken)).toBe(false);
+  });
+
+  it("returns null when rotating a missing session", async () => {
+    const { service } = fixture();
+    expect(await service.rotateCsrf("not-a-real-token")).toBeNull();
+  });
 });

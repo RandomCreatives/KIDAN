@@ -72,4 +72,46 @@ describe("authentication routes", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("STALE_INIT_DATA");
   });
+
+  it("restores a session with a freshly rotated CSRF token", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+      secureCookies: false,
+    });
+    const auth = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("900719925474001") },
+    });
+    expect(auth.statusCode).toBe(200);
+    const cookie = auth.headers["set-cookie"];
+    const session = await app.inject({ method: "GET", url: "/v1/session", headers: { cookie } });
+    expect(session.statusCode).toBe(200);
+    const body = session.json().data;
+    expect(body).toMatchObject({ authenticated: true, profileStatus: "new" });
+    expect(typeof body.csrfToken).toBe("string");
+    expect(body.csrfToken).toHaveLength(43);
+    expect(body.csrfToken).not.toBe(auth.json().data.csrfToken);
+  });
+
+  it("rejects session restore without a cookie", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const response = await app.inject({ method: "GET", url: "/v1/session" });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe("UNAUTHENTICATED");
+  });
 });
