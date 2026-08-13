@@ -1,10 +1,10 @@
 # Agent Handoff
 
-Last updated: 2026-08-12
+Last updated: 2026-08-13
 
 ## Current state
 - Public repository target: `https://github.com/RandomCreatives/KIDAN`.
-- Local `main` and `origin/main` both include the persistence-foundation milestone at `72101b1`; the reviewed commit is already published through a normal push, so no rebase or force-push is required.
+- Local `main` and `origin/main` both include the Phase 01 closeout at `053fb6e` (reviewed APPROVED, CI run `31609259659`); the underlying persistence-foundation milestone is `72101b1`. Published through a normal push, so no rebase or force-push is required.
 - A staged phase roadmap exists in `00_ROADMAP_INDEX.txt` and `01`–`09` phase files (untracked planning docs). Phase 01 (publish + PostgreSQL validation) is the immediate next work; Workstream A (publish) is done.
 - The Mini App remains a synthetic, values-first, photo-free prototype.
 - The API has a persistence foundation: PostgreSQL Compose config, ordered checksum-tracked migrations, readiness checks, strict environment parsing, a PostgreSQL repository, opaque cookie sessions, CSRF/origin controls, resumable public drafts, separately encrypted private identity, consent receipts, and review-pending submission.
