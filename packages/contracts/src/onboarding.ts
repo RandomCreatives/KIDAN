@@ -155,6 +155,9 @@ export const draftSaveResponseSchema = z.object({
   currentStep: onboardingStepSchema,
 });
 
+export type DraftResponse = z.infer<typeof draftResponseSchema>;
+export type DraftSaveResponse = z.infer<typeof draftSaveResponseSchema>;
+
 export const onboardingFieldVisibility = {
   "privateIdentity.fullName": "admin_only",
   "privateIdentity.dateOfBirth": "admin_only",
