@@ -10,6 +10,7 @@ import {
   type MaritalStatus,
   type ValueTag,
 } from "@kidan/contracts";
+import { useAuth } from "../auth/useAuth";
 import { Brand } from "../components/Brand";
 import {
   ArrowLeftIcon,
@@ -28,6 +29,7 @@ import { ChoiceChips, Field, SegmentedChoice, StepHeading, ToggleCard, Visibilit
 import { PublicPreview } from "./PublicPreview";
 import { cityOptions, marriageOptions, maritalOptions, valueOptions } from "./options";
 import { initialOnboardingState, syntheticOnboardingState, type OnboardingFormState } from "./types";
+import { useOnboardingDraft } from "./useOnboardingDraft";
 
 interface OnboardingFlowProps {
   onExit: () => void;
@@ -58,6 +60,9 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { isDemo } = useAuth();
+  const { conflict, saveProgress, reloadLatest } = useOnboardingDraft(draft, setDraft);
 
   const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step]);
 
@@ -111,6 +116,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
     }
     setError(null);
     haptic("decision");
+    saveProgress(step, draft);
     if (step === steps.length - 1) {
       setSubmitted(true);
       haptic("success");
@@ -122,6 +128,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
 
   const goBack = () => {
     setError(null);
+    saveProgress(step, draft);
     setStep((current) => Math.max(0, current - 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -154,7 +161,13 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
       <div className="progress-meta"><span>{steps[step]}</span><strong>{step + 1} of {steps.length}</strong></div>
       <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
 
-      {error && <div className="form-error" role="alert">{error}</div>}
+       {error && <div className="form-error" role="alert">{error}</div>}
+       {conflict && !isDemo && (
+         <div className="form-error draft-conflict" role="alert">
+           <span>Your saved progress changed elsewhere. Reload the latest draft?</span>
+           <button type="button" className="sample-link" onClick={() => reloadLatest()}>Reload latest</button>
+         </div>
+       )}
 
       <div className="onboarding-content">
         {step === 0 && (
