@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from "react";
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { useOnboardingDraft, type OnboardingDraftController } from "./useOnboardingDraft.js";
@@ -41,6 +41,22 @@ function draftEmpty(): Response {
         currentStep: "eligibility",
         payload: {},
         version: 0,
+        submitted: false,
+        identityComplete: false,
+      },
+    }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+function draftWithVersion(version: number, payload: Record<string, unknown>): Response {
+  return new Response(
+    JSON.stringify({
+      data: {
+        schemaVersion: "2026-08-12.v1",
+        currentStep: "eligibility",
+        payload,
+        version,
         submitted: false,
         identityComplete: false,
       },
@@ -108,18 +124,44 @@ describe("useOnboardingDraft", () => {
     mountHarness();
     await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
 
-    const first = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
+    const first = await act(async () => ctrlRef.current!.saveProgress(2, syntheticOnboardingState));
     expect(first.success).toBe(true);
     expect(first.persisted).toBe(true);
     expect(ctrlRef.current!.conflict).toBe(false);
 
-    const second = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
+    const second = await act(async () => ctrlRef.current!.saveProgress(2, syntheticOnboardingState));
     expect(second.success).toBe(false);
     expect(second.persisted).toBe(false);
     await waitFor(() => expect(ctrlRef.current!.conflict).toBe(true));
   });
 
-  it("initializes persisted state from an existing server draft (T3-02)", async () => {
+  it("derives persisted=true from an existing server draft without a PUT (T3-02 / T4-05)", async () => {
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method !== "PUT") {
+        return Promise.resolve(
+          draftWithVersion(2, { publicProfile: { city: "Saved City" }, faithAndFamily: { bio: "A saved introduction that is long enough." } }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { version: 3, currentStep: "public_profile" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    mountHarness();
+    await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
+    expect(ctrlRef.current!.persisted).toBe(true);
+    expect(ctrlRef.current!.resumedStep).not.toBeNull();
+    const putCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/onboarding/draft") && call[1]?.method === "PUT");
+    expect(putCalls.length).toBe(0);
+  });
+
+  it("initializes persisted state as false for a fresh draft (T3-02)", async () => {
     const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
       if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
       if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
@@ -139,9 +181,11 @@ describe("useOnboardingDraft", () => {
     await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
     expect(ctrlRef.current!.persisted).toBe(false);
 
-    const saved = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
-    expect(saved.success).toBe(true);
-    expect(saved.persisted).toBe(true);
+    await act(async () => {
+      const saved = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
+      expect(saved.success).toBe(true);
+      expect(saved.persisted).toBe(true);
+    });
     await waitFor(() => expect(ctrlRef.current!.persisted).toBe(true));
   });
 });
