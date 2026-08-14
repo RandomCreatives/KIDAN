@@ -5,14 +5,15 @@ interface AuthGateProps {
   children: ReactNode;
 }
 
-function GateScreen({ title, message, action, actionLabel }: {
+function GateScreen({ title, message, action, actionLabel, busy }: {
   title: string;
   message: string;
   action?: () => void;
   actionLabel?: string;
+  busy?: boolean;
 }) {
   return (
-    <main className="screen standard-screen auth-gate">
+    <main className="screen standard-screen auth-gate" aria-live="polite" aria-busy={busy ? "true" : undefined}>
       <section className="page-intro">
         <span className="section-kicker">Kidan</span>
         <h1>{title}</h1>
@@ -37,7 +38,7 @@ export function AuthGate({ children }: AuthGateProps) {
       return <>{children}</>;
     case "initializing":
     case "authenticating":
-      return <GateScreen title="Connecting…" message="Securing your private session." />;
+      return <GateScreen title="Connecting…" message="Securing your private session." busy />;
     case "unauthenticated":
       return (
         <GateScreen

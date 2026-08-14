@@ -1,4 +1,4 @@
-import { telegramAuthRequestSchema } from "@kidan/contracts";
+import { sessionStatusSchema, telegramAuthRequestSchema, telegramAuthResponseSchema } from "@kidan/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import { SessionAccessError, type SessionService } from "../auth/sessionService.js";
 import { TelegramValidationError, validateTelegramInitData } from "../auth/telegramInitData.js";
@@ -30,14 +30,17 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         sameSite: "strict",
         maxAge: Math.max(1, Math.floor((issued.expiresAt.getTime() - Date.now()) / 1000)),
       });
-      return reply.code(200).send({
-        data: {
-          authenticated: true,
-          csrfToken: issued.csrfToken,
-          profileStatus: issued.profileStatus,
-          expiresAt: issued.expiresAt.toISOString(),
-        },
+      const response = telegramAuthResponseSchema.safeParse({
+        authenticated: true,
+        csrfToken: issued.csrfToken,
+        profileStatus: issued.profileStatus,
+        expiresAt: issued.expiresAt.toISOString(),
       });
+      if (!response.success) {
+        request.log.error({ msg: "telegram auth response failed contract validation", error: response.error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      return reply.code(200).send({ data: response.data });
     } catch (error) {
       if (error instanceof TelegramValidationError) {
         return reply.code(401).send({ error: { code: error.code, requestId: request.id } });
@@ -53,14 +56,17 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
     const token = request.cookies[options.cookieName];
     const restored = await options.sessionService.restoreSession(token);
     if (!restored) return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
-    return reply.send({
-      data: {
-        authenticated: true,
-        csrfToken: restored.csrfToken,
-        profileStatus: restored.profileStatus,
-        expiresAt: restored.expiresAt.toISOString(),
-      },
+    const response = sessionStatusSchema.safeParse({
+      authenticated: true,
+      csrfToken: restored.csrfToken,
+      profileStatus: restored.profileStatus,
+      expiresAt: restored.expiresAt.toISOString(),
     });
+    if (!response.success) {
+      request.log.error({ msg: "session status response failed contract validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
   });
 
   app.post("/v1/session/logout", async (request, reply) => {

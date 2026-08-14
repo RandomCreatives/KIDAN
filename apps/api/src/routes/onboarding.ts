@@ -1,4 +1,9 @@
-import { onboardingProgressPatchSchema, onboardingSubmitRequestSchema } from "@kidan/contracts";
+import {
+  draftResponseSchema,
+  draftSaveResponseSchema,
+  onboardingProgressPatchSchema,
+  onboardingSubmitRequestSchema,
+} from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import type { SessionService } from "../auth/sessionService.js";
@@ -64,25 +69,29 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
       options.onboardingService.getDraft(session.user.id),
       options.onboardingService.hasCompletePrivateIdentity(session.user.id),
     ]);
-    return reply.send({
-      data: draft
-        ? {
-            schemaVersion: draft.schemaVersion,
-            currentStep: draft.currentStep,
-            payload: draft.publicPayload,
-            version: draft.version,
-            submitted: Boolean(draft.submittedAt),
-            identityComplete,
-          }
-        : {
-            schemaVersion: "2026-08-12.v1",
-            currentStep: "eligibility",
-            payload: {},
-            version: 0,
-            submitted: false,
-            identityComplete,
-          },
-    });
+    const responseData = draft
+      ? {
+          schemaVersion: draft.schemaVersion,
+          currentStep: draft.currentStep,
+          payload: draft.publicPayload,
+          version: draft.version,
+          submitted: Boolean(draft.submittedAt),
+          identityComplete,
+        }
+      : {
+          schemaVersion: "2026-08-12.v1",
+          currentStep: "eligibility",
+          payload: {},
+          version: 0,
+          submitted: false,
+          identityComplete,
+        };
+    const validated = draftResponseSchema.safeParse(responseData);
+    if (!validated.success) {
+      request.log.error({ msg: "draft response failed contract validation", error: validated.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: validated.data });
   });
 
   app.put("/v1/onboarding/draft", async (request, reply) => {
@@ -91,7 +100,13 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     try {
       const progress = onboardingProgressPatchSchema.parse(request.body);
       const saved = await options.onboardingService.saveProgress(session.user.id, progress);
-      return reply.send({ data: { version: saved.version, currentStep: saved.currentStep } });
+      const responseData = { version: saved.version, currentStep: saved.currentStep };
+      const validated = draftSaveResponseSchema.safeParse(responseData);
+      if (!validated.success) {
+        request.log.error({ msg: "draft save response failed contract validation", error: validated.error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      return reply.send({ data: validated.data });
     } catch (error) {
       return sendDomainError(error, request, reply);
     }
