@@ -150,13 +150,6 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     );
   }
 
-  async updateSessionCsrf(tokenHash: Buffer, csrfTokenHash: Buffer, now: Date): Promise<void> {
-    await this.pool.query(
-      `UPDATE app_session SET csrf_token_hash = $2 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > $3`,
-      [tokenHash, csrfTokenHash, now],
-    );
-  }
-
   async getDraft(userId: string): Promise<DraftRecord | null> {
     const result = await this.pool.query<DraftRow>(`
       SELECT user_id, schema_version, current_step, public_payload_json,

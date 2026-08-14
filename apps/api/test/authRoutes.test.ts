@@ -73,7 +73,7 @@ describe("authentication routes", () => {
     expect(response.json().error.code).toBe("STALE_INIT_DATA");
   });
 
-  it("restores a session with a freshly rotated CSRF token", async () => {
+  it("restores a session with a stable CSRF token that verifies", async () => {
     const repository = new MemoryPersistenceRepository();
     app = await buildApp({
       botToken,
@@ -90,6 +90,7 @@ describe("authentication routes", () => {
       payload: { initData: signedInitData("900719925474001") },
     });
     expect(auth.statusCode).toBe(200);
+    const authCsrf = auth.json().data.csrfToken;
     const cookie = auth.headers["set-cookie"];
     const session = await app.inject({ method: "GET", url: "/v1/session", headers: { cookie } });
     expect(session.statusCode).toBe(200);
@@ -97,7 +98,18 @@ describe("authentication routes", () => {
     expect(body).toMatchObject({ authenticated: true, profileStatus: "new" });
     expect(typeof body.csrfToken).toBe("string");
     expect(body.csrfToken).toHaveLength(43);
-    expect(body.csrfToken).not.toBe(auth.json().data.csrfToken);
+    expect(body.csrfToken).toBe(authCsrf);
+    const session2 = await app.inject({ method: "GET", url: "/v1/session", headers: { cookie } });
+    expect(session2.json().data.csrfToken).toBe(authCsrf);
+
+    const logout = await app.inject({
+      method: "POST",
+      url: "/v1/session/logout",
+      headers: { cookie, "x-csrf-token": authCsrf },
+    });
+    expect(logout.statusCode).toBe(204);
+    const afterLogout = await app.inject({ method: "GET", url: "/v1/session", headers: { cookie } });
+    expect(afterLogout.statusCode).toBe(401);
   });
 
   it("rejects session restore without a cookie", async () => {

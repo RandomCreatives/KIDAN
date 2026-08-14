@@ -34,7 +34,7 @@ export class SessionService {
     });
     if (user.status === "suspended" || user.status === "deleted") throw new SessionAccessError();
     const sessionToken = randomBytes(32).toString("base64url");
-    const csrfToken = randomBytes(32).toString("base64url");
+    const csrfToken = this.computeCsrf(sessionToken);
     const expiresAt = new Date(now.getTime() + this.ttlSeconds * 1000);
 
     await this.repository.createSession({
@@ -65,15 +65,24 @@ export class SessionService {
     return Boolean(csrfToken && csrfToken.length <= 128 && this.sessionHasher.matches(`csrf:${csrfToken}`, session.csrfTokenHash));
   }
 
-  async rotateCsrf(sessionToken: string | undefined, now = new Date()): Promise<{ csrfToken: string } | null> {
+  deriveCsrfToken(sessionToken: string | undefined): string | null {
     if (!sessionToken || sessionToken.length > 128) return null;
-    const tokenHash = this.sessionHasher.hash(`session:${sessionToken}`);
-    const session = await this.repository.findActiveSession(tokenHash, now);
+    return this.computeCsrf(sessionToken);
+  }
+
+  private computeCsrf(sessionToken: string): string {
+    return this.sessionHasher.hash(`csrf:${sessionToken}`).toString("base64url");
+  }
+
+  async restoreSession(
+    sessionToken: string | undefined,
+    now = new Date(),
+  ): Promise<{ csrfToken: string; profileStatus: SessionRecord["user"]["status"]; expiresAt: Date } | null> {
+    const session = await this.authenticate(sessionToken, now);
     if (!session) return null;
-    if (session.user.status === "suspended" || session.user.status === "deleted") return null;
-    const csrfToken = randomBytes(32).toString("base64url");
-    await this.repository.updateSessionCsrf(tokenHash, this.sessionHasher.hash(`csrf:${csrfToken}`), now);
-    return { csrfToken };
+    const csrfToken = this.deriveCsrfToken(sessionToken);
+    if (!csrfToken) return null;
+    return { csrfToken, profileStatus: session.user.status, expiresAt: session.expiresAt };
   }
 
   async revoke(sessionToken: string, now = new Date()): Promise<void> {

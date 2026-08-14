@@ -199,6 +199,29 @@ describe("PostgreSQL repository integration", () => {
     expect(await services.sessions.authenticate(issued.sessionToken)).toBeNull();
   });
 
+  it("restores a stable CSRF token and verifies it for an active session", async () => {
+    const issued = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date());
+    const first = await services.sessions.restoreSession(issued.sessionToken);
+    const second = await services.sessions.restoreSession(issued.sessionToken);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(second!.csrfToken).toBe(first!.csrfToken);
+    const session = await services.sessions.authenticate(issued.sessionToken);
+    expect(session).not.toBeNull();
+    expect(services.sessions.verifyCsrf(session!, second!.csrfToken)).toBe(true);
+  });
+
+  it("does not yield a usable CSRF token for a revoked or expired session", async () => {
+    const issued = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date());
+    expect(await services.sessions.restoreSession(issued.sessionToken)).not.toBeNull();
+    await services.sessions.revoke(issued.sessionToken);
+    expect(await services.sessions.restoreSession(issued.sessionToken)).toBeNull();
+
+    const expired = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date("2026-08-12T10:00:00Z"));
+    const afterExpiry = new Date(expired.expiresAt.getTime() + 1_000);
+    expect(await services.sessions.restoreSession(expired.sessionToken, afterExpiry)).toBeNull();
+  });
+
   it("rejects expired sessions independently of revocation", async () => {
     const issued = await services.sessions.issueForTelegramUser(nextTelegramId++, new Date());
     expect(await services.sessions.authenticate(issued.sessionToken)).not.toBeNull();

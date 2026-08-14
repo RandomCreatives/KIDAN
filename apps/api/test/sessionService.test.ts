@@ -44,21 +44,34 @@ describe("SessionService", () => {
     expect(service.verifyCsrf(session!, issued.sessionToken)).toBe(false);
   });
 
-  it("rotates a CSRF token on demand and invalidates the previous token", async () => {
+  it("returns a stable CSRF token on restore that verifies", async () => {
     const { service } = fixture();
     const issued = await service.issueForTelegramUser(1n, new Date());
-    const rotated = await service.rotateCsrf(issued.sessionToken);
-    expect(rotated).not.toBeNull();
-    expect(rotated!.csrfToken).toHaveLength(43);
-    expect(rotated!.csrfToken).not.toBe(issued.csrfToken);
+    const first = await service.restoreSession(issued.sessionToken);
+    const second = await service.restoreSession(issued.sessionToken);
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(second!.csrfToken).toBe(first!.csrfToken);
     const session = await service.authenticate(issued.sessionToken);
     expect(session).not.toBeNull();
-    expect(service.verifyCsrf(session!, rotated!.csrfToken)).toBe(true);
-    expect(service.verifyCsrf(session!, issued.csrfToken)).toBe(false);
+    expect(service.verifyCsrf(session!, second!.csrfToken)).toBe(true);
   });
 
-  it("returns null when rotating a missing session", async () => {
+  it("returns null when restoring a missing session", async () => {
     const { service } = fixture();
-    expect(await service.rotateCsrf("not-a-real-token")).toBeNull();
+    expect(await service.restoreSession("not-a-real-token")).toBeNull();
+  });
+
+  it("does not invalidate one restore with a concurrent restore on the same session", async () => {
+    const { service } = fixture();
+    const issued = await service.issueForTelegramUser(1n, new Date());
+    const [a, b] = await Promise.all([
+      service.restoreSession(issued.sessionToken),
+      service.restoreSession(issued.sessionToken),
+    ]);
+    expect(a!.csrfToken).toBe(b!.csrfToken);
+    const session = await service.authenticate(issued.sessionToken);
+    expect(service.verifyCsrf(session!, a!.csrfToken)).toBe(true);
+    expect(service.verifyCsrf(session!, b!.csrfToken)).toBe(true);
   });
 });

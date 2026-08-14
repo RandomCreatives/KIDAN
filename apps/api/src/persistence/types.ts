@@ -58,7 +58,6 @@ export interface PersistenceRepository {
   findActiveSession(tokenHash: Buffer, now: Date): Promise<SessionRecord | null>;
   revokeSession(tokenHash: Buffer, now: Date): Promise<void>;
   touchSession(sessionId: string, now: Date): Promise<void>;
-  updateSessionCsrf(tokenHash: Buffer, csrfTokenHash: Buffer, now: Date): Promise<void>;
   getDraft(userId: string): Promise<DraftRecord | null>;
   saveDraft(input: {
     userId: string;
