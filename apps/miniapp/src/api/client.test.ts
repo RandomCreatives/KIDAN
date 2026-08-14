@@ -121,11 +121,40 @@ describe("KidanApiClient", () => {
     );
   });
 
-  it("propagates network failures", async () => {
+  it("propagates network failures as a typed NETWORK error", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("network down"));
     const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
     const error = await client.getSession().catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("network down");
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe("NETWORK");
+  });
+
+  it("fails closed on malformed (non-JSON) success body", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("502 Bad Gateway", { status: 502, headers: { "content-type": "text/plain" } }));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+    expect((error as ApiError).status).toBe(502);
+  });
+
+  it("fails closed on malformed JSON in a 200 body", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response("{not json", { status: 200, headers: { "content-type": "application/json" } }));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+  });
+
+  it("preserves a known error code even when requestId is absent", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: "UNAUTHENTICATED" } }, 401));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("UNAUTHENTICATED");
+    expect((error as ApiError).requestId).toBeUndefined();
   });
 });

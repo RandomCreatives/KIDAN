@@ -126,4 +126,73 @@ describe("authentication routes", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("UNAUTHENTICATED");
   });
+
+  it("rejects logout with a missing session (401)", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/logout",
+      headers: { "x-csrf-token": "x".repeat(43) },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("rejects logout with an invalid CSRF token (403)", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const auth = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("900719925474002") },
+    });
+    const cookie = auth.headers["set-cookie"];
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/logout",
+      headers: { cookie, "x-csrf-token": "y".repeat(43) },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("INVALID_CSRF");
+  });
+
+  it("returns the same stable CSRF token for concurrent restorations (R2-02)", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const auth = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("900719925474003") },
+    });
+    const cookie = auth.headers["set-cookie"];
+    const [first, second] = await Promise.all([
+      app.inject({ method: "GET", url: "/v1/session", headers: { cookie } }),
+      app.inject({ method: "GET", url: "/v1/session", headers: { cookie } }),
+    ]);
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(first.json().data.csrfToken).toBe(second.json().data.csrfToken);
+  });
 });
