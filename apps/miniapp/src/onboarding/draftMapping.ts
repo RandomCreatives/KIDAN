@@ -74,6 +74,27 @@ export function stepToServerStep(stepIndex: number): DraftStep {
   }
 }
 
+const SERVER_STEP_TO_CANONICAL: Record<string, number> = {
+  eligibility: 0,
+  private_identity: 1,
+  public_profile: 2,
+  faith_and_family: 3,
+  partner_preferences: 4,
+  public_preview: 5,
+  consent: 6,
+};
+
+export function serverStepToClientStep(serverStep: string, isDemo: boolean): number {
+  const canonical = SERVER_STEP_TO_CANONICAL[serverStep] ?? 0;
+  const active = isDemo ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5];
+  let best = 0;
+  for (let i = 0; i < active.length; i += 1) {
+    const value = active[i];
+    if (value !== undefined && value <= canonical) best = i;
+  }
+  return best;
+}
+
 export function mergeFormFromPayload(
   prev: OnboardingFormState,
   payload: Record<string, unknown>,
@@ -90,6 +111,26 @@ export function mergeFormFromPayload(
     ...(faithAndFamily ? { faithAndFamily: { ...prev.faithAndFamily, ...faithAndFamily } } : {}),
     ...(partnerPreferences
       ? { partnerPreferences: { ...prev.partnerPreferences, ...partnerPreferences } }
+      : {}),
+  } as unknown as OnboardingFormState;
+}
+
+export function resetFormFromPayload(
+  defaults: OnboardingFormState,
+  payload: Record<string, unknown>,
+): OnboardingFormState {
+  const eligibility = pickValidFields(eligibilitySchema, payload.eligibility);
+  const publicProfile = pickValidFields(publicProfileDraftSchema, payload.publicProfile);
+  const faithAndFamily = pickValidFields(faithAndFamilyDraftSchema, payload.faithAndFamily);
+  const partnerPreferences = pickValidFields(partnerPreferencesDraftSchema, payload.partnerPreferences);
+
+  return {
+    ...defaults,
+    ...(eligibility ? { eligibility: { ...defaults.eligibility, ...eligibility } } : {}),
+    ...(publicProfile ? { publicProfile: { ...defaults.publicProfile, ...publicProfile } } : {}),
+    ...(faithAndFamily ? { faithAndFamily: { ...defaults.faithAndFamily, ...faithAndFamily } } : {}),
+    ...(partnerPreferences
+      ? { partnerPreferences: { ...defaults.partnerPreferences, ...partnerPreferences } }
       : {}),
   } as unknown as OnboardingFormState;
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   consentDraftSchema,
   eligibilitySchema,
@@ -33,7 +33,7 @@ import { useOnboardingDraft } from "./useOnboardingDraft";
 
 interface OnboardingFlowProps {
   mode: "demo" | "real";
-  onExit: () => void;
+  onExit: (saved?: boolean) => void;
   onComplete: () => void;
 }
 
@@ -62,6 +62,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedEver, setSavedEver] = useState(false);
+  const appliedResumeRef = useRef(false);
 
   const {
     hydrated,
@@ -69,6 +71,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     saving,
     saveError,
     conflict,
+    reloadError,
+    resumedStep,
     retryLoad,
     saveProgress,
     reloadLatest,
@@ -79,6 +83,13 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     [isDemo],
   );
   const currentIndex = activeIndices[step] ?? 0;
+
+  useEffect(() => {
+    if (hydrated && resumedStep != null && !appliedResumeRef.current) {
+      appliedResumeRef.current = true;
+      setStep(resumedStep);
+    }
+  }, [hydrated, resumedStep]);
 
   const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
 
@@ -122,7 +133,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     return null;
   };
 
-  const continueFlow = () => {
+  const continueFlow = async () => {
     const message = validationMessage();
     if (message) {
       setError(message);
@@ -132,7 +143,12 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     }
     setError(null);
     haptic("decision");
-    saveProgress(currentIndex, draft);
+    const saved = await saveProgress(currentIndex, draft);
+    if (!saved) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setSavedEver(true);
     if (step === activeIndices.length - 1) {
       setSubmitted(true);
       haptic("success");
@@ -144,7 +160,6 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
   const goBack = () => {
     setError(null);
-    saveProgress(currentIndex, draft);
     setStep((current) => Math.max(0, current - 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -154,7 +169,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       <main className="onboarding-shell">
         <header className="onboarding-topbar">
           <Brand />
-          <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding"><XIcon size={19} /></button>
+          <button className="icon-button" type="button" onClick={() => onExit(savedEver)} aria-label="Exit onboarding"><XIcon size={19} /></button>
         </header>
         <section className="page-intro">
           <span className="section-kicker">Kidan</span>
@@ -206,7 +221,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     <main className="onboarding-shell">
       <header className="onboarding-topbar">
         <Brand />
-        <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding"><XIcon size={19} /></button>
+        <button className="icon-button" type="button" onClick={() => onExit(savedEver)} aria-label="Exit onboarding"><XIcon size={19} /></button>
       </header>
 
       <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
@@ -214,11 +229,11 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
       {error && <div className="form-error" role="alert">{error}</div>}
       {saveError && <div className="form-error" role="alert">{saveError}</div>}
-      {saving && <div className="form-notice" role="status">Saving…</div>}
-      {conflict && !isDemo && (
-        <div className="form-error draft-conflict" role="alert">
-          <span>Your saved progress changed elsewhere. Reload the latest draft?</span>
-          <button type="button" className="sample-link" onClick={() => reloadLatest()}>Reload latest</button>
+      {saving && <div className="form-notice" role="status" aria-live="polite">Saving…</div>}
+      {(conflict || reloadError) && !isDemo && (
+        <div className="form-error draft-conflict" role="alert" aria-live="assertive">
+          <span>{reloadError ? "Could not reload the latest draft. Try again." : "Your saved progress changed elsewhere. Reload the latest draft?"}</span>
+          <button type="button" className="sample-link" onClick={() => reloadLatest()} disabled={saving}>Reload latest</button>
         </div>
       )}
       {!isDemo && (
@@ -329,8 +344,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
         {currentIndex === 5 && (
           <>
-            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection before saving anything for administrator approval." />
-            <PublicPreview draft={draft} />
+            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection. Submission for administrator approval is not enabled in this preview." />
+            <PublicPreview draft={draft} mode={mode} />
             <div className="preview-rule"><LockIcon size={17} /><p>The private verification photo cannot later become a discovery photo without a separate upload and a new consent.</p></div>
           </>
         )}
@@ -355,8 +370,14 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       </div>
 
       <footer className="onboarding-footer">
-        {step > 0 ? <button className="back-button" type="button" onClick={goBack}><ArrowLeftIcon size={18} /> Back</button> : <button className="back-button" type="button" onClick={onExit}>Explore demo</button>}
-        <button className="continue-button" type="button" onClick={continueFlow}>{currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span></button>
+        {step > 0 ? (
+          <button className="back-button" type="button" onClick={goBack} disabled={saving || conflict || reloadError}><ArrowLeftIcon size={18} /> Back</button>
+        ) : (
+          <button className="back-button" type="button" onClick={() => onExit(savedEver)} disabled={saving || conflict || reloadError}>{isDemo ? "Explore demo" : "Exit"}</button>
+        )}
+        <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={saving || conflict || reloadError}>
+          {currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span>
+        </button>
       </footer>
     </main>
   );
