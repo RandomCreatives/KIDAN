@@ -46,10 +46,11 @@ export const apiErrorCodeSchema = z.enum([
   "INVALID_USER",
   "NOT_FOUND",
   "INTERNAL_ERROR",
+  "INVALID_RESPONSE",
 ]);
 
 export const apiErrorSchema = z.object({
-  code: z.string(),
+  code: apiErrorCodeSchema,
   requestId: z.string(),
 });
 
