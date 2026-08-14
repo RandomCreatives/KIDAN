@@ -121,6 +121,50 @@ describe("KidanApiClient", () => {
     );
   });
 
+  it("preserves a valid logout 401 UNAUTHENTICATED envelope", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ error: { code: "UNAUTHENTICATED", requestId: "logout_absent" } }, 401),
+    );
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.logout("csrf-token").catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe("UNAUTHENTICATED");
+    expect((error as ApiError).status).toBe(401);
+    expect((error as ApiError).requestId).toBe("logout_absent");
+  });
+
+  it("preserves a valid logout 500 envelope", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      jsonResponse({ error: { code: "INTERNAL_ERROR", requestId: "logout_failed" } }, 500),
+    );
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.logout("csrf-token").catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INTERNAL_ERROR");
+    expect((error as ApiError).status).toBe(500);
+  });
+
+  it.each([200, 201, 202])("rejects successful logout status %s because only 204 confirms revocation", async (status) => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: {} }, status));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.logout("csrf-token").catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+    expect((error as ApiError).status).toBe(status);
+  });
+
+  it("maps response-body read failures to NETWORK", async () => {
+    const response = {
+      status: 500,
+      ok: false,
+      text: vi.fn().mockRejectedValue(new Error("body stream failed")),
+    } as unknown as Response;
+    const client = new KidanApiClient({
+      fetchImpl: vi.fn().mockResolvedValue(response) as unknown as typeof fetch,
+    });
+    const error = await client.logout("csrf-token").catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("NETWORK");
+    expect((error as ApiError).status).toBe(500);
+  });
+
   it("propagates network failures as a typed NETWORK error", async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error("network down"));
     const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });

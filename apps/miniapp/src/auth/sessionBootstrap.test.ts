@@ -48,6 +48,20 @@ describe("resolveSession", () => {
     expect(deps.authenticateWithTelegram).not.toHaveBeenCalled();
   });
 
+  it("does not start Telegram authentication after lifecycle cancellation", async () => {
+    const deps = {
+      getSession: vi.fn().mockRejectedValue(new ApiError("UNAUTHENTICATED", 401)),
+      authenticateWithTelegram: vi.fn().mockResolvedValue(issued()),
+      getInitData: vi.fn().mockReturnValue("init"),
+      canAuthenticate: vi.fn().mockReturnValue(false),
+      onAuthenticating: vi.fn(),
+    };
+    const result = await resolveSession(deps);
+    expect(result).toEqual({ kind: "unauthenticated" });
+    expect(deps.authenticateWithTelegram).not.toHaveBeenCalled();
+    expect(deps.onAuthenticating).not.toHaveBeenCalled();
+  });
+
   it("reports unavailable when the account cannot authenticate", async () => {
     const deps = {
       getSession: vi.fn().mockRejectedValue(new ApiError("UNAUTHENTICATED", 401)),

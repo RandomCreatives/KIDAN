@@ -11,6 +11,7 @@ export interface BootstrapDeps {
   getSession: () => Promise<SessionStatus>;
   authenticateWithTelegram: (initData: string) => Promise<TelegramAuthResponse>;
   getInitData: () => string;
+  canAuthenticate?: () => boolean;
   onAuthenticating?: () => void;
 }
 
@@ -32,7 +33,7 @@ export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResu
   } catch (error) {
     if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
       const initData = deps.getInitData();
-      if (!initData) return { kind: "unauthenticated" };
+      if (!initData || deps.canAuthenticate?.() === false) return { kind: "unauthenticated" };
       deps.onAuthenticating?.();
       try {
         const issued = await deps.authenticateWithTelegram(initData);

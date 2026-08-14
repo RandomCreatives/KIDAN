@@ -11,7 +11,7 @@ const LABELS: Record<string, string> = {
 };
 
 export function AuthStatusBar() {
-  const { status, isDemo, logout, logoutError } = useAuth();
+  const { status, isDemo, logout, logoutError, loggingOut } = useAuth();
 
   if (isDemo) {
     return (
@@ -23,13 +23,13 @@ export function AuthStatusBar() {
   }
 
   return (
-    <div className="auth-status-bar" role="status">
+    <div className="auth-status-bar" role="status" aria-live="polite" aria-busy={loggingOut ? "true" : undefined}>
       <span className={`auth-dot auth-${status}`} aria-hidden="true" />
-      <span>{LABELS[status] ?? status}</span>
+      <span>{loggingOut ? "Signing out…" : (LABELS[status] ?? status)}</span>
       {logoutError && <span className="auth-logout-error" role="alert">{logoutError}</span>}
       {status === "authenticated" && (
-        <button type="button" className="auth-logout" onClick={() => void logout()}>
-          Sign out
+        <button type="button" className="auth-logout" onClick={() => void logout()} disabled={loggingOut}>
+          {loggingOut ? "Signing out…" : "Sign out"}
         </button>
       )}
     </div>

@@ -116,10 +116,11 @@ export class KidanApiClient {
       throw new ApiError("NETWORK", 0);
     }
 
-    if (response.status === 204) return undefined;
-
-    if (expectStatus !== undefined && response.status !== expectStatus) {
-      throw new ApiError("INVALID_RESPONSE", response.status);
+    if (response.status === 204) {
+      if (expectStatus !== undefined && response.status !== expectStatus) {
+        throw new ApiError("INVALID_RESPONSE", response.status);
+      }
+      return undefined;
     }
 
     let text: string;
@@ -141,6 +142,10 @@ export class KidanApiClient {
       if (!envelope.success) throw new ApiError("INVALID_RESPONSE", response.status);
       const code = apiErrorCodeSchema.safeParse(envelope.data.error.code).data ?? "INVALID_RESPONSE";
       throw new ApiError(code, response.status, envelope.data.error.requestId);
+    }
+
+    if (expectStatus !== undefined && response.status !== expectStatus) {
+      throw new ApiError("INVALID_RESPONSE", response.status);
     }
 
     return parsed.data;

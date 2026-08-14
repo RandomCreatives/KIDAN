@@ -1,368 +1,525 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthProvider } from "./AuthProvider.js";
+import { AuthProvider, type LogoutResult } from "./AuthProvider.js";
 import { useAuth } from "./useAuth.js";
+
+const CSRF_A = "a".repeat(43);
+const CSRF_B = "b".repeat(43);
 
 function setTelegram(initData: string): void {
   (window as unknown as { Telegram: unknown }).Telegram = { WebApp: { initData } };
 }
 
-function sessionUnauthenticated(): Response {
-  return new Response(JSON.stringify({ error: { code: "UNAUTHENTICATED", requestId: "r" } }), {
-    status: 401,
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
     headers: { "content-type": "application/json" },
   });
 }
 
-function telegramOk(): Response {
-  return new Response(
-    JSON.stringify({
-      data: {
-        authenticated: true,
-        csrfToken: "x".repeat(43),
-        profileStatus: "new",
-        expiresAt: new Date(Date.now() + 60000).toISOString(),
-      },
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
-}
-
-function sessionOk(): Response {
-  return new Response(
-    JSON.stringify({
-      data: {
-        authenticated: true,
-        csrfToken: "x".repeat(43),
-        profileStatus: "active",
-        expiresAt: new Date(Date.now() + 60000).toISOString(),
-      },
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
-}
-
 function apiError(code: string, status = 400): Response {
-  return new Response(
-    JSON.stringify({ error: { code, requestId: "req_test1234567890" } }),
-    { status, headers: { "content-type": "application/json" } },
-  );
+  return json({ error: { code, requestId: "req_test1234567890" } }, status);
 }
 
-function defaultFetch(input: string): Promise<Response> {
-  if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
-  if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-  return Promise.resolve(new Response("{}", { status: 200 }));
+function sessionUnauthenticated(): Response {
+  return apiError("UNAUTHENTICATED", 401);
 }
 
-function authedFetch(input: string): Promise<Response> {
-  if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-  if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
-  return Promise.resolve(new Response("{}", { status: 200 }));
+function sessionOk(csrfToken = CSRF_A): Response {
+  return json({
+    data: {
+      authenticated: true,
+      csrfToken,
+      profileStatus: "active",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+  });
+}
+
+function telegramOk(csrfToken = CSRF_A): Response {
+  return json({
+    data: {
+      authenticated: true,
+      csrfToken,
+      profileStatus: "new",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+  });
+}
+
+function csrfHeader(init?: RequestInit): string | undefined {
+  return (init?.headers as Record<string, string> | undefined)?.["x-csrf-token"];
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe("AuthProvider", () => {
   beforeEach(() => {
     setTelegram("valid-init-data");
-    try {
-      window.sessionStorage.clear();
-    } catch {
-      // ignore
-    }
+    window.sessionStorage.clear();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    window.sessionStorage.clear();
   });
 
   it("authenticates through bound client methods (R2-01)", async () => {
-    const fetchImpl = vi.fn((input: string) => defaultFetch(input));
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
-    expect(result.current.csrfToken).toBe("x".repeat(43));
-  });
-
-  it("shares one in-flight bootstrap across concurrent calls (R2-05)", async () => {
-    let resolveSession: (response: Response) => void = () => undefined;
-    const pending = new Promise<Response>((resolve) => {
-      resolveSession = resolve;
-    });
     const fetchImpl = vi.fn((input: string) => {
-      if (input.includes("/v1/session")) return pending;
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
       if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-      return Promise.resolve(new Response("{}", { status: 200 }));
+      return Promise.resolve(json({}));
     });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    act(() => {
-      result.current.retry();
-      result.current.retry();
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(result.current.status).not.toBe("authenticated");
-    const sessionCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/session"));
-    expect(sessionCalls.length).toBe(1);
-
-    await act(async () => {
-      resolveSession(sessionUnauthenticated());
-    });
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(result.current.csrfToken).toBe(CSRF_A);
   });
 
-  it("invalidates and clears local session state", async () => {
-    const fetchImpl = vi.fn((input: string) => defaultFetch(input));
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+  it("shares one in-flight bootstrap across concurrent retry callers", async () => {
+    const pendingSession = deferred<Response>();
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return pendingSession.promise;
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      return Promise.resolve(json({}));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    let first!: ReturnType<typeof result.current.retry>;
+    let second!: ReturnType<typeof result.current.retry>;
+    act(() => {
+      first = result.current.retry();
+      second = result.current.retry();
+    });
+    expect(first).toBe(second);
+    await waitFor(() => {
+      expect(fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/session"))).toHaveLength(1);
+    });
+
+    await act(async () => pendingSession.resolve(sessionUnauthenticated()));
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    expect(fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/auth/telegram"))).toHaveLength(1);
+  });
+
+  it("makes invalidation awaitable and clears local state", async () => {
+    globalThis.fetch = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+      return Promise.resolve(json({}));
+    }) as unknown as typeof fetch;
 
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
-    await act(async () => {
-      result.current.invalidate();
-      await Promise.resolve();
-    });
+    await act(async () => result.current.invalidate());
     expect(result.current.status).toBe("expired");
     expect(result.current.csrfToken).toBeNull();
   });
 
-  it("logs out and clears the local session after server revocation (T3-03)", async () => {
-    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
-      if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-      return defaultFetch(input);
-    });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
-    await act(async () => {
-      await result.current.logout();
-    });
-    expect(result.current.status).toBe("unauthenticated");
-    expect(result.current.csrfToken).toBeNull();
-  });
-
-  it("ignores a bootstrap that resolves after logout (T3-03)", async () => {
-    let resolveSession: (response: Response) => void = () => undefined;
-    const pending = new Promise<Response>((resolve) => {
-      resolveSession = resolve;
-    });
-    const fetchImpl = vi.fn((input: string) => {
-      if (input.includes("/v1/session")) return pending;
-      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-      if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-      return Promise.resolve(new Response("{}", { status: 200 }));
-    });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-    act(() => {
-      result.current.retry();
-    });
-    let logoutPromise: Promise<void> = Promise.resolve();
-    act(() => {
-      logoutPromise = result.current.logout();
-    });
-    await act(async () => {
-      resolveSession(sessionUnauthenticated());
-    });
-    await act(async () => {
-      await logoutPromise;
-    });
-    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
-  });
-
-  describe("T4-01 truthful logout", () => {
-    it("signs out only after the server confirms revocation (204)", async () => {
-      const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
-        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-        return authedFetch(input);
+  describe("truthful final-session logout", () => {
+    it("uses the final GET token and signs out only after 204", async () => {
+      let sessionGets = 0;
+      const logoutHeaders: string[] = [];
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (input.includes("/v1/session/logout")) {
+          logoutHeaders.push(csrfHeader(init) ?? "");
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return Promise.resolve(sessionOk(sessionGets === 1 ? CSRF_A : CSRF_B));
+        }
+        return Promise.resolve(json({}));
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
       await act(async () => {
-        await result.current.logout();
+        outcome = await result.current.logout();
       });
+      expect(outcome).toEqual({ success: true, reason: "revoked" });
+      expect(logoutHeaders).toEqual([CSRF_B]);
       expect(result.current.status).toBe("unauthenticated");
       expect(result.current.csrfToken).toBeNull();
       expect(result.current.logoutError).toBeNull();
     });
 
-    it("treats an already-absent session as signed out", async () => {
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-        return authedFetch(input);
+    it("revokes from the final server session when sessionStorage is unavailable", async () => {
+      vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+        throw new DOMException("storage blocked", "SecurityError");
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-      await waitFor(() => expect(result.current.status).toBe("authenticated"));
-      await act(async () => {
-        window.sessionStorage.clear();
+      vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+        throw new DOMException("storage blocked", "SecurityError");
       });
-      await act(async () => {
-        await result.current.logout();
-      });
-      expect(result.current.status).toBe("unauthenticated");
-    });
-
-    it("keeps the user signed in when the server cannot confirm revocation (network failure)", async () => {
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) return Promise.reject(new Error("network down"));
-        return authedFetch(input);
-      });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-      await waitFor(() => expect(result.current.status).toBe("authenticated"));
-      await act(async () => {
-        await result.current.logout();
-      });
-      expect(result.current.status).toBe("authenticated");
-      expect(result.current.logoutError).not.toBeNull();
-      expect(result.current.csrfToken).not.toBeNull();
-    });
-
-    it("recovers and signs out after a transient logout failure", async () => {
-      let failLogout = true;
-      const fetchImpl = vi.fn((input: string) => {
+      const logoutTokens: string[] = [];
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
         if (input.includes("/v1/session/logout")) {
-          if (failLogout) return Promise.resolve(new Response(null, { status: 500 }));
+          logoutTokens.push(csrfHeader(init) ?? "");
           return Promise.resolve(new Response(null, { status: 204 }));
         }
-        return authedFetch(input);
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk(CSRF_B));
+        return Promise.resolve(json({}));
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
       await act(async () => {
-        await result.current.logout();
+        outcome = await result.current.logout();
       });
-      expect(result.current.status).toBe("authenticated");
-      expect(result.current.logoutError).not.toBeNull();
-
-      await act(async () => {
-        failLogout = false;
-        await result.current.logout();
-      });
+      expect(outcome).toEqual({ success: true, reason: "revoked" });
+      expect(logoutTokens).toEqual([CSRF_B]);
       expect(result.current.status).toBe("unauthenticated");
+    });
+
+    it("treats a real final-session 401 as already absent without POSTing logout", async () => {
+      let sessionGets = 0;
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) {
+          throw new Error("logout must not be called");
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return Promise.resolve(sessionGets === 1 ? sessionOk() : sessionUnauthenticated());
+        }
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
+      await act(async () => {
+        outcome = await result.current.logout();
+      });
+      expect(outcome).toEqual({ success: true, reason: "already-absent" });
+      expect(result.current.status).toBe("unauthenticated");
+      expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("/v1/session/logout"))).toBe(false);
+    });
+
+    it("treats a valid logout POST 401 as a concurrent already-absent session", async () => {
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) return Promise.resolve(sessionUnauthenticated());
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
+      await act(async () => {
+        outcome = await result.current.logout();
+      });
+      expect(outcome).toEqual({ success: true, reason: "already-absent" });
+      expect(result.current.status).toBe("unauthenticated");
+    });
+
+    it.each([
+      ["network", () => Promise.reject(new Error("network down"))],
+      ["valid 500", () => Promise.resolve(apiError("INTERNAL_ERROR", 500))],
+      ["malformed", () => Promise.resolve(new Response("not json", { status: 502 }))],
+    ])("does not claim sign-out when final GET has a %s failure", async (_label, finalResponse) => {
+      let sessionGets = 0;
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) throw new Error("logout must not be called");
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return sessionGets === 1 ? Promise.resolve(sessionOk()) : finalResponse();
+        }
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      window.sessionStorage.clear();
+      let outcome!: LogoutResult;
+      await act(async () => {
+        outcome = await result.current.logout();
+      });
+      expect(outcome.success).toBe(false);
+      expect(result.current.status).toBe("authenticated");
+      expect(result.current.logoutError).toMatch(/not confirmed/i);
+      expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("/v1/session/logout"))).toBe(false);
+    });
+
+    it.each([
+      ["network", () => Promise.reject(new Error("network down"))],
+      ["valid 500", () => Promise.resolve(apiError("INTERNAL_ERROR", 500))],
+      ["malformed 200", () => Promise.resolve(json({}, 200))],
+    ])("keeps the final session retryable when logout has a %s failure", async (_label, logoutResponse) => {
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) return logoutResponse();
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
+      await act(async () => {
+        outcome = await result.current.logout();
+      });
+      expect(outcome.success).toBe(false);
+      expect(result.current.status).toBe("authenticated");
+      expect(result.current.csrfToken).toBe(CSRF_A);
+      expect(result.current.logoutError).toMatch(/not confirmed/i);
+    });
+
+    it("allows an explicit retry after an unconfirmed logout failure", async () => {
+      let fail = true;
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) {
+          return Promise.resolve(fail ? apiError("INTERNAL_ERROR", 500) : new Response(null, { status: 204 }));
+        }
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      await act(async () => {
+        expect((await result.current.logout()).success).toBe(false);
+      });
+      expect(result.current.logoutError).toBeTruthy();
+
+      fail = false;
+      await act(async () => {
+        expect(await result.current.logout()).toEqual({ success: true, reason: "revoked" });
+      });
       expect(result.current.logoutError).toBeNull();
+      expect(result.current.status).toBe("unauthenticated");
     });
 
-    it("keeps the user signed in on a malformed logout response (non-204)", async () => {
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response("{}", { status: 200 }));
-        return authedFetch(input);
+    it("recovers once from INVALID_CSRF using the refreshed final-session token", async () => {
+      let sessionGets = 0;
+      const logoutTokens: string[] = [];
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (input.includes("/v1/session/logout")) {
+          const token = csrfHeader(init) ?? "";
+          logoutTokens.push(token);
+          return Promise.resolve(token === CSRF_A ? apiError("INVALID_CSRF", 403) : new Response(null, { status: 204 }));
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return Promise.resolve(sessionOk(sessionGets < 3 ? CSRF_A : CSRF_B));
+        }
+        return Promise.resolve(json({}));
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
       await act(async () => {
-        await result.current.logout();
+        outcome = await result.current.logout();
       });
+      expect(outcome).toEqual({ success: true, reason: "revoked" });
+      expect(logoutTokens).toEqual([CSRF_A, CSRF_B]);
+      expect(result.current.status).toBe("unauthenticated");
+    });
+
+    it("bounds INVALID_CSRF recovery to one retry and remains truthful on failure", async () => {
+      let sessionGets = 0;
+      const logoutTokens: string[] = [];
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (input.includes("/v1/session/logout")) {
+          logoutTokens.push(csrfHeader(init) ?? "");
+          return Promise.resolve(apiError("INVALID_CSRF", 403));
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return Promise.resolve(sessionOk(sessionGets < 3 ? CSRF_A : CSRF_B));
+        }
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let outcome!: LogoutResult;
+      await act(async () => {
+        outcome = await result.current.logout();
+      });
+      expect(outcome).toEqual({ success: false, reason: "unconfirmed", code: "INVALID_CSRF" });
+      expect(logoutTokens).toEqual([CSRF_A, CSRF_B]);
       expect(result.current.status).toBe("authenticated");
-      expect(result.current.logoutError).not.toBeNull();
+      expect(result.current.csrfToken).toBe(CSRF_B);
     });
 
-    it("keeps the user signed in on INVALID_CSRF logout and allows retry", async () => {
+    it("returns one shared deferred logout promise to repeated callers", async () => {
+      const pendingLogout = deferred<Response>();
       const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) return Promise.resolve(apiError("INVALID_CSRF", 403));
-        return authedFetch(input);
+        if (input.includes("/v1/session/logout")) return pendingLogout.promise;
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        return Promise.resolve(json({}));
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
-      await act(async () => {
-        await result.current.logout();
+      let first!: Promise<LogoutResult>;
+      let second!: Promise<LogoutResult>;
+      act(() => {
+        first = result.current.logout();
+        second = result.current.logout();
       });
-      expect(result.current.status).toBe("authenticated");
-      expect(result.current.logoutError).not.toBeNull();
-    });
+      expect(first).toBe(second);
+      await waitFor(() => expect(result.current.loggingOut).toBe(true));
+      expect(globalThis.fetch).toHaveBeenCalled();
 
-    it("issues a single logout request for repeated clicks (single-flight)", async () => {
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-        return authedFetch(input);
-      });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
-
-      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-      await waitFor(() => expect(result.current.status).toBe("authenticated"));
-      await act(async () => {
-        void result.current.logout();
-        void result.current.logout();
-        await result.current.logout();
-      });
+      await act(async () => pendingLogout.resolve(new Response(null, { status: 204 })));
+      await expect(first).resolves.toEqual({ success: true, reason: "revoked" });
+      await expect(second).resolves.toEqual({ success: true, reason: "revoked" });
       const logoutCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/session/logout"));
-      expect(logoutCalls.length).toBe(1);
-      await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+      expect(logoutCalls).toHaveLength(1);
+      expect(result.current.status).toBe("unauthenticated");
     });
   });
 
-  describe("T4-02 serialized auth lifecycle", () => {
-    it("awaits an in-flight bootstrap before revoking, with one telegram exchange", async () => {
-      let resolveSession: (response: Response) => void = () => undefined;
-      const pending = new Promise<Response>((resolve) => {
-        resolveSession = resolve;
+  describe("serialized terminal auth lifecycle", () => {
+    it("waits for an already-active Telegram exchange, then revokes its final session B", async () => {
+      const pendingAuthB = deferred<Response>();
+      let sessionGets = 0;
+      let authCalls = 0;
+      let logoutToken = "";
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (input.includes("/v1/session/logout")) {
+          logoutToken = csrfHeader(init) ?? "";
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          if (sessionGets === 1) return Promise.resolve(sessionOk(CSRF_A));
+          if (sessionGets === 2) return Promise.resolve(sessionUnauthenticated());
+          return Promise.resolve(sessionOk(CSRF_B));
+        }
+        if (input.includes("/v1/auth/telegram")) {
+          authCalls += 1;
+          return pendingAuthB.promise;
+        }
+        return Promise.resolve(json({}));
       });
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session") && !input.includes("/v1/session/logout")) return pending;
-        if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
-        return Promise.resolve(new Response("{}", { status: 200 }));
-      });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-      let logoutPromise: Promise<void> = Promise.resolve();
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      act(() => {
+        void result.current.retry();
+      });
+      await waitFor(() => expect(authCalls).toBe(1));
+      let logoutPromise!: Promise<LogoutResult>;
       act(() => {
         logoutPromise = result.current.logout();
       });
-      await act(async () => {
-        resolveSession(sessionUnauthenticated());
-      });
+      await act(async () => pendingAuthB.resolve(telegramOk(CSRF_B)));
       await act(async () => {
         await logoutPromise;
       });
-      await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
-      const telegramCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/auth/telegram"));
-      expect(telegramCalls.length).toBe(1);
+      expect(logoutToken).toBe(CSRF_B);
+      expect(result.current.status).toBe("unauthenticated");
     });
 
-    it("does not start a second telegram exchange when retry races an in-flight bootstrap", async () => {
-      let resolveSession: (response: Response) => void = () => undefined;
-      const pending = new Promise<Response>((resolve) => {
-        resolveSession = resolve;
-      });
+    it("blocks retry requested in the same tick after logout intent", async () => {
+      let authCalls = 0;
       const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session") && !input.includes("/v1/session/logout")) return pending;
-        if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-        return Promise.resolve(new Response("{}", { status: 200 }));
+        if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        if (input.includes("/v1/auth/telegram")) {
+          authCalls += 1;
+          return Promise.resolve(telegramOk());
+        }
+        return Promise.resolve(json({}));
       });
-      (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
-      act(() => {
-        result.current.retry();
-        result.current.retry();
-      });
-      const telegramCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/auth/telegram"));
-      expect(telegramCalls.length).toBe(0);
-      await act(async () => {
-        resolveSession(sessionUnauthenticated());
-      });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
-      const telegramCallsAfter = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/auth/telegram"));
-      expect(telegramCallsAfter.length).toBe(1);
+      let logoutPromise!: Promise<LogoutResult>;
+      let retryPromise!: ReturnType<typeof result.current.retry>;
+      act(() => {
+        logoutPromise = result.current.logout();
+        retryPromise = result.current.retry();
+      });
+      await act(async () => {
+        await Promise.all([logoutPromise, retryPromise]);
+      });
+      expect(authCalls).toBe(0);
+      expect(result.current.status).toBe("unauthenticated");
+    });
+
+    it("ignores invalidate requested after logout intent", async () => {
+      const pendingLogout = deferred<Response>();
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) return pendingLogout.promise;
+        if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(result.current.status).toBe("authenticated"));
+      let logoutPromise!: Promise<LogoutResult>;
+      act(() => {
+        logoutPromise = result.current.logout();
+        void result.current.invalidate();
+      });
+      await act(async () => pendingLogout.resolve(new Response(null, { status: 204 })));
+      await act(async () => {
+        await logoutPromise;
+      });
+      expect(result.current.status).toBe("unauthenticated");
+    });
+
+    it("prevents Telegram authentication from starting after logout interrupts a deferred initial GET", async () => {
+      const pendingInitialSession = deferred<Response>();
+      let sessionGets = 0;
+      let authCalls = 0;
+      let logoutCalls = 0;
+      const fetchImpl = vi.fn((input: string) => {
+        if (input.includes("/v1/session/logout")) {
+          logoutCalls += 1;
+          return Promise.resolve(new Response(null, { status: 204 }));
+        }
+        if (input.includes("/v1/session")) {
+          sessionGets += 1;
+          return sessionGets === 1 ? pendingInitialSession.promise : Promise.resolve(sessionUnauthenticated());
+        }
+        if (input.includes("/v1/auth/telegram")) {
+          authCalls += 1;
+          return Promise.resolve(telegramOk(CSRF_B));
+        }
+        return Promise.resolve(json({}));
+      });
+      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+      const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+      await waitFor(() => expect(sessionGets).toBe(1));
+      let logoutPromise!: Promise<LogoutResult>;
+      act(() => {
+        logoutPromise = result.current.logout();
+      });
+      await act(async () => pendingInitialSession.resolve(sessionUnauthenticated()));
+      await expect(logoutPromise).resolves.toEqual({ success: true, reason: "already-absent" });
+      expect(authCalls).toBe(0);
+      expect(logoutCalls).toBe(0);
+      expect(result.current.status).toBe("unauthenticated");
     });
   });
 });
