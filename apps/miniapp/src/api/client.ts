@@ -70,7 +70,7 @@ export class KidanApiClient {
   }
 
   async logout(csrfToken: string): Promise<void> {
-    await this.request("POST", "/v1/session/logout", undefined, csrfToken);
+    await this.request("POST", "/v1/session/logout", undefined, csrfToken, 204);
   }
 
   async getDraft(): Promise<DraftResponse> {
@@ -96,6 +96,7 @@ export class KidanApiClient {
     path: string,
     body?: unknown,
     csrfToken?: string,
+    expectStatus?: number,
   ): Promise<unknown> {
     const headers: Record<string, string> = { Accept: "application/json" };
     let payload: string | undefined;
@@ -116,6 +117,10 @@ export class KidanApiClient {
     }
 
     if (response.status === 204) return undefined;
+
+    if (expectStatus !== undefined && response.status !== expectStatus) {
+      throw new ApiError("INVALID_RESPONSE", response.status);
+    }
 
     let text: string;
     try {

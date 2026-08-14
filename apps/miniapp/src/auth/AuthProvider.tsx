@@ -50,12 +50,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isTelegram = Boolean(window.Telegram?.WebApp && window.Telegram.WebApp.initData);
   const clientRef = useRef(new KidanApiClient());
   const bootstrapPromiseRef = useRef<Promise<BootstrapResult> | null>(null);
+  const authMutex = useRef<Promise<unknown>>(Promise.resolve());
   const generationRef = useRef(0);
   const loggingOutRef = useRef(false);
+  const logoutInFlightRef = useRef(false);
   const [status, setStatus] = useState<AuthStatus>(isTelegram ? "initializing" : "authenticated");
   const [csrfToken, setCsrfToken] = useState<string | null>(isTelegram ? null : "demo");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+
+  const runExclusive = useCallback((fn: () => Promise<void>) => {
+    const prev = authMutex.current;
+    let release!: () => void;
+    const next = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    authMutex.current = next;
+    return prev.then(fn, fn).finally(() => release());
+  }, []);
 
   const commit = useCallback((result: BootstrapResult) => {
     if (result.kind === "authenticated") {
@@ -89,25 +101,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (bootstrapPromiseRef.current) return bootstrapPromiseRef.current;
 
-    const bootstrapPromise = (async (): Promise<BootstrapResult> => {
-      const result = await resolveSession({
-        getSession: () => clientRef.current.getSession(),
-        authenticateWithTelegram: (initData: string) => clientRef.current.authenticateWithTelegram(initData),
-        getInitData,
-        onAuthenticating: () => {
-          if (generationRef.current === myGeneration) setStatus("authenticating");
-        },
+    let result: BootstrapResult = { kind: "unavailable" };
+    const promise = (async () => {
+      await runExclusive(async () => {
+        result = await resolveSession({
+          getSession: () => clientRef.current.getSession(),
+          authenticateWithTelegram: (initData: string) => clientRef.current.authenticateWithTelegram(initData),
+          getInitData,
+          onAuthenticating: () => {
+            if (generationRef.current === myGeneration) setStatus("authenticating");
+          },
+        });
+        if (loggingOutRef.current) return;
+        if (generationRef.current === myGeneration) commit(result);
       });
       return result;
     })();
 
-    bootstrapPromiseRef.current = bootstrapPromise;
-    const result = await bootstrapPromise;
-    if (bootstrapPromiseRef.current === bootstrapPromise) bootstrapPromiseRef.current = null;
+    bootstrapPromiseRef.current = promise;
+    const resolved = await promise;
+    if (bootstrapPromiseRef.current === promise) bootstrapPromiseRef.current = null;
     if (loggingOutRef.current) return { kind: "unauthenticated" };
-    if (generationRef.current === myGeneration) commit(result);
-    return result;
-  }, [commit]);
+    return resolved;
+  }, [commit, runExclusive]);
 
   useEffect(() => {
     if (!isTelegram) {
@@ -127,31 +143,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("unauthenticated");
       return;
     }
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
     setLogoutError(null);
-    const inFlight = bootstrapPromiseRef.current;
     generationRef.current += 1;
-    loggingOutRef.current = true;
     try {
-      if (inFlight) await inFlight.catch(() => undefined);
-      let token = loadCsrf();
-      if (!token) {
-        try {
-          const session = await clientRef.current.getSession();
-          token = session.csrfToken;
-        } catch {
-          token = null;
+      await runExclusive(async () => {
+        loggingOutRef.current = true;
+        let token = loadCsrf();
+        if (!token) {
+          try {
+            const session = await clientRef.current.getSession();
+            token = session.csrfToken;
+          } catch {
+            token = null;
+          }
         }
-      }
-      if (token) await clientRef.current.logout(token).catch(() => undefined);
+        if (!token) {
+          // No usable session token: the user is already signed out.
+          commit({ kind: "unauthenticated" });
+          return;
+        }
+        try {
+          await clientRef.current.logout(token);
+          commit({ kind: "unauthenticated" });
+        } catch (error) {
+          const code = error instanceof ApiError ? error.code : "NETWORK";
+          if (code === "UNAUTHENTICATED") {
+            commit({ kind: "unauthenticated" });
+            return;
+          }
+          // Revocation could not be confirmed: keep the user signed in and
+          // surface a recoverable error instead of faking a signed-out state.
+          setLogoutError("Couldn’t sign out. Please retry.");
+          throw error;
+        }
+      });
+    } catch {
+      // Failure path already surfaced a logoutError; local state stays signed in.
     } finally {
-      bootstrapPromiseRef.current = null;
-      saveCsrf(null);
-      setCsrfToken(null);
-      setProfileStatus(null);
-      setStatus("unauthenticated");
       loggingOutRef.current = false;
+      logoutInFlightRef.current = false;
     }
-  }, [isTelegram]);
+  }, [isTelegram, runExclusive]);
 
   const retry = useCallback(() => {
     if (loggingOutRef.current) return;
@@ -160,14 +194,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const invalidate = useCallback(() => {
     generationRef.current += 1;
-    loggingOutRef.current = true;
     bootstrapPromiseRef.current = null;
-    saveCsrf(null);
-    setCsrfToken(null);
-    setProfileStatus(null);
-    setStatus("expired");
-    loggingOutRef.current = false;
-  }, []);
+    void runExclusive(async () => {
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
+      setStatus("expired");
+    });
+  }, [runExclusive]);
 
   return (
     <AuthContext.Provider
