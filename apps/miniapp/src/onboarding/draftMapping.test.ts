@@ -1,8 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { mergeFormFromPayload, publicPayloadFromForm } from "./draftMapping.js";
+import { buildSectionPatch, mergeFormFromPayload, publicPayloadFromForm } from "./draftMapping.js";
 import { initialOnboardingState, syntheticOnboardingState } from "./types.js";
 
 describe("draftMapping", () => {
+  it("builds a patch containing only the current section", () => {
+    const patch = buildSectionPatch(4, syntheticOnboardingState);
+    expect(patch).not.toBeNull();
+    expect(Object.keys(patch as Record<string, unknown>)).toEqual(["partnerPreferences"]);
+    expect((patch as Record<string, unknown>).partnerPreferences).toEqual(syntheticOnboardingState.partnerPreferences);
+  });
+
+  it("returns null for non-saving steps", () => {
+    expect(buildSectionPatch(5, syntheticOnboardingState)).toBeNull();
+  });
+
   it("projects only the public onboarding payload", () => {
     const payload = publicPayloadFromForm(syntheticOnboardingState);
     expect(payload).toHaveProperty("eligibility");

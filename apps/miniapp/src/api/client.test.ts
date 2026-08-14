@@ -53,13 +53,20 @@ describe("KidanApiClient", () => {
     expect((acctError as ApiError).code).toBe("ACCOUNT_UNAVAILABLE");
   });
 
+  const validPatch = {
+    schemaVersion: "2026-08-12.v1",
+    expectedVersion: 0,
+    currentStep: "public_profile",
+    patch: { publicProfile: { city: "Addis Ababa" } },
+  } as const;
+
   it("maps 409 DRAFT_VERSION_CONFLICT on save", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ error: { code: "DRAFT_VERSION_CONFLICT", requestId: "r" } }, 409));
     const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
     const error = await client
-      .saveDraft({ currentStep: "public_profile" }, "csrf")
+      .saveDraft({ ...validPatch }, "csrf")
       .catch((caught: unknown) => caught);
     expect((error as ApiError).code).toBe("DRAFT_VERSION_CONFLICT");
   });
@@ -70,9 +77,35 @@ describe("KidanApiClient", () => {
       .mockResolvedValue(jsonResponse({ error: { code: "REAL_SUBMISSIONS_DISABLED", requestId: "r" } }, 503));
     const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
     const error = await client
-      .saveDraft({ currentStep: "public_profile" }, "csrf")
+      .saveDraft({ ...validPatch }, "csrf")
       .catch((caught: unknown) => caught);
     expect((error as ApiError).code).toBe("REAL_SUBMISSIONS_DISABLED");
+  });
+
+  it("rejects an invalid outgoing patch before sending", async () => {
+    const fetchImpl = vi.fn();
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client
+      .saveDraft({ currentStep: "public_profile" } as never, "csrf")
+      .catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_REQUEST");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fails closed on a malformed success body", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { authenticated: false } }, 200));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+  });
+
+  it("coerces an unknown server error code to INVALID_RESPONSE", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: "WEIRD_CODE", requestId: "r" } }, 500));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
   });
 
   it("sends the CSRF header on mutations and handles 204 logout", async () => {
