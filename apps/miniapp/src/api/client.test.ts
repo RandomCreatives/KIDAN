@@ -148,13 +148,40 @@ describe("KidanApiClient", () => {
     expect((error as ApiError).code).toBe("INVALID_RESPONSE");
   });
 
-  it("preserves a known error code even when requestId is absent", async () => {
+  it("fails closed when the error envelope lacks a requestId", async () => {
     const fetchImpl = vi
       .fn()
       .mockResolvedValue(jsonResponse({ error: { code: "UNAUTHENTICATED" } }, 401));
     const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
     const error = await client.getSession().catch((caught: unknown) => caught);
-    expect((error as ApiError).code).toBe("UNAUTHENTICATED");
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
     expect((error as ApiError).requestId).toBeUndefined();
+  });
+
+  it("fails closed when the error requestId is not a string", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: "UNAUTHENTICATED", requestId: 12345 } }, 401));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+  });
+
+  it("fails closed when the error requestId is an object", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: "UNAUTHENTICATED", requestId: { a: 1 } } }, 401));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
+  });
+
+  it("fails closed when the error requestId is oversized", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: "UNAUTHENTICATED", requestId: "x".repeat(10_000) } }, 401));
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_RESPONSE");
   });
 });

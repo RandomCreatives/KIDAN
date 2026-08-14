@@ -47,12 +47,11 @@ export const apiErrorCodeSchema = z.enum([
   "NOT_FOUND",
   "INTERNAL_ERROR",
   "INVALID_RESPONSE",
-  "NETWORK",
 ]);
 
 export const apiErrorSchema = z.object({
   code: apiErrorCodeSchema,
-  requestId: z.string(),
+  requestId: z.string().max(64),
 });
 
 export const apiErrorEnvelopeSchema = z.object({ error: apiErrorSchema });

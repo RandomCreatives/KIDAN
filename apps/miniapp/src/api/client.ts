@@ -16,17 +16,19 @@ import {
 } from "@kidan/contracts";
 import { z } from "zod";
 
+export type ClientErrorCode = ApiErrorCode | "NETWORK";
+
 export interface ApiClientOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 }
 
 export class ApiError extends Error {
-  readonly code: ApiErrorCode;
+  readonly code: ClientErrorCode;
   readonly status: number;
   readonly requestId: string | undefined;
 
-  constructor(code: ApiErrorCode, status: number, requestId?: string) {
+  constructor(code: ClientErrorCode, status: number, requestId?: string) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
@@ -131,10 +133,9 @@ export class KidanApiClient {
 
     if (!response.ok) {
       const envelope = apiErrorEnvelopeSchema.safeParse(parsed);
-      const rawCode = envelope.success ? envelope.data.error.code : parsed.error?.code;
-      const code = apiErrorCodeSchema.safeParse(rawCode).data ?? "INVALID_RESPONSE";
-      const requestId = envelope.success ? envelope.data.error.requestId : parsed.error?.requestId;
-      throw new ApiError(code, response.status, requestId);
+      if (!envelope.success) throw new ApiError("INVALID_RESPONSE", response.status);
+      const code = apiErrorCodeSchema.safeParse(envelope.data.error.code).data ?? "INVALID_RESPONSE";
+      throw new ApiError(code, response.status, envelope.data.error.requestId);
     }
 
     return parsed.data;
