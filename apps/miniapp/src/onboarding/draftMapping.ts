@@ -2,10 +2,14 @@ import { z } from "zod";
 import {
   eligibilitySchema,
   faithAndFamilyDraftSchema,
+  onboardingProgressPatchSchema,
   partnerPreferencesDraftSchema,
   publicProfileDraftSchema,
+  type PartialPublicOnboardingPayload,
 } from "@kidan/contracts";
 import type { OnboardingFormState } from "./types.js";
+
+type DraftStep = z.infer<typeof onboardingProgressPatchSchema>["currentStep"];
 
 function pickValidFields(
   schema: z.ZodObject<z.ZodRawShape>,
@@ -33,6 +37,41 @@ export function publicPayloadFromForm(state: OnboardingFormState): Record<string
     faithAndFamily: { faithTradition: "ethiopian_orthodox_tewahedo", ...state.faithAndFamily },
     partnerPreferences: state.partnerPreferences,
   };
+}
+
+export function buildSectionPatch(
+  stepIndex: number,
+  state: OnboardingFormState,
+): PartialPublicOnboardingPayload | null {
+  switch (stepIndex) {
+    case 0:
+      return { eligibility: state.eligibility } as unknown as PartialPublicOnboardingPayload;
+    case 2:
+      return { publicProfile: state.publicProfile };
+    case 3:
+      return {
+        faithAndFamily: { faithTradition: "ethiopian_orthodox_tewahedo", ...state.faithAndFamily },
+      } as unknown as PartialPublicOnboardingPayload;
+    case 4:
+      return { partnerPreferences: state.partnerPreferences };
+    default:
+      return null;
+  }
+}
+
+export function stepToServerStep(stepIndex: number): DraftStep {
+  switch (stepIndex) {
+    case 0:
+      return "eligibility";
+    case 2:
+      return "public_profile";
+    case 3:
+      return "faith_and_family";
+    case 4:
+      return "partner_preferences";
+    default:
+      return "public_preview";
+  }
 }
 
 export function mergeFormFromPayload(

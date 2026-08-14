@@ -32,11 +32,12 @@ import { initialOnboardingState, syntheticOnboardingState, type OnboardingFormSt
 import { useOnboardingDraft } from "./useOnboardingDraft";
 
 interface OnboardingFlowProps {
+  mode: "demo" | "real";
   onExit: () => void;
   onComplete: () => void;
 }
 
-const steps = [
+const LABELS = [
   "Eligibility",
   "Private identity",
   "Public profile",
@@ -55,26 +56,41 @@ function isAdult(dateOfBirth: string): boolean {
   return birth <= threshold;
 }
 
-export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
+export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps) {
+  const isDemo = mode === "demo";
   const [draft, setDraft] = useState<OnboardingFormState>(initialOnboardingState);
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { isDemo } = useAuth();
-  const { conflict, saveProgress, reloadLatest } = useOnboardingDraft(draft, setDraft);
+  const {
+    hydrated,
+    loadError,
+    saving,
+    saveError,
+    conflict,
+    retryLoad,
+    saveProgress,
+    reloadLatest,
+  } = useOnboardingDraft(draft, setDraft);
 
-  const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step]);
+  const activeIndices = useMemo(
+    () => (isDemo ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5]),
+    [isDemo],
+  );
+  const currentIndex = activeIndices[step] ?? 0;
+
+  const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
 
   const patch = <K extends keyof OnboardingFormState>(section: K, value: Partial<OnboardingFormState[K]>) => {
     setDraft((current) => ({ ...current, [section]: { ...current[section], ...value } }));
   };
 
   const validationMessage = (): string | null => {
-    if (step === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
+    if (currentIndex === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
       return "Confirm all three eligibility requirements to continue.";
     }
-    if (step === 1) {
+    if (currentIndex === 1) {
       if (!isAdult(draft.privateIdentity.dateOfBirth)) return "Enter a valid date of birth for an adult aged 18 or older.";
       const result = privateIdentityDraftSchema.safeParse({
         ...draft.privateIdentity,
@@ -82,17 +98,17 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
       });
       if (!result.success) return "Complete your full name, date of birth, and phone number.";
     }
-    if (step === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
+    if (currentIndex === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
       return "Complete the required public-profile fields before continuing.";
     }
-    if (step === 3) {
+    if (currentIndex === 3) {
       const result = faithAndFamilyDraftSchema.safeParse({
         faithTradition: "ethiopian_orthodox_tewahedo",
         ...draft.faithAndFamily,
       });
       if (!result.success) return "Choose at least three values and write a short introduction of 20–280 characters.";
     }
-    if (step === 4) {
+    if (currentIndex === 4) {
       if (/(@|https?:|t\.me|\+?\d[\d\s-]{7,})/i.test(draft.partnerPreferences.additionalPreferences)) {
         return "Do not include phone numbers, usernames, or links in partner preferences.";
       }
@@ -100,7 +116,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
         return "Review the age range and select at least one status, value, and marriage intention.";
       }
     }
-    if (step === 6 && !consentDraftSchema.safeParse(draft.consent).success) {
+    if (currentIndex === 6 && !consentDraftSchema.safeParse(draft.consent).success) {
       return "Accept every required consent. Bot notifications remain optional.";
     }
     return null;
@@ -116,8 +132,8 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
     }
     setError(null);
     haptic("decision");
-    saveProgress(step, draft);
-    if (step === steps.length - 1) {
+    saveProgress(currentIndex, draft);
+    if (step === activeIndices.length - 1) {
       setSubmitted(true);
       haptic("success");
       return;
@@ -128,28 +144,63 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
 
   const goBack = () => {
     setError(null);
-    saveProgress(step, draft);
+    saveProgress(currentIndex, draft);
     setStep((current) => Math.max(0, current - 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  if (!hydrated && !isDemo) {
+    return (
+      <main className="onboarding-shell">
+        <header className="onboarding-topbar">
+          <Brand />
+          <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding"><XIcon size={19} /></button>
+        </header>
+        <section className="page-intro">
+          <span className="section-kicker">Kidan</span>
+          <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
+          <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
+          {loadError && (
+            <button className="primary-button" type="button" onClick={retryLoad}>
+              Retry
+            </button>
+          )}
+        </section>
+      </main>
+    );
+  }
 
   if (submitted) {
     return (
       <main className="onboarding-shell success-shell">
         <div className="success-mark"><CheckIcon size={34} /></div>
-        <span className="section-kicker">Prototype complete</span>
-        <h1>Your profile would now enter private review.</h1>
-        <p>No information was uploaded or saved. This prototype used in-memory draft data only.</p>
+        <span className="section-kicker">{isDemo ? "Prototype complete" : "Draft saved"}</span>
+        <h1>{isDemo ? "Your profile would now enter private review." : "Your public draft is saved."}</h1>
+        <p>
+          {isDemo
+            ? "No information was uploaded or saved. This prototype used in-memory draft data only."
+            : "In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled."}
+        </p>
         <div className="review-status-card">
           <span><ShieldCheckIcon /></span>
-          <div><strong>Profile review</strong><small>Pending administrator verification</small></div>
-          <i>Demo</i>
+          <div>
+            <strong>{isDemo ? "Profile review" : "Preview only"}</strong>
+            <small>{isDemo ? "Pending administrator verification" : "Submission not enabled in this preview"}</small>
+          </div>
+          <i>{isDemo ? "Demo" : "Preview"}</i>
         </div>
-        <div className="success-promise"><LockIcon size={18} /><p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p></div>
-        <button className="primary-button onboarding-primary" type="button" onClick={onComplete}>Enter the demo app</button>
+        <div className="success-promise">
+          <LockIcon size={18} />
+          <p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p>
+        </div>
+        <button className="primary-button onboarding-primary" type="button" onClick={onComplete}>
+          {isDemo ? "Enter the demo app" : "Continue"}
+        </button>
       </main>
     );
   }
+
+  const showSample = isDemo;
 
   return (
     <main className="onboarding-shell">
@@ -158,19 +209,24 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
         <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding"><XIcon size={19} /></button>
       </header>
 
-      <div className="progress-meta"><span>{steps[step]}</span><strong>{step + 1} of {steps.length}</strong></div>
+      <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
       <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
 
-       {error && <div className="form-error" role="alert">{error}</div>}
-       {conflict && !isDemo && (
-         <div className="form-error draft-conflict" role="alert">
-           <span>Your saved progress changed elsewhere. Reload the latest draft?</span>
-           <button type="button" className="sample-link" onClick={() => reloadLatest()}>Reload latest</button>
-         </div>
-       )}
+      {error && <div className="form-error" role="alert">{error}</div>}
+      {saveError && <div className="form-error" role="alert">{saveError}</div>}
+      {saving && <div className="form-notice" role="status">Saving…</div>}
+      {conflict && !isDemo && (
+        <div className="form-error draft-conflict" role="alert">
+          <span>Your saved progress changed elsewhere. Reload the latest draft?</span>
+          <button type="button" className="sample-link" onClick={() => reloadLatest()}>Reload latest</button>
+        </div>
+      )}
+      {!isDemo && (
+        <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
+      )}
 
       <div className="onboarding-content">
-        {step === 0 && (
+        {currentIndex === 0 && (
           <>
             <StepHeading eyebrow="Welcome to Kidan" title="A private path to intentional marriage." description="Before creating a profile, confirm that this community and its privacy model are right for you." />
             <section className="privacy-hero">
@@ -188,14 +244,16 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
               <ToggleCard checked={draft.eligibility.eotcConfirmed} onChange={(value) => patch("eligibility", { eotcConfirmed: value })} title="I am Ethiopian Orthodox Tewahedo" description="The first release is dedicated to the EOTC community." icon={<ChurchIcon size={20} />} />
               <ToggleCard checked={draft.eligibility.marriageIntentConfirmed} onChange={(value) => patch("eligibility", { marriageIntentConfirmed: value })} title="I am seeking an intentional marriage" description="Kidan is not an open social or casual-chat platform." />
             </section>
-            <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>Use synthetic sample data for this prototype</button>
+            {showSample && (
+              <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>Use synthetic sample data for this prototype</button>
+            )}
           </>
         )}
 
-        {step === 1 && (
+        {currentIndex === 1 && (
           <>
             <StepHeading eyebrow="Private identity" title="Verify the person, protect the identity." description="Only authorized verification administrators can access this section." />
-            <div className="prototype-warning"><SparkIcon size={17} /><p>This is a local prototype. Use the synthetic sample—not real personal information.</p><button type="button" onClick={() => setDraft(syntheticOnboardingState)}>Fill sample</button></div>
+            <div className="prototype-warning"><SparkIcon size={17} /><p>This is a local prototype. Use the synthetic sample—not real personal information.</p>{showSample && <button type="button" onClick={() => setDraft(syntheticOnboardingState)}>Fill sample</button>}</div>
             <div className="form-stack">
               <Field label="Full legal name" visibility="admin" hint="Never used as your discovery name.">
                 <input value={draft.privateIdentity.fullName} onChange={(event) => patch("privateIdentity", { fullName: event.target.value })} placeholder="Admin verification only" autoComplete="off" />
@@ -215,7 +273,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 2 && (
+        {currentIndex === 2 && (
           <>
             <StepHeading eyebrow="Public profile" title="Share context, not your identity." description="These approved fields form your anonymous discovery card." />
             <div className="visibility-banner"><EyeIcon size={17} /> Everything on this page may appear in discovery.</div>
@@ -240,7 +298,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 3 && (
+        {currentIndex === 3 && (
           <>
             <StepHeading eyebrow="Faith & family" title="Describe the life you hope to build." description="Kidan supports faith-centered introductions without scoring anyone’s spiritual worth." />
             <section className="fixed-faith-card"><ChurchIcon /><div><small>Community</small><strong>Ethiopian Orthodox Tewahedo</strong></div><CheckIcon size={18} /></section>
@@ -253,7 +311,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 4 && (
+        {currentIndex === 4 && (
           <>
             <StepHeading eyebrow="Partner preferences" title="Choose compatibility, not a ranking." description="Hard preferences are reciprocal. Optional preferences do not make one person more valuable than another." />
             <div className="form-stack">
@@ -269,15 +327,15 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 5 && (
+        {currentIndex === 5 && (
           <>
-            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection before submitting anything for administrator approval." />
+            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection before saving anything for administrator approval." />
             <PublicPreview draft={draft} />
             <div className="preview-rule"><LockIcon size={17} /><p>The private verification photo cannot later become a discovery photo without a separate upload and a new consent.</p></div>
           </>
         )}
 
-        {step === 6 && (
+        {currentIndex === 6 && (
           <>
             <StepHeading eyebrow="Consent & submission" title="Your information, your choices." description="Required purposes are separated. Notifications remain optional and can be changed later." />
             <section className="consent-group">
@@ -298,7 +356,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
 
       <footer className="onboarding-footer">
         {step > 0 ? <button className="back-button" type="button" onClick={goBack}><ArrowLeftIcon size={18} /> Back</button> : <button className="back-button" type="button" onClick={onExit}>Explore demo</button>}
-        <button className="continue-button" type="button" onClick={continueFlow}>{step === steps.length - 1 ? "Submit for review" : "Continue"}<span>→</span></button>
+        <button className="continue-button" type="button" onClick={continueFlow}>{currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span></button>
       </footer>
     </main>
   );

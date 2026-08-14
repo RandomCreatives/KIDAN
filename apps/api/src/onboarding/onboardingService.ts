@@ -39,7 +39,14 @@ export class OnboardingService {
   async saveProgress(userId: string, progress: OnboardingProgressPatch, now = new Date()): Promise<DraftRecord> {
     const current = await this.repository.getDraft(userId);
     if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
-    const merged = { ...(current?.publicPayload ?? {}), ...progress.patch };
+    const merged: Record<string, unknown> = { ...(current?.publicPayload ?? {}) };
+    for (const [key, section] of Object.entries(progress.patch)) {
+      if (section !== null && typeof section === "object") {
+        merged[key] = { ...(typeof merged[key] === "object" && merged[key] !== null ? merged[key] : {}), ...section };
+      } else if (section !== undefined) {
+        merged[key] = section;
+      }
+    }
     assertNoIdentityKeys(merged);
     return this.repository.saveDraft({
       userId,

@@ -3,11 +3,14 @@ import { ConnectionsScreen } from "./components/ConnectionsScreen";
 import { DiscoverScreen } from "./components/DiscoverScreen";
 import { MyProfileScreen } from "./components/MyProfileScreen";
 import { CompassIcon, ConnectionIcon, UserIcon } from "./components/Icons";
+import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
+import { PilotDisabledScreen } from "./PilotDisabledScreen";
 
 type Tab = "discover" | "connections" | "profile";
 
 export function App() {
+  const { isDemo } = useAuth();
   const [tab, setTab] = useState<Tab>("discover");
   const [showOnboarding, setShowOnboarding] = useState(true);
 
@@ -16,12 +19,20 @@ export function App() {
       <div className="app-shell">
         <div className="app-viewport onboarding-viewport">
           <OnboardingFlow
+            mode={isDemo ? "demo" : "real"}
             onExit={() => setShowOnboarding(false)}
-            onComplete={() => {
-              setShowOnboarding(false);
-              setTab("profile");
-            }}
+            onComplete={() => setShowOnboarding(false)}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isDemo) {
+    return (
+      <div className="app-shell">
+        <div className="app-viewport">
+          <PilotDisabledScreen onReopen={() => setShowOnboarding(true)} />
         </div>
       </div>
     );

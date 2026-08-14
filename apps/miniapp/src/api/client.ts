@@ -1,10 +1,19 @@
-import type {
-  ApiErrorBody,
-  DraftResponse,
-  DraftSaveResponse,
-  SessionStatus,
-  TelegramAuthResponse,
+import {
+  apiErrorCodeSchema,
+  draftResponseSchema,
+  draftSaveResponseSchema,
+  type ApiErrorCode,
+  type ApiErrorBody,
+  type DraftResponse,
+  type DraftSaveResponse,
+  type OnboardingProgressPatch,
+  onboardingProgressPatchSchema,
+  sessionStatusSchema,
+  type SessionStatus,
+  telegramAuthResponseSchema,
+  type TelegramAuthResponse,
 } from "@kidan/contracts";
+import { z } from "zod";
 
 export interface ApiClientOptions {
   baseUrl?: string;
@@ -12,11 +21,11 @@ export interface ApiClientOptions {
 }
 
 export class ApiError extends Error {
-  readonly code: string;
+  readonly code: ApiErrorCode;
   readonly status: number;
   readonly requestId: string | undefined;
 
-  constructor(code: string, status: number, requestId?: string) {
+  constructor(code: ApiErrorCode, status: number, requestId?: string) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
@@ -25,8 +34,8 @@ export class ApiError extends Error {
   }
 }
 
-interface Envelope<T> {
-  data?: T;
+interface Envelope {
+  data?: unknown;
   error?: ApiErrorBody;
 }
 
@@ -48,31 +57,43 @@ export class KidanApiClient {
   }
 
   async authenticateWithTelegram(initData: string): Promise<TelegramAuthResponse> {
-    return this.request<TelegramAuthResponse>("POST", "/v1/auth/telegram", { initData });
+    const data = await this.request("POST", "/v1/auth/telegram", { initData });
+    return this.parse(telegramAuthResponseSchema, data);
   }
 
   async getSession(): Promise<SessionStatus> {
-    return this.request<SessionStatus>("GET", "/v1/session");
+    const data = await this.request("GET", "/v1/session");
+    return this.parse(sessionStatusSchema, data);
   }
 
   async logout(csrfToken: string): Promise<void> {
-    await this.request<void>("POST", "/v1/session/logout", undefined, csrfToken);
+    await this.request("POST", "/v1/session/logout", undefined, csrfToken);
   }
 
   async getDraft(): Promise<DraftResponse> {
-    return this.request<DraftResponse>("GET", "/v1/onboarding/draft");
+    const data = await this.request("GET", "/v1/onboarding/draft");
+    return this.parse(draftResponseSchema, data);
   }
 
-  async saveDraft(patch: unknown, csrfToken: string): Promise<DraftSaveResponse> {
-    return this.request<DraftSaveResponse>("PUT", "/v1/onboarding/draft", patch, csrfToken);
+  async saveDraft(patch: OnboardingProgressPatch, csrfToken: string): Promise<DraftSaveResponse> {
+    const validated = onboardingProgressPatchSchema.safeParse(patch);
+    if (!validated.success) throw new ApiError("INVALID_REQUEST", 400);
+    const data = await this.request("PUT", "/v1/onboarding/draft", validated.data, csrfToken);
+    return this.parse(draftSaveResponseSchema, data);
   }
 
-  private async request<T>(
+  private parse<T>(schema: z.ZodType<T>, data: unknown): T {
+    const parsed = schema.safeParse(data);
+    if (!parsed.success) throw new ApiError("INVALID_RESPONSE", 0);
+    return parsed.data;
+  }
+
+  private async request(
     method: string,
     path: string,
     body?: unknown,
     csrfToken?: string,
-  ): Promise<T> {
+  ): Promise<unknown> {
     const headers: Record<string, string> = { Accept: "application/json" };
     let payload: string | undefined;
     if (body !== undefined) {
@@ -86,15 +107,17 @@ export class KidanApiClient {
 
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
 
+    if (response.status === 204) return undefined;
+
     const text = await response.text();
-    const parsed = text ? (JSON.parse(text) as Envelope<T>) : {};
+    const parsed = text ? (JSON.parse(text) as Envelope) : {};
 
     if (!response.ok) {
-      const error = parsed.error;
-      throw new ApiError(error?.code ?? "INTERNAL_ERROR", response.status, error?.requestId);
+      const rawCode = parsed.error?.code;
+      const code = apiErrorCodeSchema.safeParse(rawCode).data ?? "INVALID_RESPONSE";
+      throw new ApiError(code, response.status, parsed.error?.requestId);
     }
 
-    if (parsed.data === undefined) return undefined as unknown as T;
     return parsed.data;
   }
 }

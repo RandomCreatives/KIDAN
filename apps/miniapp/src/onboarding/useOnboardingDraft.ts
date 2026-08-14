@@ -1,25 +1,19 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, KidanApiClient } from "../api/client.js";
 import { useAuth } from "../auth/useAuth.js";
-import type { OnboardingStep } from "@kidan/contracts";
-import { mergeFormFromPayload, publicPayloadFromForm } from "./draftMapping.js";
+import { buildSectionPatch, mergeFormFromPayload, stepToServerStep } from "./draftMapping.js";
 import type { OnboardingFormState } from "./types.js";
 
 const SCHEMA_VERSION = "2026-08-12.v1";
 
-const STEP_KEYS: (OnboardingStep | null)[] = [
-  "eligibility",
-  null,
-  "public_profile",
-  "faith_and_family",
-  "partner_preferences",
-  "public_preview",
-  null,
-];
-
 export interface OnboardingDraftController {
   hydrated: boolean;
+  loadError: boolean;
+  saving: boolean;
+  saveError: string | null;
   conflict: boolean;
+  retryLoad: () => void;
   saveProgress: (stepIndex: number, currentDraft: OnboardingFormState) => void;
   reloadLatest: () => void;
 }
@@ -28,86 +22,115 @@ export function useOnboardingDraft(
   draft: OnboardingFormState,
   setDraft: Dispatch<SetStateAction<OnboardingFormState>>,
 ): OnboardingDraftController {
-  const { csrfToken, isDemo } = useAuth();
+  const { csrfToken, isDemo, invalidate, retry } = useAuth();
   const clientRef = useRef(new KidanApiClient());
   const [hydrated, setHydrated] = useState(isDemo);
+  const [loadError, setLoadError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const expectedVersionRef = useRef(0);
-  const hydratedRef = useRef(isDemo);
+  const conflictRef = useRef(false);
+  const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
-  useEffect(() => {
+  const loadDraft = useCallback(() => {
     if (isDemo) {
-      hydratedRef.current = true;
       setHydrated(true);
+      setLoadError(false);
       return;
     }
-    let cancelled = false;
+    setLoadError(false);
     clientRef.current
       .getDraft()
       .then((res) => {
-        if (cancelled) return;
-        const payload = res.payload as Record<string, unknown> | undefined;
+        const payload = res.payload as Record<string, unknown>;
         if (res.version > 0 && payload && Object.keys(payload).length > 0) {
           setDraft((prev) => mergeFormFromPayload(prev, payload));
-          expectedVersionRef.current = res.version;
         }
-        hydratedRef.current = true;
+        expectedVersionRef.current = res.version;
         setHydrated(true);
       })
-      .catch(() => {
-        if (cancelled) return;
-        hydratedRef.current = true;
-        setHydrated(true);
+      .catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
+          invalidate();
+          return;
+        }
+        setLoadError(true);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [isDemo, setDraft]);
+  }, [isDemo, setDraft, invalidate]);
+
+  useEffect(() => {
+    if (isDemo) {
+      setHydrated(true);
+      return;
+    }
+    if (!csrfToken) return;
+    loadDraft();
+  }, [csrfToken, isDemo, loadDraft]);
 
   const saveProgress = useCallback(
     (stepIndex: number, currentDraft: OnboardingFormState) => {
-      if (isDemo || !csrfToken || !hydratedRef.current) return;
-      const stepKey = STEP_KEYS[stepIndex];
-      if (!stepKey) return;
-      void clientRef.current
-        .saveDraft(
-          {
-            schemaVersion: SCHEMA_VERSION,
-            expectedVersion: expectedVersionRef.current,
-            currentStep: stepKey,
-            patch: publicPayloadFromForm(currentDraft),
-          },
-          csrfToken,
-        )
-        .then((res) => {
+      if (isDemo || !csrfToken || !hydrated || conflictRef.current) return;
+      const patch = buildSectionPatch(stepIndex, currentDraft);
+      if (!patch) return;
+      const serverStep = stepToServerStep(stepIndex);
+      const run = saveChainRef.current.then(async () => {
+        setSaving(true);
+        setSaveError(null);
+        try {
+          const res = await clientRef.current.saveDraft(
+            {
+              schemaVersion: SCHEMA_VERSION,
+              expectedVersion: expectedVersionRef.current,
+              currentStep: serverStep,
+              patch,
+            },
+            csrfToken,
+          );
           expectedVersionRef.current = res.version;
           setConflict(false);
-        })
-        .catch((error: unknown) => {
-          if (error instanceof ApiError && error.code === "DRAFT_VERSION_CONFLICT") {
-            setConflict(true);
+          conflictRef.current = false;
+        } catch (error: unknown) {
+          if (error instanceof ApiError) {
+            if (error.code === "DRAFT_VERSION_CONFLICT") {
+              conflictRef.current = true;
+              setConflict(true);
+            } else if (error.code === "UNAUTHENTICATED") {
+              invalidate();
+            } else if (error.code === "INVALID_CSRF") {
+              void retry();
+            } else {
+              setSaveError("Could not save your progress. Retry.");
+            }
+          } else {
+            setSaveError("Network error while saving. Retry.");
           }
-        });
+        } finally {
+          setSaving(false);
+        }
+      });
+      saveChainRef.current = run.catch(() => undefined);
     },
-    [isDemo, csrfToken],
+    [isDemo, csrfToken, hydrated, invalidate, retry],
   );
 
   const reloadLatest = useCallback(() => {
     if (isDemo || !csrfToken) return;
-    void clientRef.current
+    clientRef.current
       .getDraft()
       .then((res) => {
-        const payload = res.payload as Record<string, unknown> | undefined;
+        const payload = res.payload as Record<string, unknown>;
         if (payload && Object.keys(payload).length > 0) {
           setDraft((prev) => mergeFormFromPayload(prev, payload));
-          expectedVersionRef.current = res.version;
-          setConflict(false);
         }
+        expectedVersionRef.current = res.version;
+        setConflict(false);
+        conflictRef.current = false;
       })
-      .catch(() => {
-        // ignore; keep local state
-      });
+      .catch(() => undefined);
   }, [isDemo, csrfToken, setDraft]);
 
-  return { hydrated, conflict, saveProgress, reloadLatest };
+  return { hydrated, loadError, saving, saveError, conflict, retryLoad: loadDraft, saveProgress, reloadLatest };
 }

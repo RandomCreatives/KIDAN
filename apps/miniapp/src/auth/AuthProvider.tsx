@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, KidanApiClient } from "../api/client.js";
-import { mapErrorToStatus, type AuthStatus } from "./authState.js";
+import { resolveSession, type BootstrapResult } from "./sessionBootstrap.js";
+import type { AuthStatus } from "./authState.js";
 
 const CSRF_KEY = "kidan_csrf";
 
@@ -9,8 +10,10 @@ export interface AuthContextValue {
   csrfToken: string | null;
   isDemo: boolean;
   profileStatus: string | null;
+  logoutError: string | null;
   logout: () => Promise<void>;
   retry: () => Promise<void>;
+  invalidate: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -39,53 +42,45 @@ function saveCsrf(token: string | null): void {
   }
 }
 
-function statusFromError(error: unknown): AuthStatus {
-  if (error instanceof ApiError) return mapErrorToStatus(error.code, error.status);
-  return "fatal";
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isTelegram = Boolean(window.Telegram?.WebApp);
   const clientRef = useRef(new KidanApiClient());
+  const opIdRef = useRef(0);
   const [status, setStatus] = useState<AuthStatus>(isTelegram ? "initializing" : "authenticated");
   const [csrfToken, setCsrfToken] = useState<string | null>(isTelegram ? null : "demo");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
-  const restoreOrAuthenticate = useCallback(async () => {
-    const client = clientRef.current;
-    try {
-      const session = await client.getSession();
-      saveCsrf(session.csrfToken);
-      setCsrfToken(session.csrfToken);
-      setProfileStatus(session.profileStatus);
+  const commit = useCallback((result: BootstrapResult) => {
+    if (result.kind === "authenticated") {
+      saveCsrf(result.csrfToken);
+      setCsrfToken(result.csrfToken);
+      setProfileStatus(result.profileStatus);
       setStatus("authenticated");
-      return;
-    } catch (error) {
-      if (!(error instanceof ApiError && error.code === "UNAUTHENTICATED")) {
-        setStatus(statusFromError(error));
-        return;
-      }
-    }
-
-    const initData = getInitData();
-    if (!initData) {
+    } else if (result.kind === "unauthenticated") {
       setStatus("unauthenticated");
-      return;
-    }
-    try {
-      const issued = await client.authenticateWithTelegram(initData);
-      saveCsrf(issued.csrfToken);
-      setCsrfToken(issued.csrfToken);
-      setProfileStatus(issued.profileStatus);
-      setStatus("authenticated");
-    } catch (authError) {
-      if (authError instanceof ApiError && authError.code === "ACCOUNT_UNAVAILABLE") {
-        setStatus("unavailable");
-      } else {
-        setStatus(statusFromError(authError));
-      }
+    } else if (result.kind === "unavailable") {
+      setStatus("unavailable");
+    } else {
+      setStatus(result.status);
     }
   }, []);
+
+  const runBootstrap = useCallback(async () => {
+    const myOp = ++opIdRef.current;
+    setLogoutError(null);
+    setStatus((current) => (current === "authenticated" ? "authenticated" : "initializing"));
+    const result = await resolveSession({
+      getSession: clientRef.current.getSession,
+      authenticateWithTelegram: clientRef.current.authenticateWithTelegram,
+      getInitData,
+      onAuthenticating: () => {
+        if (opIdRef.current === myOp) setStatus("authenticating");
+      },
+    });
+    if (myOp !== opIdRef.current) return;
+    commit(result);
+  }, [commit]);
 
   useEffect(() => {
     if (!isTelegram) {
@@ -93,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCsrfToken("demo");
       return;
     }
-    void restoreOrAuthenticate();
-  }, [isTelegram, restoreOrAuthenticate]);
+    void runBootstrap();
+  }, [isTelegram, runBootstrap]);
 
   const logout = useCallback(async () => {
     if (!isTelegram) {
@@ -102,15 +97,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     const token = loadCsrf();
-    try {
-      if (token) await clientRef.current.logout(token);
-    } catch {
-      // ignore transport errors; clear local state regardless
+    if (!token) {
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
+      setStatus("unauthenticated");
+      return;
     }
+    setLogoutError(null);
+    try {
+      await clientRef.current.logout(token);
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
+      setStatus("unauthenticated");
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
+        saveCsrf(null);
+        setCsrfToken(null);
+        setProfileStatus(null);
+        setStatus("unauthenticated");
+        return;
+      }
+      setLogoutError("Could not sign out. Please try again.");
+    }
+  }, [isTelegram]);
+
+  const invalidate = useCallback(() => {
+    opIdRef.current += 1;
     saveCsrf(null);
     setCsrfToken(null);
-    setStatus("unauthenticated");
-  }, [isTelegram]);
+    setProfileStatus(null);
+    setStatus("expired");
+  }, []);
 
   return (
     <AuthContext.Provider
@@ -119,8 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         csrfToken,
         isDemo: !isTelegram,
         profileStatus,
+        logoutError,
         logout,
-        retry: restoreOrAuthenticate,
+        retry: runBootstrap,
+        invalidate,
       }}
     >
       {children}
