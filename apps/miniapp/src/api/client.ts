@@ -1,5 +1,6 @@
 import {
   apiErrorCodeSchema,
+  apiErrorEnvelopeSchema,
   draftResponseSchema,
   draftSaveResponseSchema,
   type ApiErrorCode,
@@ -105,17 +106,35 @@ export class KidanApiClient {
     const init: RequestInit = { method, headers, credentials: "include" };
     if (payload !== undefined) init.body = payload;
 
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
+    } catch {
+      throw new ApiError("NETWORK", 0);
+    }
 
     if (response.status === 204) return undefined;
 
-    const text = await response.text();
-    const parsed = text ? (JSON.parse(text) as Envelope) : {};
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new ApiError("NETWORK", response.status);
+    }
+
+    let parsed: Envelope;
+    try {
+      parsed = text ? (JSON.parse(text) as Envelope) : {};
+    } catch {
+      throw new ApiError("INVALID_RESPONSE", response.status);
+    }
 
     if (!response.ok) {
-      const rawCode = parsed.error?.code;
+      const envelope = apiErrorEnvelopeSchema.safeParse(parsed);
+      const rawCode = envelope.success ? envelope.data.error.code : parsed.error?.code;
       const code = apiErrorCodeSchema.safeParse(rawCode).data ?? "INVALID_RESPONSE";
-      throw new ApiError(code, response.status, parsed.error?.requestId);
+      const requestId = envelope.success ? envelope.data.error.requestId : parsed.error?.requestId;
+      throw new ApiError(code, response.status, requestId);
     }
 
     return parsed.data;
