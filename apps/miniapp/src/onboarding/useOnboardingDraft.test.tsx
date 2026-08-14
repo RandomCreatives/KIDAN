@@ -109,11 +109,39 @@ describe("useOnboardingDraft", () => {
     await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
 
     const first = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
-    expect(first).toBe(true);
+    expect(first.success).toBe(true);
+    expect(first.persisted).toBe(true);
     expect(ctrlRef.current!.conflict).toBe(false);
 
     const second = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
-    expect(second).toBe(false);
+    expect(second.success).toBe(false);
+    expect(second.persisted).toBe(false);
     await waitFor(() => expect(ctrlRef.current!.conflict).toBe(true));
+  });
+
+  it("initializes persisted state from an existing server draft (T3-02)", async () => {
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method !== "PUT") {
+        return Promise.resolve(draftEmpty());
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: { version: 1, currentStep: "public_profile" } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    mountHarness();
+    await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
+    expect(ctrlRef.current!.persisted).toBe(false);
+
+    const saved = await ctrlRef.current!.saveProgress(2, syntheticOnboardingState);
+    expect(saved.success).toBe(true);
+    expect(saved.persisted).toBe(true);
+    await waitFor(() => expect(ctrlRef.current!.persisted).toBe(true));
   });
 });

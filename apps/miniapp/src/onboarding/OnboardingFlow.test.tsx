@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { OnboardingFlow } from "./OnboardingFlow.js";
+
+function clickContinue(): void {
+  const button = document.querySelector(".continue-button") as HTMLButtonElement | null;
+  if (button) fireEvent.click(button);
+}
 
 function setTelegram(initData: string): void {
   (window as unknown as { Telegram: unknown }).Telegram = {
@@ -94,5 +99,60 @@ describe("OnboardingFlow", () => {
 
     await waitFor(() => expect(screen.getByText(/3 of 5/)).toBeTruthy());
     expect(screen.getByText(/Describe the life you hope to build/)).toBeTruthy();
+  });
+
+  it("demo completes all steps end-to-end with zero network calls (T3-01)", async () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    const fetchImpl = vi.fn();
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="demo" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /use synthetic sample/i }));
+    for (let i = 0; i < 8; i += 1) {
+      if (screen.queryByText(/Your profile would now enter private review/i)) break;
+      clickContinue();
+      await waitFor(() => true);
+    }
+
+    expect(screen.getByText(/Your profile would now enter private review/i)).toBeTruthy();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("real final Save draft sends a checkpoint PUT and reaches success (T3-01)", async () => {
+    let putCalls = 0;
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method !== "PUT") {
+        return Promise.resolve(draftGet("public_preview", { publicProfile: { city: "Server City" } }));
+      }
+      if (input.includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        putCalls += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { version: 3, currentStep: "public_preview" } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+
+    await waitFor(() => expect(screen.getByText(/Know exactly what others can see/i)).toBeTruthy());
+    clickContinue();
+    await waitFor(() => expect(screen.getByText(/Your public draft is saved/i)).toBeTruthy());
+    expect(putCalls).toBe(1);
   });
 });

@@ -98,4 +98,50 @@ describe("AuthProvider", () => {
     expect(result.current.status).toBe("expired");
     expect(result.current.csrfToken).toBeNull();
   });
+
+  it("logs out and clears the local session after server revocation (T3-03)", async () => {
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
+      return defaultFetch(input);
+    });
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    await act(async () => {
+      await result.current.logout();
+    });
+    expect(result.current.status).toBe("unauthenticated");
+    expect(result.current.csrfToken).toBeNull();
+  });
+
+  it("ignores a bootstrap that resolves after logout (T3-03)", async () => {
+    let resolveSession: (response: Response) => void = () => undefined;
+    const pending = new Promise<Response>((resolve) => {
+      resolveSession = resolve;
+    });
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return pending;
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/session/logout")) return Promise.resolve(new Response(null, { status: 204 }));
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+
+    const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
+    act(() => {
+      result.current.retry();
+    });
+    let logoutPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      logoutPromise = result.current.logout();
+    });
+    await act(async () => {
+      resolveSession(sessionUnauthenticated());
+    });
+    await act(async () => {
+      await logoutPromise;
+    });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+  });
 });

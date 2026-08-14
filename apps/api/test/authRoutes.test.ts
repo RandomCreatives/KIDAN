@@ -195,4 +195,45 @@ describe("authentication routes", () => {
     expect(second.statusCode).toBe(200);
     expect(first.json().data.csrfToken).toBe(second.json().data.csrfToken);
   });
+
+  it("rejects a mutation with an invalid Origin (T3-06)", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      allowedOrigin: "https://kidan.app",
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      headers: { origin: "https://evil.example" },
+      payload: { initData: signedInitData("900719925474004") },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error.code).toBe("INVALID_ORIGIN");
+  });
+
+  it("does not require Origin matching for safe GET requests (T3-06)", async () => {
+    const repository = new MemoryPersistenceRepository();
+    app = await buildApp({
+      botToken,
+      allowedOrigin: "https://kidan.app",
+      sessionService: new SessionService(
+        repository,
+        new IdentityCipher(randomBytes(32), randomBytes(32)),
+        new SecretHasher(randomBytes(32)),
+      ),
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/session",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.json().error.code).toBe("UNAUTHENTICATED");
+  });
 });
