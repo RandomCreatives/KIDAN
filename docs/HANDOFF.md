@@ -1,80 +1,126 @@
 # Agent Handoff
 
-Last updated: 2026-08-14
+Last updated: 2026-08-14 (Africa/Nairobi)
 
-## Current state
-- Public repository target: `https://github.com/RandomCreatives/KIDAN`.
-- Local `main` and `origin/main` both include the Phase 01 closeout at `053fb6e` (reviewed APPROVED, CI run `31609259659`); the underlying persistence-foundation milestone is `72101b1`. Published through a normal push, so no rebase or force-push is required.
-- A staged phase roadmap exists in `00_ROADMAP_INDEX.txt` and `01`–`09` phase files (untracked planning docs). Phase 01 (publish + PostgreSQL validation) is the immediate next work; Workstream A (publish) is done.
-- The Mini App remains a synthetic, values-first, photo-free prototype.
-- The API has a persistence foundation: PostgreSQL Compose config, ordered checksum-tracked migrations, readiness checks, strict environment parsing, a PostgreSQL repository, opaque cookie sessions, CSRF/origin controls, resumable public drafts, separately encrypted private identity, consent receipts, and review-pending submission.
-- Phase 01 work done so far: `migrate.ts` split into a reusable `applyMigrations(pool, directory?)` in `apps/api/src/database/migrations.ts`; a PostgreSQL integration suite in `apps/api/test/integration/` with a disposable-database harness, a public-code collision-retry repository test, ciphertext/hash-only identity storage, opaque session storage, session expiry/revocation/suspension/deletion, cross-user draft isolation through routes, optimistic versions, submitted-draft locking, transactional submission rollback, review-pending projection, consent receipts, encryption contexts, field separation, tri-state `wantsChildren`, migration checksums/no-op/anti-tamper, and `/ready` cases; unit vs. integration vitest configs; `npm run db:test` scripts; and a GitHub Actions CI workflow with a PostgreSQL 17 service.
-- **Phase 01 is technically complete and verified in CI.** The integration suite ran RED at `81bbd21` (see `docs/reviews/COMMIT_81bbd21_REVIEW.txt`), a follow-up at `90614b4` fixed the defects, and CI is now GREEN: both the `check` and `integration` jobs passed, including the PostgreSQL 17 integration suite (run `31607920446`). Remaining non-code item: configure `main` branch protection so both jobs are required (recorded below as pending repository administration).
-- Real identity and onboarding submission are disabled unless `ENABLE_REAL_SUBMISSIONS=true`; keep this false until admin review, hosting, legal, retention, and operational controls are approved.
-- Verification-photo upload, admin UI/authentication, live discovery queries, restricted introduction messaging, consent-withdrawal endpoints, and deletion/export workflows remain unimplemented.
-- **Phase 02 (Mini App ↔ API integration) is on feature branch `phase2/miniapp-api-integration` and has been through four independent reviews:** PR #2 first review (RC-01…RC-08), second review (R2-01…R2-09), third review (T3-01…T3-07, `PR_02_THIRD_REVIEW_REQUEST_CHANGES.txt`), and fourth review (T4-01…T4-08, `PR_02_FOURTH_REVIEW_REQUEST_CHANGES.txt`). Every review returned REQUEST CHANGES (DO NOT MERGE). The fourth review (head `d63dd90`) reproduced the R2 logout/serialization defect, required a single-flight 204-only logout, a unified nav lock, a CSP response header, accurate privacy copy, and truthful docs/counts. All T4 findings are addressed on normal follow-up commits (no force-push, no merge). The branch is **not merged** and **must not be merged** until fresh CI (check + PostgreSQL 17 integration) passes, ruleset `20794921` is re-confirmed, the fourth-review threads are truthfully resolved, and operator-recorded Telegram/responsive/screen-reader visual evidence is supplied.
-- After T4, `npm run check` is green: 122 tests (73 miniapp, 37 API, 11 contracts, 1 bot) + all production builds; `npm audit --audit-level=low` reports 0 vulnerabilities; `git diff --check` is clean. New in T4: a 204-only single-flight logout with a serialized auth mutex, a unified nav action lock + reload revision, accurate `PilotDisabledScreen` privacy copy, a Content-Security-Policy response header (Vite dev/preview plugin) plus CSP meta tag with a CSP test, and truthful doc counts/paths. The PostgreSQL integration suite (21 tests) runs only in CI (no database in this sandbox).
-- `ENABLE_REAL_SUBMISSIONS` remains `false`; no private-identity fields reach public-draft requests, responses, or browser storage.
+## Current status
 
-## Persistence and security decisions
-- Telegram raw `initData` is validated server-side and exchanged for a random 32-byte opaque token in an HttpOnly, SameSite=Strict cookie (Secure in production).
-- Only keyed HMAC-SHA-256 session/CSRF hashes are stored; sessions expire, can be revoked, and are denied for suspended/deleted users.
-- Telegram mapping, name, phone, and date of birth use AES-256-GCM. Encryption contexts bind ciphertext to a field (and to the user where a user ID exists); keyed lookup hashes use a separate key.
-- Public draft JSON rejects identity keys and uses optimistic version checks. Private identity and public drafts are separate repository operations and tables.
-- Submission locks the draft, writes consent receipts with policy version/time, projects public/matching fields, and sets both profile and user to pending review. There is no user approval route.
-- Review approval and identity approval are both required for discovery; blocks override discovery and introduction eligibility.
-- Internal database UUIDs, Telegram IDs, names, phone numbers, dates of birth, matching preferences, and contacts do not appear in auth/discovery responses.
-- PostgreSQL remains loopback-only in local Compose. Production database location is undecided pending Ethiopian data-residency/legal review.
+- Repository: `https://github.com/RandomCreatives/KIDAN`.
+- `main` baseline remains `053fb6ecf9cbff72b2e2d052588d5250ffd7d773`; Phase 01 is complete.
+- Phase 02 is being reviewed in PR #2 on `phase2/miniapp-api-integration`.
+- The last observed remote PR head is `8ee6278ed98b9db80fcfb3cc5f828fcbb1402864`. It is open and unmerged.
+- Four earlier reviews and the fifth review all returned **REQUEST CHANGES / DO NOT MERGE**. A green check is not approval.
+- The fifth-review code corrections are prepared as normal local follow-up commits based on `8ee6278`:
+  - `8821254aa295ece40785daf77598c1ded6480c00` — final-session, terminal, shared-promise logout/auth lifecycle;
+  - `6f5ff508076376f43d8d4f9ff7274b2f036397ff` — authoritative save/exit, awaitable reload/action coordination, exact flow tests, and scoped privacy copy;
+  - `5f9f7363bda9e821e0868108de1a2a0a95e57cd8` — production Nginx CSP configuration, policy drift test, evidence template, warning cleanup, and range-aware CI hygiene.
+- These local commits have not been pushed, merged, approved, or used to resolve review conversations. Their implementation still requires fresh exact-final-head CI, CodeRabbit, and independent review.
+- The real deployment/operator gate is **not complete**. `docs/evidence/phase-02/` contains an explicitly incomplete template, not evidence.
+- `ENABLE_REAL_SUBMISSIONS` remains `false`. Keep it false on every test/deployment environment.
 
-## Locked product decisions
-- First-release eligibility: adult Ethiopian Orthodox Tewahedo Church candidates only.
-- Discovery: values-only with no candidate photo.
-- Verification photo: administrator-only evidence, delete 30 days after approval except an exceptional documented hold.
-- Connection: mutual interest + administrator approval + both final confirmations opens only a restricted in-app introduction; it does not reveal name, phone, Telegram username, or a direct-message link.
-- Launch is free. A possible 100 ETB accepted-match charge remains backlog-only.
+## Fifth-review implementation
 
-## Verification
-- 2026-08-12 — Latest fully verified committed baseline `72101b1`: strict source/test type checks, 37 tests (11 contracts, 25 API, 1 bot), all production builds, and 0 audit vulnerabilities.
-- 2026-08-12 — After refactoring `migrate.ts` and adding the integration suite, `npm run check` still passes: strict type checks (including the new integration tests), 37 unit tests, all production builds.
-- 2026-08-12 — `npm audit --audit-level=low` reported 0 vulnerabilities and `git diff --check` passed.
-- 2026-08-12 — `81bbd21` was pushed and CI ran RED: the PostgreSQL integration job (`npm run db:test`) failed. This was a real defect in the repository and tests, not an environment fluke. The blocking defects were a malformed `touchSession` SQL statement (invalid interval arithmetic, would fail at runtime on every session touch) and several integration-test correctness/flakiness issues (invalid public codes from a hex alphabet, a reused phone fixture violating the unique lookup-hash, a Telegram-ID storage assertion that checked the wrong ID, an expiry assertion masked by an earlier revocation, and a missing deleted-user test). See `docs/reviews/COMMIT_81bbd21_REVIEW.txt` and the Change log below for the fixes.
-- 2026-08-12 — The fix commit `90614b4` was verified in CI (run `31607920446`): both the `check` job (typecheck, 37 unit tests, build, `npm audit`, `git diff --check`) and the `integration` job (PostgreSQL 17 disposable-database harness, 21 integration tests) passed. The integration defects from `81bbd21` are resolved; see `docs/reviews/COMMIT_90614b4_REVIEW.txt`.
-- 2026-08-13 — Phase 02 local verification (commit pending, feature branch `phase2/miniapp-api-integration`): `npm run check` passes — 57 unit tests (11 contracts, 16 miniapp, 29 API, 1 bot), strict type checks for all workspaces incl. integration test files, all production builds; `npm audit --audit-level=low` reports 0 vulnerabilities; `git diff --check` is clean. New coverage: `rotateCsrf` unit + session-restore route tests (API), `KidanApiClient` and `mapErrorToStatus` unit tests (miniapp), and `draftMapping` merge tests (miniapp). The PostgreSQL integration suite is unchanged and runs only in CI (no database in this sandbox).
-- 2026-08-14 — Phase 02 **third independent review** (`PR_02_THIRD_REVIEW_REQUEST_CHANGES.txt`, T3-01…T3-07) on head `8f1d945`. The review reproduced two regressions from the R2 round (demo could not advance past step 1; real final "Save draft" sent no PUT and reached no success state) plus untruthful persisted/saved copy, an unserialized logout/recovery lifecycle, silent save-state loss on `INVALID_CSRF`/double-click, partly-trusted malformed error envelopes, and incomplete test/operator evidence. All T3 findings were fixed on local commits and pushed as **normal follow-up commits** (no force-push, no merge): `restore`/`commit`/`logout`/`invalidate` now share one lifecycle coordinator with `generationRef` + `loggingOutRef` guarding stale results (T3-03); `saveProgress` returns an explicit `{ success, persisted }` outcome so demo advances locally with zero network calls and the real final preview sends a checkpoint PUT and reaches success only after a valid server response (T3-01); persisted state is initialized from `res.version > 0` and shown truthfully in `PilotDisabledScreen` (T3-02); a synchronous action lock, single-flight reload, and `INVALID_CSRF` recovery message prevent silent loss (T3-04); the client fails closed on any malformed error envelope and keeps `NETWORK` client-only (T3-05); new tests cover click-through demo/real flows, logout races, malformed envelopes, invalid Origin, every auth-gate state, and reload/persist (T3-06). `npm run check` green: 99 unit tests (52 miniapp, 35 API, 11 contracts, 1 bot) + all production builds; `npm audit --audit-level=low` 0 vulnerabilities; `git diff --check` clean. PostgreSQL integration suite is unchanged and CI-only. **CI (check + integration) and branch-protection ruleset `20794921` re-confirmation still pending** before merge; operator-recorded synthetic-Telegram/responsive/screen-reader *visual* evidence remains a pre-merge follow-up (covered by jsdom logic tests). `ENABLE_REAL_SUBMISSIONS` remains `false`.
+### Authentication, session, and logout
 
-### Branch protection (re-confirm before merge)
-`main` branch protection / rulesets must require both CI jobs before merge and block force pushes / direct bypasses:
-- `check` — Typecheck, unit tests, build, audit.
-- `integration` — PostgreSQL integration tests.
-The PR #2 third review noted ruleset `20794921` is active with strict required checks and required review-thread resolution; this must be re-confirmed directly in the repository before merging Phase 02. Until verified, Phase 02 status enforcement is outstanding. The T3 review also requires all review threads to be truthfully resolved before merge.
+- `apps/miniapp/src/api/client.ts` parses validated non-2xx error envelopes before applying a success-only expected-status assertion. The server's real logout `401 UNAUTHENTICATED` is preserved.
+- `apps/miniapp/src/auth/AuthProvider.tsx` uses one ordered operation tail for bootstrap, recovery, invalidation, and logout.
+- Logout establishes terminal intent synchronously, blocks later retry/invalidate work, and returns one shared `Promise<LogoutResult>` to all callers.
+- After earlier auth work settles, logout always calls final cookie-backed `GET /v1/session`; it never trusts a stored CSRF value as proof of the current cookie.
+- Final GET 200 supplies the authoritative CSRF. Final GET 401 confirms absence. Network, valid 500, malformed response, and body-read failures never claim sign-out.
+- A logout `INVALID_CSRF` performs one bounded final-session refresh and one retry. Further failure remains authenticated/retryable with an announced error.
+- A Telegram exchange already in flight before logout may settle, but logout then restores and revokes its final cookie. No Telegram exchange may start after terminal logout intent.
+- `retry()` and `invalidate()` are awaitable. Generation checks suppress stale React commits but are not used as a substitute for ordering cookie side effects.
+- `AuthStatusBar` exposes disabled/`aria-busy` signing-out semantics and announced unconfirmed failure.
 
-### Integration suite facts (durable)
-- Public codes come from the alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (Kidan excludes `0`/`1` and `O`/`I` to avoid ambiguity); the generator is `generatePublicCode()` in `apps/api/src/security/publicCode.ts`.
-- Collision handling: `findOrCreateUserByTelegram` retries `createPublicCode()` once on a unique-violation and rolls back the user row so no orphan `app_user` is left behind. Integration tests exercise this by forcing the first generated code to collide.
-- Harness: `createIntegrationHarness()` creates a disposable `kidan_it_*` database, applies all migrations from zero, runs the suite, and drops the database in `cleanup()`. It now also drops the database if migrations fail, so a broken migration run leaves no orphans.
-- The integration suite is intentionally excluded from the default unit `npm test`; run it with `npm run db:test` (requires `TEST_DATABASE_URL` or `DATABASE_URL`). CI runs it in a separate job against a PostgreSQL 17 service.
+### Public-draft lifecycle
 
-## Next tasks, in order
-1. ~~Re-verify the fix commit against PostgreSQL~~ — Done: CI run `31607920446` (commit `90614b4`) passed both jobs, including the PostgreSQL 17 integration suite (21 tests). Recorded in HANDOFF and `docs/reviews/COMMIT_90614b4_REVIEW.txt`.
-2. *Pending repository administration:* configure `main` branch protection/rulesets to require the `check` and `integration` jobs and block force pushes (see the Branch protection note above).
-3. **Phase 02 rework (addressing PR #2 REQUEST CHANGES, feature branch `phase2/miniapp-api-integration`): three independent reviews addressed — RC-01…RC-08, R2-01…R2-09, and T3-01…T3-07.** All T3 findings are fixed on normal follow-up commits (no force-push, no merge) and pushed; the branch is **not merged**. CSRF is **non-rotating and derived deterministically from the session token** (`SessionService.deriveCsrfToken`/`restoreSession`), so concurrent restores never invalidate one another. Auth lifecycle (`bootstrap`/`commit`/`logout`/`invalidate`) is coordinated by one `generationRef` + `loggingOutRef` so a stale bootstrap cannot return the provider to authenticated after logout (T3-03). `AuthGate` renders loading/signed-out/expired/unavailable/fatal screens (now covered by tests). `saveProgress` returns an explicit `{ success, persisted }` outcome; demo advances locally with zero network calls and the real final preview sends a checkpoint PUT and reaches success only after a valid server response (T3-01). Persisted state is initialized from `res.version > 0` and shown truthfully in `PilotDisabledScreen` (T3-02). A synchronous action lock, single-flight reload, and `INVALID_CSRF` recovery message prevent silent save-state loss (T3-04). The client fails closed on any malformed error envelope and keeps `NETWORK` client-only (T3-05). Tests cover click-through demo/real flows, save conflict, logout races, malformed envelopes, invalid Origin, every auth-gate state, and reload/persist (T3-06). `ENABLE_REAL_SUBMISSIONS` remains `false`; no identity fields reach public-draft requests/responses/storage. **Pending before merge:** fresh CI (check + PostgreSQL 17 integration) re-confirmation, branch-protection ruleset `20794921` re-confirmation, a fourth independent re-review, truthful resolution of all review threads, and operator-recorded synthetic-Telegram/responsive/screen-reader visual evidence (currently covered by jsdom logic tests). Not merged.
-4. Threat-model and build separate administrator authentication/review before enabling real submissions; users must never self-approve.
-5. Add consent withdrawal, profile pause/correction/export/deletion, audit events, and approved retention jobs.
-6. Implement discovery/mutual-decision queries with review and bidirectional-block predicates, then the restricted in-app introduction.
-7. Add private verification-photo storage only after its upload authorization, re-encoding, malware scanning, 30-day deletion, backup expiry, and exceptional-hold controls are approved.
+- `saveProgress` returns the authoritative `{ success, persisted }` result. Footer exit uses `result.persisted`, so a first confirmed write reports saved.
+- `reloadLatest` and initial retry load return shared, awaitable `DraftLoadResult` promises.
+- Continue, Back, footer/header Exit, reload, and loading retry use one synchronous action guard; save/reload content is disabled while pending.
+- Conflict reload preserves state on failure and coherently reapplies payload, version, persistence, and server step on success.
+- Completion stores the final write's persistence result rather than reading a stale render.
+- The real five-step regression proves exactly five sequential public-only PUTs with versions 2→7: eligibility, public profile, faith/family, partner preferences, and the empty public-preview checkpoint.
+- Tests prove request bodies exclude private identity, consent, phone/name/date of birth/photo, Telegram fields, session token, and CSRF.
+- Browser demo mode remains synthetic and network-free.
 
-## Change log
-- 2026-08-12 — Initial scaffold, OpenCode instructions, specialist agent, synthetic discovery, Telegram validation, generic-only bot, and privacy-oriented schema.
-- 2026-08-12 — Analyzed the prior questionnaire; deleted source uploads; locked EOTC-only eligibility, free initial launch, values-only discovery, admin-only verification media, and restricted introductions.
-- 2026-08-12 — Added seven-step local-only onboarding and canonicalized marriage intention as `teklil`, `kidusan_kurban`, or `orthodox_church_marriage`.
-- 2026-08-12 — Added the persistence foundation and published it to origin/main at `72101b1`.
-- 2026-08-12 — Drafted Phase 01 PostgreSQL validation: extracted `applyMigrations(pool)` reusable runner, added a disposable-database integration harness, repository/migration/`/ready` integration tests, unit/integration vitest split, `npm run db:test`, and a CI workflow with a PostgreSQL 17 service. Integration execution is pending an environment with PostgreSQL.
-- 2026-08-12 — Pushed `81bbd21` (Phase 01 draft) and CI ran RED on `npm run db:test`. Review `docs/reviews/COMMIT_81bbd21_REVIEW.txt` listed four blockers and seven major findings: a malformed `touchSession` SQL statement, invalid public codes from a hex alphabet in the collision test, a reused phone fixture violating the unique lookup hash, an ineffective Telegram-ID storage assertion, an expiry assertion masked by an earlier revocation, a missing deleted-user test, harness not dropping the database on migration failure, and an unhardened CI workflow.
-- 2026-08-12 — Fix commit `90614b4` (verified green; see `docs/reviews/COMMIT_90614b4_REVIEW.txt`): corrected `touchSession` SQL with an explicit `::timestamptz` cast and grouped arithmetic; switched the public-code collision test to codes from `generatePublicCode()`; gave every `savePrivateIdentity` call a unique E.164 phone via `uniquePhone()`; rewrote the Telegram-ID storage test to assert against the actual stored Telegram ID; split the session expiry test from the revocation test and added a deleted-user test; made the harness drop the disposable database when migrations fail; and hardened the CI workflow (top-level `permissions: contents: read`, pinned action SHAs, `concurrency` cancel, job `timeout-minutes`, and a separate `integration` job). CI run `31607920446` passed both jobs (37 unit tests + 21 PostgreSQL integration tests).
-- 2026-08-12 — Documentation/CI cleanup (follow-up to the `90614b4` review): upgraded pinned `actions/checkout`/`actions/setup-node` to reviewed v6 SHA pins; moved the two review documents into `docs/reviews/` and fixed the in-repo reference; recorded required `main` branch protection in HANDOFF as pending repository administration; and marked Phase 01 technically complete and verified in CI. No product changes.
-- 2026-08-13 — Phase 02 Mini App ↔ API integration (feature branch `phase2/miniapp-api-integration`, uncommitted): implemented A1 CSRF-on-session-restore (`PersistenceRepository.updateSessionCsrf` in memory + Postgres repos, `SessionService.rotateCsrf`, `GET /v1/session` now returns a rotated `csrfToken`); A2 a typed same-origin `KidanApiClient` with `ApiError` typed errors; A3 an auth state machine, `AuthProvider` + `useAuth` with Telegram raw-initData auth, opaque-cookie session restore/logout, `sessionStorage`-only CSRF, and an explicit synthetic browser-demo passthrough; and B resumable public drafts (`useOnboardingDraft` + `draftMapping`) with optimistic `version` handling and a 409 `DRAFT_VERSION_CONFLICT` "Reload latest" path. No identity fields are placed in public draft payloads or client storage. Contracts added `DraftResponse`/`DraftSaveResponse` type exports. `npm run check` passes: 57 unit tests (11 contracts, 16 miniapp, 29 API, 1 bot), all production builds, `npm audit` 0 vulnerabilities, `git diff --check` clean. PostgreSQL integration suite is unchanged and CI-only (no Postgres in this sandbox).
-- 2026-08-13 — Skill install/eval cleanup: briefly evaluated `npx skills add` of the upstream `claude-office-skills` `telegram-bot` skill (security assessment: Gen Safe, Socket 0 alerts, Snyk Med Risk). Installed to `.agents/skills/telegram-bot` with a `.claude/skills` symlink and `skills-lock.json`, then fully removed at user request (no third-party skill retained in the repo). Decision: do not add external Telegram-bot skills; KIDAN's `apps/bot` stays grammY-based and generic-notifications-only per the privacy baseline. Phase 02 branch and all product code remain unchanged and uncommitted.
-- 2026-08-13 — Phase 02 corrective rework (local WIP, branch `phase2/miniapp-api-integration`) resolving PR #2 REQUEST CHANGES (RC-01…RC-08): race-safe non-rotating CSRF (`deriveCsrfToken`/`restoreSession`, removed `rotateCsrf`/`updateSessionCsrf`); single-flight `AuthProvider` + `AuthGate` with explicit loading/signed-out/expired/unavailable/fatal screens; correct logout (success only after server revocation) and `invalidate()`; demo/real mode separation with a truthful `PilotDisabledScreen` and a persistent network-free demo banner; section-specific partial draft patches validated by `onboardingProgressPatchSchema` with server-side deep merge; gated/serialized draft hydration and saves with 409 write-blocking and 401/`INVALID_CSRF` recovery; client-side runtime response validation (`sessionStatusSchema`, `draftResponseSchema`, `draftSaveResponseSchema`) and request validation failing closed; tightened contracts (`apiErrorCodeSchema`, literal `draftSchemaVersion`, public-only draft payload). `npm run check` passes; `npm audit --audit-level=low` reports 0 vulnerabilities; `git diff --check` clean. New/updated tests: `sessionBootstrap`, client response/request validation, `buildSectionPatch`, route partial-save/identity-exclusion, Postgres restore stability. Component/hook render tests were limited to pure-logic tests because `@testing-library/react` is not installed in this workspace. The PostgreSQL integration suite remains CI-only (no database in this sandbox). `ENABLE_REAL_SUBMISSIONS` remains `false`.
-- 2026-08-14 — Phase 02 **second independent review** (see `PR_02_SECOND_REVIEW_REQUEST_CHANGES.txt`, findings R2-01…R2-09) on head `d819365`. Delivery rule applied: push **normal follow-up commits** to `phase2/miniapp-api-integration` only — no force-push, no history rewrite, no review-thread resolution, no merge — then await fresh CI + independent re-review. Addressed all nine R2 findings: bound `KidanApiClient` methods in `AuthProvider` (R2-01); true shared-promise single-flight bootstrap + server-backed logout (R2-05); typed transport with `NETWORK`/`INVALID_RESPONSE` + envelope parsing and server-side response-contract validation (R2-06); awaitable `saveProgress` tied to navigation with disabled controls (R2-02); `currentStep` resume + discard-on-reload (R2-03); explicit Telegram-launch mode detection + truthful `PublicPreview`/`PilotDisabledScreen` copy (R2-04); `@testing-library/react`+`jsdom` component/hook/route/transport tests (R2-07); styles + ARIA live regions (R2-08); docs now describe the actual implementation and remaining gates (R2-09). `npm run check` green: 40 miniapp tests (incl. 9 new component/hook/transport tests), 35 API tests, 11 contracts, 1 bot; all production builds; `npm audit --audit-level=low` 0 vulnerabilities; `git diff --check` clean. Commits pushed as normal follow-ups; **CI (check + PostgreSQL integration) and branch-protection ruleset `20794921` re-confirmation still pending** before merge. Sandbox limitation: synthetic Telegram bot E2E, responsive, and screen-reader *visual* evidence are delivered as automated jsdom tests; operator-recorded browser/Telegram-environment evidence is a pre-merge follow-up. `ENABLE_REAL_SUBMISSIONS` remains `false`; no identity fields reach public-draft requests/responses/storage.
-- 2026-08-14 — Phase 02 **third independent review** (`PR_02_THIRD_REVIEW_REQUEST_CHANGES.txt`, T3-01…T3-07) on head `8f1d945` reproduced two regressions from the R2 round (demo could not advance; real final "Save draft" sent no PUT) and required a truthful rework plus a complete test/evidence matrix. Fixes pushed as **normal follow-up commits only** (no force-push, no history rewrite, no review-thread resolution, no merge) on top of `8f1d945`: `6c50f00` (T3-01/T3-02 demo+real completion + persisted state), `55380e3` (T3-03/T3-04 logout/save serialization + reload), `a6b18c3` (T3-05 client fail-closed + NETWORK client-only), `d51d952` (T3-06 tests: click-through, fail-closed envelope, invalid-Origin, logout races, auth-gate states), `c4ec902` (T3-07 HANDOFF/PHASE_02_WIP rewrite). `saveProgress` now returns `{ success, persisted }`; demo advances locally with zero network calls; the real final preview sends a checkpoint PUT and reaches success only after a valid server response; persisted state initializes from `res.version > 0`; auth `restore`/`commit`/`logout`/`invalidate` share one `generationRef`+`loggingOutRef` lifecycle so a stale bootstrap cannot return the provider to authenticated after logout; the client fails closed on any malformed error envelope and keeps `NETWORK` client-only; `PilotDisabledScreen` copy is scoped and non-contradictory. `npm run check` green: 99 unit tests (52 miniapp, 35 API, 11 contracts, 1 bot) + all production builds; `npm audit` 0 vulnerabilities; `git diff --check` clean. PostgreSQL integration suite is unchanged and CI-only. **CI (check + integration) and branch-protection ruleset `20794921` re-confirmation still pending** before merge; operator-recorded synthetic-Telegram/responsive/screen-reader *visual* evidence remains a pre-merge follow-up (covered by jsdom logic tests). `ENABLE_REAL_SUBMISSIONS` remains `false`; no identity fields reach public-draft requests/responses/storage.
-- 2026-08-14 — Phase 02 **fourth independent review** (`PR_02_FOURTH_REVIEW_REQUEST_CHANGES.txt`, T4-01…T4-08) on head `d63dd90` returned REQUEST CHANGES (DO NOT MERGE). It reproduced the R2 logout/serialization defect (truthful single-flight 204-only logout + serialized auth lifecycle) and added: unified nav lock + reload revision (T4-03/T4-04), a CSP **response header** (not just a meta tag) delivered by the same-origin host (T4-07), accurate `PilotDisabledScreen` privacy copy (T4-06), complete tests for every finding (T4-05), and truthful docs (T4-08) correcting prior false "passed" claims, wrong counts (now 122: 73 miniapp, 37 API, 11 contracts, 1 bot), and missing `apps/api/` + `apps/miniapp/` file-path prefixes; it also requires operator-recorded synthetic-Telegram/responsive/screen-reader *visual* evidence as a hard pre-merge gate (not optional). All T4 findings addressed on **normal follow-up commits only** (no force-push, no history rewrite, no review-thread resolution, no merge). `npm run check` green: 122 tests (73 miniapp, 37 API, 11 contracts, 1 bot) + all production builds; `npm audit --audit-level=low` 0 vulnerabilities; `git diff --check` clean. The branch is **not merged** and **must not be merged** until fresh CI (check + PostgreSQL 17 integration) passes, ruleset `20794921` is re-confirmed, the fourth-review threads are truthfully resolved, and operator-recorded Telegram/responsive/screen-reader visual evidence is supplied. `ENABLE_REAL_SUBMISSIONS` remains `false`.
+### Privacy copy
+
+`PilotDisabledScreen` now distinguishes:
+
+1. Telegram launch data sent to Kidan for authentication;
+2. validated Telegram ID/authentication date retained for account/session security;
+3. Telegram names/usernames excluded from the public draft and discovery;
+4. Kidan private identity, verification-photo, and submission-consent collection remaining disabled in the preview.
+
+### CSP and hosting configuration
+
+- `apps/miniapp/src/lib/csp.ts` remains the reviewed policy generator.
+- `apps/miniapp/vite.config.ts` sends development/preview headers and imports the policy with an explicit `.ts` extension without native-loader warnings.
+- `apps/miniapp/deploy/nginx.conf` is a complete same-origin production-serving candidate. It emits the matching CSP and proxies `/api/` to `kidan-api:4000`.
+- `apps/miniapp/src/lib/csp.test.ts` prevents the generated production policy and Nginx header from drifting.
+- The meta policy in `apps/miniapp/index.html` is supplemental and does not replace the response header.
+- **Still pending:** adopt the configuration on an approved HTTPS host and capture the actual response header/source inventory on the exact final SHA. A config file is not deployment evidence.
+
+### CI hygiene
+
+- `.github/workflows/ci.yml` now checks out the exact PR head with full history.
+- Pull requests run `git diff --check <pull-request-base>..HEAD`; pushes use the before SHA with a safe `HEAD^` fallback.
+- The compared SHAs are printed in CI logs.
+- The prior blank line at EOF in `apps/miniapp/vite.config.ts` is removed.
+- jsdom stubs `window.scrollTo`; the Vite extension warning is fixed rather than suppressed.
+
+## Local verification after fifth-review code changes
+
+- `npm run check`: **green and warning-clean**.
+  - Mini App: 97 tests
+  - API: 37 tests
+  - Contracts: 11 tests
+  - Bot: 1 test
+  - Total: **146 unit tests**
+  - All typechecks and production builds passed.
+- The PostgreSQL integration suite remains unchanged and cannot run in this sandbox; it must pass in exact-final-head CI.
+- `npm audit --audit-level=low`, final `npm ci`, and the final base-to-head range check must be rerun after the documentation commit and reported with the publication patch.
+
+## Hard gates still open
+
+1. Push the normal follow-up commits without rebasing/force-pushing the PR branch.
+2. Deploy the exact final SHA to an approved HTTPS synthetic Telegram test host using the reviewed same-origin/CSP configuration.
+3. Complete `docs/evidence/phase-02/OPERATOR_RECORD_TEMPLATE.md` using synthetic data only; redact all secrets and personal identifiers.
+4. Verify Telegram first auth, restore/refresh, five writes, resume, two-client conflict/reload, expiry/re-auth, logout, post-logout 401, and no accepted cookie after logout.
+5. Record narrow/wide responsive, safe-area, overflow, 200% text/zoom, reduced-motion, keyboard/focus, and real screen-reader results.
+6. Prove `ENABLE_REAL_SUBMISSIONS=false` on that deployment and prove no forbidden data appears in draft/network/storage/URL/log/analytics/evidence.
+7. Obtain fresh exact-final-head GitHub Actions (`check` and PostgreSQL integration), CodeRabbit, active-ruleset confirmation, and independent review.
+8. Resolve conversations only after the exact final source/evidence satisfies each one.
+9. Update the PR body only after the final head, evidence, counts, CI, and review are known.
+10. Approve/merge only as a separate final decision after every gate closes.
+
+## Active repository protection
+
+Ruleset `20794921` was last independently confirmed active on 2026-08-14. It requires:
+
+- `Typecheck, unit tests, build, audit`;
+- `PostgreSQL integration tests`;
+- strict up-to-date checks;
+- pull-request review-thread resolution;
+- no deletion or non-fast-forward update of protected `main`.
+
+Re-confirm the ruleset on the exact final head; do not describe it as unconfigured repository administration.
+
+## Locked product/privacy scope
+
+- Adult Ethiopian Orthodox Tewahedo candidates only for the first release.
+- Values-only, photo-free anonymous discovery.
+- No social-media links in candidate profiles.
+- Name and phone remain hidden; no contact reveal is implemented.
+- Verification photo, when later authorized, is admin-only and scheduled for deletion 30 days after approval.
+- Mutual interest + administrator approval + both final confirmations may later open only a restricted in-app introduction.
+- Initial controlled pilot remains free. Payment, wallet, credits, ratings, VIP, and paid verification are not authorized.
+- Real identity/photo/submission/admin/discovery/matching/messaging/contact/payment implementation remains outside Phase 02 and disabled.
+
+## Durable Phase 01 facts
+
+- Phase 01 final baseline is `053fb6e`; PostgreSQL 17 integration passed in Actions.
+- Public codes use `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`.
+- PostgreSQL stores hashed opaque sessions and encrypted Telegram/private identity values.
+- Public drafts are isolated per user and use optimistic versions.
+- No user route can self-approve a profile.
+- Production database location, legal basis, retention, and Ethiopian data-residency controls remain unresolved before real-user launch.
