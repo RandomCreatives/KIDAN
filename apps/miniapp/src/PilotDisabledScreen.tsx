@@ -25,7 +25,11 @@ export function PilotDisabledScreen({ onReopen, saved = false }: { onReopen: () 
       </section>
       <div className="quiet-note">
         <LockIcon size={17} />
-        <p>Only your public profile sections are transmitted in this preview. Telegram sign-in uses your launch credentials; no identity or contact details are shared.</p>
+        <p>
+          Only your public profile sections are transmitted in this preview. Telegram sign-in sends the launch
+          credential required for authentication; no verification identity, phone number, or contact details are
+          shared.
+        </p>
       </div>
       <button className="secondary-button" type="button" onClick={onReopen}>
         Review your draft
