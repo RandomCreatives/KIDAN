@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
@@ -32,8 +35,21 @@ jobs:
         run: npm run build
       - name: Dependency audit
         run: npm audit --audit-level=low
-      - name: Diff hygiene
-        run: git diff --check
+      - name: Diff hygiene (changed commit range)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base="$PR_BASE_SHA"
+          if [ -z "$base" ]; then
+            base="$BEFORE_SHA"
+          fi
+          if [ -z "$base" ] || [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          echo "Checking whitespace in $base..HEAD ($(git rev-parse HEAD))"
+          git diff --check "$base..HEAD"
 
   integration:
     name: PostgreSQL integration tests
@@ -57,6 +73,9 @@ jobs:
       TEST_DATABASE_URL: postgresql://kidan_dev:kidan_dev_only@127.0.0.1:5432/kidan
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22

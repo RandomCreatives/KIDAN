@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import nginxProductionConfig from "../../deploy/nginx.conf?raw";
 import { kidanCspPolicy, TELEGRAM_SDK_SRC, isAllowedCspScriptHost } from "./csp.js";
 
 describe("kidanCspPolicy", () => {
@@ -26,6 +27,13 @@ describe("kidanCspPolicy", () => {
     expect(policy).toContain("'unsafe-inline'");
     expect(policy).toContain("ws:");
     expect(policy).not.toContain("'unsafe-eval'");
+  });
+
+  it("keeps the production Nginx response header identical to the reviewed policy (T5-07)", () => {
+    const expected = `add_header Content-Security-Policy "${kidanCspPolicy("production")}" always;`;
+    expect(nginxProductionConfig).toContain(expected);
+    expect(nginxProductionConfig).toContain("location /api/");
+    expect(nginxProductionConfig).toContain("proxy_pass http://kidan-api:4000/");
   });
 
   it("points the SDK loader at the reviewed Telegram host (T4-07)", () => {

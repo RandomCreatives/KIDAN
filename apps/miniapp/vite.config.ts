@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
-import { kidanCspPolicy } from "./src/lib/csp";
+import { kidanCspPolicy } from "./src/lib/csp.ts";
 
 function cspHeader(): Plugin {
   return {
@@ -40,4 +40,3 @@ export default defineConfig({
     allowedHosts: true,
   },
 });
-
