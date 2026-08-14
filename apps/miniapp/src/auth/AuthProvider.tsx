@@ -51,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clientRef = useRef(new KidanApiClient());
   const bootstrapPromiseRef = useRef<Promise<BootstrapResult> | null>(null);
   const generationRef = useRef(0);
+  const loggingOutRef = useRef(false);
   const [status, setStatus] = useState<AuthStatus>(isTelegram ? "initializing" : "authenticated");
   const [csrfToken, setCsrfToken] = useState<string | null>(isTelegram ? null : "demo");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
@@ -63,17 +64,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileStatus(result.profileStatus);
       setStatus("authenticated");
     } else if (result.kind === "unauthenticated") {
-      clearLocalSession();
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
       setStatus("unauthenticated");
     } else if (result.kind === "unavailable") {
-      clearLocalSession();
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
       setStatus("unavailable");
     } else {
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
       setStatus(result.status);
     }
   }, []);
 
   const runBootstrap = useCallback(async (): Promise<BootstrapResult> => {
+    if (loggingOutRef.current) return { kind: "unauthenticated" };
     const myGeneration = generationRef.current;
     setLogoutError(null);
     setStatus((current) => (current === "authenticated" ? "authenticated" : "initializing"));
@@ -95,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     bootstrapPromiseRef.current = bootstrapPromise;
     const result = await bootstrapPromise;
     if (bootstrapPromiseRef.current === bootstrapPromise) bootstrapPromiseRef.current = null;
+    if (loggingOutRef.current) return { kind: "unauthenticated" };
     if (generationRef.current === myGeneration) commit(result);
     return result;
   }, [commit]);
@@ -111,41 +121,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     if (!isTelegram) {
-      clearLocalSession();
+      saveCsrf(null);
+      setCsrfToken(null);
+      setProfileStatus(null);
       setStatus("unauthenticated");
       return;
     }
     setLogoutError(null);
-    let token = loadCsrf();
+    const inFlight = bootstrapPromiseRef.current;
+    generationRef.current += 1;
+    loggingOutRef.current = true;
     try {
+      if (inFlight) await inFlight.catch(() => undefined);
+      let token = loadCsrf();
       if (!token) {
-        const session = await clientRef.current.getSession();
-        token = session.csrfToken;
+        try {
+          const session = await clientRef.current.getSession();
+          token = session.csrfToken;
+        } catch {
+          token = null;
+        }
       }
-      await clientRef.current.logout(token);
-      clearLocalSession();
+      if (token) await clientRef.current.logout(token).catch(() => undefined);
+    } finally {
+      bootstrapPromiseRef.current = null;
+      saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
       setStatus("unauthenticated");
-    } catch (error) {
-      if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-        clearLocalSession();
-        setCsrfToken(null);
-        setProfileStatus(null);
-        setStatus("unauthenticated");
-        return;
-      }
-      setLogoutError("Could not sign out. Please try again.");
+      loggingOutRef.current = false;
     }
   }, [isTelegram]);
 
+  const retry = useCallback(() => {
+    if (loggingOutRef.current) return;
+    void runBootstrap();
+  }, [runBootstrap]);
+
   const invalidate = useCallback(() => {
     generationRef.current += 1;
+    loggingOutRef.current = true;
     bootstrapPromiseRef.current = null;
-    clearLocalSession();
+    saveCsrf(null);
     setCsrfToken(null);
     setProfileStatus(null);
     setStatus("expired");
+    loggingOutRef.current = false;
   }, []);
 
   return (
@@ -157,9 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileStatus,
         logoutError,
         logout,
-        retry: () => {
-          void runBootstrap();
-        },
+        retry,
         invalidate,
       }}
     >
