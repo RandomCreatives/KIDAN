@@ -29,6 +29,7 @@ export interface OnboardingDraftController {
   reloading: boolean;
   reloadError: boolean;
   resumedStep: number | null;
+  reloadRevision: number;
   retryLoad: () => void;
   saveProgress: (stepIndex: number, currentDraft: OnboardingFormState) => Promise<SaveResult>;
   reloadLatest: () => void;
@@ -49,6 +50,7 @@ export function useOnboardingDraft(
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState(false);
   const [resumedStep, setResumedStep] = useState<number | null>(isDemo ? 0 : null);
+  const [reloadRevision, setReloadRevision] = useState(0);
   const expectedVersionRef = useRef(0);
   const conflictRef = useRef(false);
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
@@ -74,6 +76,7 @@ export function useOnboardingDraft(
         expectedVersionRef.current = res.version;
         setPersisted(res.version > 0);
         setResumedStep(serverStepToClientStep(res.currentStep, isDemo));
+        setReloadRevision((r) => r + 1);
         setHydrated(true);
       })
       .catch((error: unknown) => {
@@ -170,6 +173,7 @@ export function useOnboardingDraft(
         setReloadError(false);
         setPersisted(res.version > 0);
         setResumedStep(serverStepToClientStep(res.currentStep, isDemo));
+        setReloadRevision((r) => r + 1);
       })
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
@@ -194,6 +198,7 @@ export function useOnboardingDraft(
     reloading,
     reloadError,
     resumedStep,
+    reloadRevision,
     retryLoad: loadDraft,
     saveProgress,
     reloadLatest,
