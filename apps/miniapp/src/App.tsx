@@ -25,7 +25,10 @@ export function App() {
               if (saved) setDraftSaved(true);
               setShowOnboarding(false);
             }}
-            onComplete={() => setShowOnboarding(false)}
+            onComplete={(saved) => {
+              if (saved) setDraftSaved(true);
+              setShowOnboarding(false);
+            }}
           />
         </div>
       </div>

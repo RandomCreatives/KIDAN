@@ -19,13 +19,13 @@ export function PilotDisabledScreen({ onReopen, saved = false }: { onReopen: () 
       <section className="trust-banner profile-trust">
         <ShieldCheckIcon />
         <div>
-          <strong>{saved ? "Your public draft was transmitted and saved" : "Nothing was transmitted or saved yet"}</strong>
+          <strong>{saved ? "Your public draft was transmitted and saved" : "Your public draft has not been saved yet"}</strong>
           <span>Verification, consent, and review remain disabled in this preview.</span>
         </div>
       </section>
       <div className="quiet-note">
         <LockIcon size={17} />
-        <p>Only your public profile sections were transmitted for this preview. Telegram sign-in used your launch credentials; no identity or contact details were shared.</p>
+        <p>Only your public profile sections are transmitted in this preview. Telegram sign-in uses your launch credentials; no identity or contact details are shared.</p>
       </div>
       <button className="secondary-button" type="button" onClick={onReopen}>
         Review your draft
