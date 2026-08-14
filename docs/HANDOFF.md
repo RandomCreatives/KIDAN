@@ -68,8 +68,9 @@ Last updated: 2026-08-14 (Africa/Nairobi)
 - The prior blank line at EOF in `apps/miniapp/vite.config.ts` is removed.
 - jsdom stubs `window.scrollTo`; the Vite extension warning is fixed rather than suppressed.
 
-## Local verification after fifth-review code changes
+## Local verification after fifth-review code and documentation changes
 
+- `npm ci`: passed (201 packages installed; 206 audited; 0 vulnerabilities).
 - `npm run check`: **green and warning-clean**.
   - Mini App: 97 tests
   - API: 37 tests
@@ -77,8 +78,9 @@ Last updated: 2026-08-14 (Africa/Nairobi)
   - Bot: 1 test
   - Total: **146 unit tests**
   - All typechecks and production builds passed.
+- `npm audit --audit-level=low`: passed with 0 vulnerabilities.
+- `git diff --check 053fb6ecf9cbff72b2e2d052588d5250ffd7d773..<final-local-head>`: clean.
 - The PostgreSQL integration suite remains unchanged and cannot run in this sandbox; it must pass in exact-final-head CI.
-- `npm audit --audit-level=low`, final `npm ci`, and the final base-to-head range check must be rerun after the documentation commit and reported with the publication patch.
 
 ## Hard gates still open
 

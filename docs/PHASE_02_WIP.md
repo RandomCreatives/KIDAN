@@ -111,8 +111,7 @@ The Mini App suite now includes:
 
 ## Local verification
 
-Latest code verification before the documentation-only update:
-
+- `npm ci`: passed (201 packages installed; 206 audited; 0 vulnerabilities).
 - `npm run check`: green and warning-clean.
 - Tests: **146 total**.
   - Mini App: 97
@@ -120,8 +119,9 @@ Latest code verification before the documentation-only update:
   - Contracts: 11
   - Bot: 1
 - All typechecks and production builds passed.
+- `npm audit --audit-level=low`: 0 vulnerabilities.
+- Exact Phase 02 base-to-final-local-head `git diff --check`: clean.
 - PostgreSQL integration remains CI-only in this sandbox and must pass on the exact final pushed SHA.
-- Final `npm ci`, `npm audit --audit-level=low`, exact base-to-final-head `git diff --check`, and a final rerun of `npm run check` are required after documentation is committed.
 
 ## Hard merge gates still open
 
