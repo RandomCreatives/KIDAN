@@ -61,7 +61,9 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const [draft, setDraft] = useState<OnboardingFormState>(initialOnboardingState);
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedPersisted, setSubmittedPersisted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const actionLockRef = useRef(false);
 
   const {
@@ -91,6 +93,19 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   }, [hydrated, resumedStep, reloadRevision]);
 
   const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
+  const controlsBusy = actionBusy || saving || reloading;
+
+  const beginAction = useCallback((): boolean => {
+    if (actionLockRef.current) return false;
+    actionLockRef.current = true;
+    setActionBusy(true);
+    return true;
+  }, []);
+
+  const endAction = useCallback(() => {
+    actionLockRef.current = false;
+    setActionBusy(false);
+  }, []);
 
   const patch = <K extends keyof OnboardingFormState>(section: K, value: Partial<OnboardingFormState[K]>) => {
     setDraft((current) => ({ ...current, [section]: { ...current[section], ...value } }));
@@ -133,8 +148,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   };
 
   const continueFlow = async () => {
-    if (actionLockRef.current) return;
-    actionLockRef.current = true;
+    if (!beginAction()) return;
     try {
       const message = validationMessage();
       if (message) {
@@ -151,6 +165,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         return;
       }
       if (step === activeIndices.length - 1) {
+        setSubmittedPersisted(result.persisted);
         setSubmitted(true);
         haptic("success");
         return;
@@ -158,21 +173,27 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       setStep((current) => current + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } finally {
-      actionLockRef.current = false;
+      endAction();
     }
   };
 
-  const goBack = () => {
-    if (actionLockRef.current) return;
-    setError(null);
-    setStep((current) => Math.max(0, current - 1));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const goBack = async () => {
+    if (!beginAction()) return;
+    try {
+      setError(null);
+      setStep((current) => Math.max(0, current - 1));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Hold the synchronous guard through this event-loop turn so a same-tick
+      // second navigation cannot use stale render state.
+      await Promise.resolve();
+    } finally {
+      endAction();
+    }
   };
 
   const requestExit = useCallback(
     async (force: boolean) => {
-      if (actionLockRef.current) return;
-      actionLockRef.current = true;
+      if (!beginAction()) return;
       try {
         if (force) {
           onExit(persisted);
@@ -180,7 +201,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         }
         const result = await saveProgress(currentIndex, draft);
         if (result.success) {
-          onExit(persisted);
+          onExit(result.persisted);
         } else {
           setError("We couldn’t save your progress. Please retry.");
           haptic("warning");
@@ -191,31 +212,57 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         haptic("warning");
         window.scrollTo({ top: 0, behavior: "smooth" });
       } finally {
-        actionLockRef.current = false;
+        endAction();
       }
     },
-    [persisted, currentIndex, draft, saveProgress, onExit],
+    [beginAction, currentIndex, draft, endAction, onExit, persisted, saveProgress],
   );
 
-  const handleReload = useCallback(() => {
-    if (actionLockRef.current) return;
-    reloadLatest();
-  }, [reloadLatest]);
+  const handleReload = useCallback(async () => {
+    if (!beginAction()) return;
+    try {
+      const result = await reloadLatest();
+      if (result.success && result.step != null) setStep(result.step);
+    } finally {
+      endAction();
+    }
+  }, [beginAction, endAction, reloadLatest]);
+
+  const handleRetryLoad = useCallback(async () => {
+    if (!beginAction()) return;
+    try {
+      const result = await retryLoad();
+      if (result.success && result.step != null) setStep(result.step);
+    } finally {
+      endAction();
+    }
+  }, [beginAction, endAction, retryLoad]);
 
   if (!hydrated && !isDemo) {
     return (
-      <main className="onboarding-shell">
+      <main className="onboarding-shell" aria-busy={!loadError || actionBusy ? "true" : undefined}>
         <header className="onboarding-topbar">
           <Brand />
-          <button className="icon-button" type="button" onClick={() => requestExit(true)} aria-label="Exit onboarding"><XIcon size={19} /></button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void requestExit(true)}
+            aria-label="Exit onboarding"
+            disabled={!loadError || actionBusy}
+          ><XIcon size={19} /></button>
         </header>
         <section className="page-intro">
           <span className="section-kicker">Kidan</span>
           <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
           <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
           {loadError && (
-            <button className="primary-button" type="button" onClick={retryLoad}>
-              Retry
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => void handleRetryLoad()}
+              disabled={actionBusy}
+            >
+              {actionBusy ? "Retrying…" : "Retry"}
             </button>
           )}
         </section>
@@ -246,7 +293,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           <LockIcon size={18} />
           <p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p>
         </div>
-        <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(persisted)}>
+        <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(submittedPersisted)}>
           {isDemo ? "Enter the demo app" : "Continue"}
         </button>
       </main>
@@ -256,10 +303,16 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const showSample = isDemo;
 
   return (
-    <main className="onboarding-shell">
+    <main className="onboarding-shell" aria-busy={controlsBusy ? "true" : undefined}>
       <header className="onboarding-topbar">
         <Brand />
-        <button className="icon-button" type="button" onClick={() => requestExit(true)} aria-label="Exit onboarding"><XIcon size={19} /></button>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => void requestExit(true)}
+          aria-label="Exit onboarding"
+          disabled={controlsBusy}
+        ><XIcon size={19} /></button>
       </header>
 
       <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
@@ -271,14 +324,14 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       {(conflict || reloadError) && !isDemo && (
         <div className="form-error draft-conflict" role="alert" aria-live="assertive">
           <span>{reloadError ? "Could not reload the latest draft. Try again." : "Your saved progress changed elsewhere. Reload the latest draft?"}</span>
-          <button type="button" className="sample-link" onClick={() => handleReload()} disabled={saving || reloading}>Reload latest</button>
+          <button type="button" className="sample-link" onClick={() => void handleReload()} disabled={controlsBusy}>Reload latest</button>
         </div>
       )}
       {!isDemo && (
         <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
       )}
 
-      <div className="onboarding-content">
+      <fieldset className="onboarding-content" disabled={controlsBusy} aria-busy={controlsBusy ? "true" : undefined}>
         {currentIndex === 0 && (
           <>
             <StepHeading eyebrow="Welcome to Kidan" title="A private path to intentional marriage." description="Before creating a profile, confirm that this community and its privacy model are right for you." />
@@ -405,15 +458,15 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             <div className="prototype-submit-note"><SparkIcon size={17} /><p>Prototype mode: submitting will not upload, persist, or transmit any information.</p></div>
           </>
         )}
-      </div>
+      </fieldset>
 
       <footer className="onboarding-footer">
         {step > 0 ? (
-          <button className="back-button" type="button" onClick={goBack} disabled={saving || conflict || reloadError || reloading}><ArrowLeftIcon size={18} /> Back</button>
+          <button className="back-button" type="button" onClick={() => void goBack()} disabled={controlsBusy || conflict || reloadError}><ArrowLeftIcon size={18} /> Back</button>
         ) : (
-          <button className="back-button" type="button" onClick={() => requestExit(false)} disabled={saving || conflict || reloadError || reloading}>{isDemo ? "Explore demo" : "Exit"}</button>
+          <button className="back-button" type="button" onClick={() => void requestExit(false)} disabled={controlsBusy || conflict || reloadError}>{isDemo ? "Explore demo" : "Exit"}</button>
         )}
-        <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={saving || conflict || reloadError || reloading}>
+        <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={controlsBusy || conflict || reloadError}>
           {currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span>
         </button>
       </footer>

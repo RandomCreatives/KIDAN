@@ -19,6 +19,12 @@ export interface SaveResult {
   persisted: boolean;
 }
 
+export interface DraftLoadResult {
+  success: boolean;
+  persisted: boolean;
+  step: number | null;
+}
+
 export interface OnboardingDraftController {
   hydrated: boolean;
   persisted: boolean;
@@ -30,9 +36,9 @@ export interface OnboardingDraftController {
   reloadError: boolean;
   resumedStep: number | null;
   reloadRevision: number;
-  retryLoad: () => void;
+  retryLoad: () => Promise<DraftLoadResult>;
   saveProgress: (stepIndex: number, currentDraft: OnboardingFormState) => Promise<SaveResult>;
-  reloadLatest: () => void;
+  reloadLatest: () => Promise<DraftLoadResult>;
 }
 
 export function useOnboardingDraft(
@@ -54,39 +60,50 @@ export function useOnboardingDraft(
   const expectedVersionRef = useRef(0);
   const conflictRef = useRef(false);
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
-  const reloadingRef = useRef(false);
+  const loadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
+  const reloadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
-  const loadDraft = useCallback(() => {
+  const loadDraft = useCallback((): Promise<DraftLoadResult> => {
     if (isDemo) {
       setHydrated(true);
       setLoadError(false);
       setResumedStep(0);
-      return;
+      return Promise.resolve({ success: true, persisted: false, step: 0 });
     }
+    if (loadPromiseRef.current) return loadPromiseRef.current;
+
     setLoadError(false);
-    clientRef.current
-      .getDraft()
-      .then((res) => {
+    const operation = (async (): Promise<DraftLoadResult> => {
+      try {
+        const res = await clientRef.current.getDraft();
         const payload = res.payload as Record<string, unknown>;
         if (res.version > 0 && payload && Object.keys(payload).length > 0) {
           setDraft((prev) => mergeFormFromPayload(prev, payload));
         }
+        const nextStep = serverStepToClientStep(res.currentStep, isDemo);
         expectedVersionRef.current = res.version;
         setPersisted(res.version > 0);
-        setResumedStep(serverStepToClientStep(res.currentStep, isDemo));
-        setReloadRevision((r) => r + 1);
+        setResumedStep(nextStep);
+        setReloadRevision((revision) => revision + 1);
         setHydrated(true);
-      })
-      .catch((error: unknown) => {
+        return { success: true, persisted: res.version > 0, step: nextStep };
+      } catch (error: unknown) {
         if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-          invalidate();
-          return;
+          await invalidate();
+          return { success: false, persisted: false, step: null };
         }
         setLoadError(true);
-      });
-  }, [isDemo, setDraft, invalidate]);
+        return { success: false, persisted: false, step: null };
+      }
+    })();
+    const shared = operation.finally(() => {
+      loadPromiseRef.current = null;
+    });
+    loadPromiseRef.current = shared;
+    return shared;
+  }, [invalidate, isDemo, setDraft]);
 
   useEffect(() => {
     if (isDemo) {
@@ -95,7 +112,7 @@ export function useOnboardingDraft(
       return;
     }
     if (!csrfToken) return;
-    loadDraft();
+    void loadDraft();
   }, [csrfToken, isDemo, loadDraft]);
 
   const saveProgress = useCallback(
@@ -106,7 +123,7 @@ export function useOnboardingDraft(
       if (!patch && stepToServerStep(stepIndex) === "public_preview") {
         patch = {} as unknown as PartialPublicOnboardingPayload;
       }
-      if (!patch) return { success: true, persisted: false };
+      if (!patch) return { success: true, persisted };
       const serverStep = stepToServerStep(stepIndex);
 
       const run = saveChainRef.current.then(async () => {
@@ -135,10 +152,12 @@ export function useOnboardingDraft(
               conflictRef.current = true;
               setConflict(true);
             } else if (error.code === "UNAUTHENTICATED") {
-              invalidate();
+              await invalidate();
             } else if (error.code === "INVALID_CSRF") {
-              setSaveError("Your session expired. Reconnecting before you continue.");
-              void retry();
+              setSaveError("Your session changed. Reconnecting before you continue.");
+              await retry();
+            } else if (error.code === "NETWORK") {
+              setSaveError("Network error while saving. Retry.");
             } else {
               setSaveError("Could not save your progress. Retry.");
             }
@@ -155,38 +174,46 @@ export function useOnboardingDraft(
       saveChainRef.current = run.catch(() => undefined);
       return tracked;
     },
-    [isDemo, csrfToken, hydrated, invalidate, retry],
+    [csrfToken, hydrated, invalidate, isDemo, persisted, retry],
   );
 
-  const reloadLatest = useCallback(() => {
-    if (isDemo || !csrfToken || reloadingRef.current) return;
-    reloadingRef.current = true;
+  const reloadLatest = useCallback((): Promise<DraftLoadResult> => {
+    if (isDemo || !csrfToken) {
+      return Promise.resolve({ success: false, persisted, step: null });
+    }
+    if (reloadPromiseRef.current) return reloadPromiseRef.current;
+
     setReloading(true);
-    clientRef.current
-      .getDraft()
-      .then((res) => {
+    const operation = (async (): Promise<DraftLoadResult> => {
+      try {
+        const res = await clientRef.current.getDraft();
         const payload = res.payload as Record<string, unknown>;
+        const nextStep = serverStepToClientStep(res.currentStep, isDemo);
         setDraft(resetFormFromPayload(initialOnboardingState, payload ?? {}));
         expectedVersionRef.current = res.version;
         setConflict(false);
         conflictRef.current = false;
         setReloadError(false);
         setPersisted(res.version > 0);
-        setResumedStep(serverStepToClientStep(res.currentStep, isDemo));
-        setReloadRevision((r) => r + 1);
-      })
-      .catch((error: unknown) => {
+        setResumedStep(nextStep);
+        setReloadRevision((revision) => revision + 1);
+        return { success: true, persisted: res.version > 0, step: nextStep };
+      } catch (error: unknown) {
         if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-          invalidate();
-          return;
+          await invalidate();
+          return { success: false, persisted, step: null };
         }
         setReloadError(true);
-      })
-      .finally(() => {
-        reloadingRef.current = false;
-        setReloading(false);
-      });
-  }, [isDemo, csrfToken, setDraft, invalidate]);
+        return { success: false, persisted, step: null };
+      }
+    })();
+    const shared = operation.finally(() => {
+      reloadPromiseRef.current = null;
+      setReloading(false);
+    });
+    reloadPromiseRef.current = shared;
+    return shared;
+  }, [csrfToken, invalidate, isDemo, persisted, setDraft]);
 
   return {
     hydrated,

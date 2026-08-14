@@ -161,6 +161,86 @@ describe("useOnboardingDraft", () => {
     expect(putCalls.length).toBe(0);
   });
 
+  it("shares one awaitable conflict reload and settles every caller with the same result (T5-04)", async () => {
+    let draftGets = 0;
+    let resolveReload: (response: Response) => void = () => undefined;
+    const pendingReload = new Promise<Response>((resolve) => {
+      resolveReload = resolve;
+    });
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "DRAFT_VERSION_CONFLICT", requestId: "r" } }), {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (input.includes("/v1/onboarding/draft")) {
+        draftGets += 1;
+        return draftGets === 1 ? Promise.resolve(draftEmpty()) : pendingReload;
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    mountHarness();
+    await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
+    await act(async () => ctrlRef.current!.saveProgress(2, syntheticOnboardingState));
+    await waitFor(() => expect(ctrlRef.current?.conflict).toBe(true));
+
+    let first!: ReturnType<OnboardingDraftController["reloadLatest"]>;
+    let second!: ReturnType<OnboardingDraftController["reloadLatest"]>;
+    act(() => {
+      first = ctrlRef.current!.reloadLatest();
+      second = ctrlRef.current!.reloadLatest();
+    });
+    expect(first).toBe(second);
+    expect(ctrlRef.current!.reloading).toBe(true);
+    expect(draftGets).toBe(2);
+
+    await act(async () => resolveReload(draftWithVersion(2, { publicProfile: { city: "Server City" } })));
+    await expect(first).resolves.toEqual({ success: true, persisted: true, step: 0 });
+    await expect(second).resolves.toEqual({ success: true, persisted: true, step: 0 });
+    await waitFor(() => expect(ctrlRef.current?.reloading).toBe(false));
+    expect(ctrlRef.current!.conflict).toBe(false);
+    expect(ctrlRef.current!.persisted).toBe(true);
+  });
+
+  it("preserves conflict state when an explicit reload fails", async () => {
+    let draftGets = 0;
+    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "DRAFT_VERSION_CONFLICT", requestId: "r" } }), {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (input.includes("/v1/onboarding/draft")) {
+        draftGets += 1;
+        return Promise.resolve(draftGets === 1 ? draftEmpty() : new Response("gateway failure", { status: 502 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    mountHarness();
+    await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
+    await act(async () => ctrlRef.current!.saveProgress(2, syntheticOnboardingState));
+    await waitFor(() => expect(ctrlRef.current?.conflict).toBe(true));
+    const result = await act(async () => ctrlRef.current!.reloadLatest());
+    expect(result.success).toBe(false);
+    expect(ctrlRef.current!.conflict).toBe(true);
+    expect(ctrlRef.current!.reloadError).toBe(true);
+    expect(ctrlRef.current!.persisted).toBe(false);
+  });
+
   it("initializes persisted state as false for a fresh draft (T3-02)", async () => {
     const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
       if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());

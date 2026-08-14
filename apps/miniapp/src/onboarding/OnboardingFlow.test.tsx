@@ -5,6 +5,16 @@ import { AuthProvider } from "../auth/AuthProvider.js";
 import { OnboardingFlow } from "./OnboardingFlow.js";
 import { syntheticOnboardingState } from "./types.js";
 
+const syntheticPublicPayload: Record<string, unknown> = {
+  eligibility: syntheticOnboardingState.eligibility,
+  publicProfile: syntheticOnboardingState.publicProfile,
+  faithAndFamily: {
+    faithTradition: "ethiopian_orthodox_tewahedo",
+    ...syntheticOnboardingState.faithAndFamily,
+  },
+  partnerPreferences: syntheticOnboardingState.partnerPreferences,
+};
+
 function clickContinue(): void {
   const button = document.querySelector(".continue-button") as HTMLButtonElement | null;
   if (button) fireEvent.click(button);
@@ -111,6 +121,7 @@ describe("OnboardingFlow", () => {
     setTelegram("valid-init-data");
     try {
       window.sessionStorage.clear();
+      window.localStorage.clear();
     } catch {
       // ignore
     }
@@ -325,20 +336,24 @@ describe("OnboardingFlow", () => {
     expect(onExit).not.toHaveBeenCalled();
   });
 
-  it("reloads and reapplies the server step on conflict resolution (T4-04)", async () => {
-    const faithPayload = {
-      faithAndFamily: {
-        values: ["active_faith", "family_oriented", "communication"],
-        bio: "A sufficiently long introduction text that exceeds twenty characters easily.",
-      },
-    };
+  it("reapplies the original server step after local navigation and conflict (T4-04/T5-04)", async () => {
+    let putCount = 0;
     const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
       if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
       if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       if (String(input).includes("/v1/onboarding/draft") && init?.method !== "PUT") {
-        return Promise.resolve(draftGet("faith_and_family", faithPayload));
+        return Promise.resolve(draftGet("public_profile", syntheticPublicPayload));
       }
       if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        putCount += 1;
+        if (putCount === 1) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ data: { version: 3, currentStep: "public_profile" } }), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }
         return Promise.resolve(
           new Response(JSON.stringify({ error: { code: "DRAFT_VERSION_CONFLICT", requestId: "r" } }), {
             status: 409,
@@ -348,7 +363,7 @@ describe("OnboardingFlow", () => {
       }
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
     render(
       <AuthProvider>
@@ -356,24 +371,31 @@ describe("OnboardingFlow", () => {
       </AuthProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText(/3 of 5/)).toBeTruthy());
+    await screen.findByText(/2 of 5/);
+    clickContinue();
+    await screen.findByText(/3 of 5/);
     clickContinue();
     const reloadButton = await screen.findByRole("button", { name: /Reload latest/i });
     fireEvent.click(reloadButton);
-    await waitFor(() => expect(screen.queryByRole("button", { name: /Reload latest/i })).toBeNull());
-    expect(screen.getByText(/3 of 5/)).toBeTruthy();
+    await screen.findByText(/2 of 5/);
+    expect(screen.queryByRole("button", { name: /Reload latest/i })).toBeNull();
   });
 
-  it("completes all five real steps after loading the synthetic sample (T4-05)", async () => {
-    const fetchImpl = vi.fn((input: string, init?: { method?: string }) => {
+  it("awaits five ordered public-only writes through the complete real flow (T4-05/T5-05)", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const serverSteps = ["eligibility", "public_profile", "faith_and_family", "partner_preferences", "public_preview"];
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
       if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
       if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       if (String(input).includes("/v1/onboarding/draft") && init?.method !== "PUT") {
-        return Promise.resolve(draftGet("eligibility", syntheticOnboardingState as unknown as Record<string, unknown>));
+        return Promise.resolve(draftGet("eligibility", syntheticPublicPayload));
       }
       if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        requests.push(body);
+        const index = requests.length - 1;
         return Promise.resolve(
-          new Response(JSON.stringify({ data: { version: 3, currentStep: "public_preview" } }), {
+          new Response(JSON.stringify({ data: { version: 3 + index, currentStep: serverSteps[index] } }), {
             status: 200,
             headers: { "content-type": "application/json" },
           }),
@@ -381,7 +403,7 @@ describe("OnboardingFlow", () => {
       }
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
 
     render(
       <AuthProvider>
@@ -389,18 +411,209 @@ describe("OnboardingFlow", () => {
       </AuthProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText(/1 of 5/)).toBeTruthy());
-
-    for (let i = 0; i < 8; i += 1) {
-      if (screen.queryByText(/Your public draft is saved/i)) break;
+    for (let visibleStep = 1; visibleStep <= 5; visibleStep += 1) {
+      await screen.findByText(new RegExp(`${visibleStep} of 5`));
       clickContinue();
-      await waitFor(() => true);
     }
+    await screen.findByText(/Your public draft is saved/i);
 
-    await waitFor(() => expect(screen.getByText(/Your public draft is saved/i)).toBeTruthy());
-    const putCalls = fetchImpl.mock.calls.filter(
-      (call) => String(call[0]).includes("/v1/onboarding/draft") && call[1]?.method === "PUT",
+    expect(requests).toHaveLength(5);
+    expect(requests.map((request) => request.currentStep)).toEqual(serverSteps);
+    expect(requests.map((request) => request.expectedVersion)).toEqual([2, 3, 4, 5, 6]);
+    expect(Object.keys(requests[0]?.patch as object)).toEqual(["eligibility"]);
+    expect(Object.keys(requests[1]?.patch as object)).toEqual(["publicProfile"]);
+    expect(Object.keys(requests[2]?.patch as object)).toEqual(["faithAndFamily"]);
+    expect(Object.keys(requests[3]?.patch as object)).toEqual(["partnerPreferences"]);
+    expect(requests[4]?.patch).toEqual({});
+
+    const serialized = JSON.stringify(requests);
+    const forbiddenData = [
+      "privateIdentity",
+      "consent",
+      "fullName",
+      "dateOfBirth",
+      "phoneNumber",
+      "verificationPhoto",
+      "telegram",
+      "csrfToken",
+      "sessionToken",
+      syntheticOnboardingState.privateIdentity.fullName,
+      syntheticOnboardingState.privateIdentity.phoneNumber,
+    ];
+    for (const forbidden of forbiddenData) expect(serialized).not.toContain(forbidden);
+
+    expect(window.localStorage.length).toBe(0);
+    const browserStorage = JSON.stringify({
+      local: Object.entries(window.localStorage),
+      sessionKeys: Object.keys(window.sessionStorage),
+    });
+    for (const forbidden of forbiddenData.slice(0, 6)) expect(browserStorage).not.toContain(forbidden);
+    expect(window.location.href).not.toMatch(/Demo%20Candidate|251%20900|csrf|sessionToken/i);
+  });
+
+  it("allows only the Back transition when Back and Continue occur in the same tick", async () => {
+    let puts = 0;
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        puts += 1;
+        return Promise.resolve(draftPutOk());
+      }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        return Promise.resolve(draftGet("faith_and_family", syntheticPublicPayload));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
     );
-    expect(putCalls.length).toBeGreaterThanOrEqual(1);
+    await screen.findByText(/3 of 5/);
+    fireEvent.click(screen.getByRole("button", { name: /Back/i }));
+    clickContinue();
+    await screen.findByText(/2 of 5/);
+    expect(puts).toBe(0);
+  });
+
+  it("reports the first successful footer save with its authoritative persisted result (T5-03)", async () => {
+    const onExit = vi.fn();
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: { version: 1, currentStep: "eligibility" } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (String(input).includes("/v1/onboarding/draft")) return Promise.resolve(draftEmpty());
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={onExit} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    await screen.findByText(/1 of 5/);
+    fireEvent.click(screen.getByRole("button", { name: /I am 18 or older/i }));
+    fireEvent.click(screen.getByRole("button", { name: /I am Ethiopian Orthodox Tewahedo/i }));
+    fireEvent.click(screen.getByRole("button", { name: /I am seeking an intentional marriage/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Exit" }));
+
+    await waitFor(() => expect(onExit).toHaveBeenCalledWith(true));
+  });
+
+  it("holds the common action lock until a deferred conflict reload settles (T5-04)", async () => {
+    let draftGets = 0;
+    let resolveReload: (response: Response) => void = () => undefined;
+    const pendingReload = new Promise<Response>((resolve) => {
+      resolveReload = resolve;
+    });
+    const onExit = vi.fn();
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { code: "DRAFT_VERSION_CONFLICT", requestId: "r" } }), {
+            status: 409,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        draftGets += 1;
+        return draftGets === 1
+          ? Promise.resolve(draftGet("faith_and_family", syntheticPublicPayload))
+          : pendingReload;
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={onExit} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    await screen.findByText(/3 of 5/);
+    clickContinue();
+    const reloadButton = await screen.findByRole("button", { name: /Reload latest/i });
+    fireEvent.click(reloadButton);
+    const headerExit = screen.getByRole("button", { name: /Exit onboarding/i });
+    expect((headerExit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(headerExit);
+    expect(onExit).not.toHaveBeenCalled();
+
+    await act(async () => resolveReload(draftGet("faith_and_family", syntheticPublicPayload)));
+    await waitFor(() => expect((headerExit as HTMLButtonElement).disabled).toBe(false));
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("blocks progression when an intermediate write fails", async () => {
+    let puts = 0;
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        puts += 1;
+        return Promise.resolve(draftPutError());
+      }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        return Promise.resolve(draftGet("eligibility", syntheticPublicPayload));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    await screen.findByText(/1 of 5/);
+    clickContinue();
+    await screen.findByText(/Could not save your progress/i);
+    expect(screen.getByText(/1 of 5/)).toBeTruthy();
+    expect(puts).toBe(1);
+    expect(screen.queryByText(/Your public draft is saved/i)).toBeNull();
+  });
+
+  it("blocks loading-screen exit until the initial draft request settles", async () => {
+    let resolveDraft: (response: Response) => void = () => undefined;
+    const pendingDraft = new Promise<Response>((resolve) => {
+      resolveDraft = resolve;
+    });
+    const onExit = vi.fn();
+    const fetchImpl = vi.fn((input: string) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft")) return pendingDraft;
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={onExit} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    await screen.findByText(/Loading your draft/i);
+    const exit = screen.getByRole("button", { name: /Exit onboarding/i });
+    expect((exit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(exit);
+    expect(onExit).not.toHaveBeenCalled();
+
+    await act(async () => resolveDraft(draftGet("eligibility", syntheticPublicPayload)));
+    await screen.findByText(/1 of 5/);
+    expect(onExit).not.toHaveBeenCalled();
   });
 });

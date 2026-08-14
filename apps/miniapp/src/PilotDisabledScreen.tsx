@@ -26,9 +26,10 @@ export function PilotDisabledScreen({ onReopen, saved = false }: { onReopen: () 
       <div className="quiet-note">
         <LockIcon size={17} />
         <p>
-          Only your public profile sections are transmitted in this preview. Telegram sign-in sends the launch
-          credential required for authentication; no verification identity, phone number, or contact details are
-          shared.
+          Telegram launch data is sent securely to Kidan to authenticate your session. The current API retains the
+          validated Telegram ID and authentication date for account and session security. Telegram names and
+          usernames are not added to your public draft or shown in discovery. This preview does not collect Kidan
+          private identity, verification-photo, or submission-consent details.
         </p>
       </div>
       <button className="secondary-button" type="button" onClick={onReopen}>

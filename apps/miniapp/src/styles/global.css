@@ -202,7 +202,7 @@ button:focus-visible { outline: 3px solid rgba(181, 138, 71, 0.35); outline-offs
 .progress-meta strong { color: var(--forest); }
 .progress-track { height: 4px; margin-top: 8px; overflow: hidden; border-radius: 99px; background: #e2e1db; }
 .progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--forest), #718b76); transition: width .3s ease; }
-.onboarding-content { padding: 26px 1px 12px; }
+.onboarding-content { min-inline-size: 0; margin: 0; padding: 26px 1px 12px; border: 0; }
 .onboarding-heading { margin-bottom: 22px; }
 .onboarding-heading > span { color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .onboarding-heading h1 { margin: 7px 0 9px; max-width: 380px; color: var(--forest-deep); font-family: Georgia, serif; font-size: clamp(28px, 7.5vw, 36px); font-weight: 500; line-height: 1.08; letter-spacing: -.02em; }
