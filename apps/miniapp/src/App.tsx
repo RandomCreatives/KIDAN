@@ -13,6 +13,7 @@ export function App() {
   const { isDemo } = useAuth();
   const [tab, setTab] = useState<Tab>("discover");
   const [showOnboarding, setShowOnboarding] = useState(true);
+  const [draftSaved, setDraftSaved] = useState(false);
 
   if (showOnboarding) {
     return (
@@ -20,7 +21,10 @@ export function App() {
         <div className="app-viewport onboarding-viewport">
           <OnboardingFlow
             mode={isDemo ? "demo" : "real"}
-            onExit={() => setShowOnboarding(false)}
+            onExit={(saved) => {
+              if (saved) setDraftSaved(true);
+              setShowOnboarding(false);
+            }}
             onComplete={() => setShowOnboarding(false)}
           />
         </div>
@@ -32,7 +36,7 @@ export function App() {
     return (
       <div className="app-shell">
         <div className="app-viewport">
-          <PilotDisabledScreen onReopen={() => setShowOnboarding(true)} />
+          <PilotDisabledScreen onReopen={() => setShowOnboarding(true)} saved={draftSaved} />
         </div>
       </div>
     );
