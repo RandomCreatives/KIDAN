@@ -447,7 +447,7 @@ describe("OnboardingFlow", () => {
       local: Object.entries(window.localStorage),
       sessionKeys: Object.keys(window.sessionStorage),
     });
-    for (const forbidden of forbiddenData.slice(0, 6)) expect(browserStorage).not.toContain(forbidden);
+    for (const forbidden of forbiddenData) expect(browserStorage).not.toContain(forbidden);
     expect(window.location.href).not.toMatch(/Demo%20Candidate|251%20900|csrf|sessionToken/i);
   });
 

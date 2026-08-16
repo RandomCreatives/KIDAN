@@ -187,11 +187,11 @@ describe("AuthProvider", () => {
 
     it("treats a real final-session 401 as already absent without POSTing logout", async () => {
       let sessionGets = 0;
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) {
-          throw new Error("logout must not be called");
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (String(input).includes("/v1/session/logout") && init?.method === "POST") {
+          throw new Error("logout POST must not be called");
         }
-        if (input.includes("/v1/session")) {
+        if (String(input).includes("/v1/session")) {
           sessionGets += 1;
           return Promise.resolve(sessionGets === 1 ? sessionOk() : sessionUnauthenticated());
         }
@@ -207,7 +207,10 @@ describe("AuthProvider", () => {
       });
       expect(outcome).toEqual({ success: true, reason: "already-absent" });
       expect(result.current.status).toBe("unauthenticated");
-      expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("/v1/session/logout"))).toBe(false);
+      const logoutPosts = fetchImpl.mock.calls.filter(
+        (call) => String(call[0]).includes("/v1/session/logout") && call[1]?.method === "POST",
+      );
+      expect(logoutPosts).toHaveLength(0);
     });
 
     it("treats a valid logout POST 401 as a concurrent already-absent session", async () => {
@@ -234,9 +237,11 @@ describe("AuthProvider", () => {
       ["malformed", () => Promise.resolve(new Response("not json", { status: 502 }))],
     ])("does not claim sign-out when final GET has a %s failure", async (_label, finalResponse) => {
       let sessionGets = 0;
-      const fetchImpl = vi.fn((input: string) => {
-        if (input.includes("/v1/session/logout")) throw new Error("logout must not be called");
-        if (input.includes("/v1/session")) {
+      const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+        if (String(input).includes("/v1/session/logout") && init?.method === "POST") {
+          throw new Error("logout POST must not be called");
+        }
+        if (String(input).includes("/v1/session")) {
           sessionGets += 1;
           return sessionGets === 1 ? Promise.resolve(sessionOk()) : finalResponse();
         }
@@ -254,7 +259,10 @@ describe("AuthProvider", () => {
       expect(outcome.success).toBe(false);
       expect(result.current.status).toBe("authenticated");
       expect(result.current.logoutError).toMatch(/not confirmed/i);
-      expect(fetchImpl.mock.calls.some((call) => String(call[0]).includes("/v1/session/logout"))).toBe(false);
+      const logoutPosts = fetchImpl.mock.calls.filter(
+        (call) => String(call[0]).includes("/v1/session/logout") && call[1]?.method === "POST",
+      );
+      expect(logoutPosts).toHaveLength(0);
     });
 
     it.each([

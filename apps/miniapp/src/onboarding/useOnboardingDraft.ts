@@ -62,8 +62,6 @@ export function useOnboardingDraft(
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const loadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
   const reloadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
 
   const loadDraft = useCallback((): Promise<DraftLoadResult> => {
     if (isDemo) {
