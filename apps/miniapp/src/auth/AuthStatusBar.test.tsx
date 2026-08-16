@@ -52,8 +52,11 @@ it("announces and disables the sign-out action while revocation is pending", asy
 it("announces an unconfirmed logout failure and keeps sign out available", async () => {
   setTelegram();
   let sessionGets = 0;
-  globalThis.fetch = vi.fn((input: string) => {
-    if (input.includes("/v1/session")) {
+  globalThis.fetch = vi.fn((input: string, init?: RequestInit) => {
+    if (String(input).includes("/v1/session/logout") && init?.method === "POST") {
+      throw new Error("logout POST must not be called");
+    }
+    if (String(input).includes("/v1/session")) {
       sessionGets += 1;
       return sessionGets === 1 ? Promise.resolve(session()) : Promise.reject(new Error("offline"));
     }
