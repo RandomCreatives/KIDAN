@@ -12,6 +12,7 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
   actionLabel?: string;
   busy?: boolean;
 }) {
+  const buttonRef = action ? (ref: HTMLButtonElement | null) => { if (ref) ref.focus(); } : undefined;
   return (
     <main className="screen standard-screen auth-gate" aria-live="polite" aria-busy={busy ? "true" : undefined}>
       <section className="page-intro">
@@ -19,7 +20,13 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
         <h1>{title}</h1>
         <p>{message}</p>
         {action && actionLabel && (
-          <button className="primary-button" type="button" onClick={action}>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={action}
+            ref={buttonRef}
+            autoFocus
+          >
             {actionLabel}
           </button>
         )}

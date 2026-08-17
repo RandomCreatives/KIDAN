@@ -147,6 +147,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     return null;
   };
 
+  const SAVE_TIMEOUT_MS = 30_000;
+
   const continueFlow = async () => {
     if (!beginAction()) return;
     try {
@@ -159,8 +161,16 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       }
       setError(null);
       haptic("decision");
-      const result = await saveProgress(currentIndex, draft);
+      let timedOut = false;
+      const timeoutPromise = new Promise<{ success: false; persisted: false }>((resolve) =>
+        setTimeout(() => {
+          timedOut = true;
+          resolve({ success: false, persisted: false });
+        }, SAVE_TIMEOUT_MS),
+      );
+      const result = await Promise.race([saveProgress(currentIndex, draft), timeoutPromise]);
       if (!result.success) {
+        if (timedOut) setError("Save timed out. Please retry.");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
@@ -331,7 +341,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
       )}
 
-      <fieldset className="onboarding-content" disabled={controlsBusy} aria-busy={controlsBusy ? "true" : undefined}>
+      <fieldset className="onboarding-content" disabled={controlsBusy || conflict || reloadError} aria-busy={controlsBusy ? "true" : undefined}>
         {currentIndex === 0 && (
           <>
             <StepHeading eyebrow="Welcome to Kidan" title="A private path to intentional marriage." description="Before creating a profile, confirm that this community and its privacy model are right for you." />

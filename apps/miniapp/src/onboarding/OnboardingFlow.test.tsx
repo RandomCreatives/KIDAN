@@ -17,7 +17,8 @@ const syntheticPublicPayload: Record<string, unknown> = {
 
 function clickContinue(): void {
   const button = document.querySelector(".continue-button") as HTMLButtonElement | null;
-  if (button) fireEvent.click(button);
+  if (!button) throw new Error("continue button not found");
+  fireEvent.click(button);
 }
 
 function setTelegram(initData: string): void {
@@ -187,7 +188,7 @@ describe("OnboardingFlow", () => {
     for (let i = 0; i < 8; i += 1) {
       if (screen.queryByText(/Your profile would now enter private review/i)) break;
       clickContinue();
-      await waitFor(() => true);
+      await waitFor(() => expect(screen.getByText(/of \d+/)).toBeTruthy());
     }
 
     expect(screen.getByText(/Your profile would now enter private review/i)).toBeTruthy();
