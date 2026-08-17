@@ -13,18 +13,18 @@ Last updated: 2026-08-17 (Africa/Nairobi)
 - Decision remains **REQUEST CHANGES / DO NOT MERGE** until the local corrections below are published, exact-final-head checks and review pass, conversations are resolved, and deployment/operator evidence is complete.
 - `ENABLE_REAL_SUBMISSIONS` remains `false` and must remain false in local, CI, staging, and operator-test environments.
 
-## Local follow-up commits based exactly on remote head `28ac6ac`
+## Correction commits based exactly on publication base `28ac6ac`
 
-These normal commits are prepared locally and are not pushed, merged, approved, or evidence of resolved review conversations:
+The publication mailbox carries normal commits with these subjects. Their applied commit IDs may differ because `git am` records the publisher’s committer identity and time; verify the resulting tree rather than copying local commit IDs. Publication is not approval, merge authorization, or evidence of resolved review conversations.
 
-1. `369f025d221627becdd6c7880439f41595854d4d` — `fix(miniapp): prove timeout and recovery behavior`
+1. `fix(miniapp): prove timeout and recovery behavior`
    - maps timeout aborts to `ApiError("NETWORK", 0)`;
    - uses deterministic fake-timer tests that prove the configured timer calls `AbortController.abort()` during stalled fetch and stalled response-body reading;
    - proves `INVALID_CSRF` authentication recovery and second hydration cannot move the active onboarding step backward;
    - preserves the recoverable `Connection error` + `Retry` path for `NETWORK` failures;
    - provides stable focus for action and no-action auth gate states without callback-ref focus stealing.
 
-2. `ac7b0468fc6fa69ec0bdc185af575ee2c3d02c05` — `refactor(phase2): resolve review maintainability findings`
+2. `refactor(phase2): resolve review maintainability findings`
    - lazily creates the API client in `AuthProvider`;
    - types auth error mapping with `ClientErrorCode`;
    - removes the unused `errorBody` helper;

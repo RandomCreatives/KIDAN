@@ -17,10 +17,11 @@ Connect the Telegram Mini App to opaque-cookie authentication and resumable publ
 - Last observed remote head/tree: `28ac6ac1e2f1f48f4d7de5608ce2c4cb67b6f236` / `8e8a921f4bc6bd1825977ffd2e59783e79aafa7e`.
 - Exact-head Actions run `32022518353` passed both required jobs.
 - Latest completed CodeRabbit review: `4949831122` against `e2d3e22`; automatic review of later commits was skipped pending a manual request.
-- Two normal local commits are prepared directly on `28ac6ac`:
-  - `369f025d221627becdd6c7880439f41595854d4d` — complete timeout/recovery/focus regressions;
-  - `ac7b0468fc6fa69ec0bdc185af575ee2c3d02c05` — valid maintainability nitpicks and shared defaults.
-- These commits are not pushed or reviewed. Keep PR #2 open and unmerged.
+- The publication correction set is based directly on `28ac6ac` and includes normal commits for:
+  - complete timeout/recovery/focus regressions;
+  - valid maintainability nitpicks and shared defaults;
+  - truthful handoff and phase documentation.
+- Applied commit IDs may differ because `git am` records the publisher’s committer identity and time; verify the expected final tree. Keep PR #2 open and unmerged until exact-final-head checks, review, thread resolution, and external evidence pass.
 
 ## Typed same-origin transport
 
