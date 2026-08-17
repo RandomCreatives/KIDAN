@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "./AuthProvider.js";
 import { useAuth } from "./useAuth.js";
@@ -81,7 +81,8 @@ describe("AuthGate", () => {
 
     render(<Harness />);
 
-    expect(screen.getByText(/Connecting/i)).toBeTruthy();
+    const heading = screen.getByRole("heading", { name: /Connecting/i });
+    expect(document.activeElement).toBe(heading);
     expect(screen.queryByText(/Protected content/)).toBeNull();
   });
 
@@ -108,15 +109,29 @@ describe("AuthGate", () => {
     expect(screen.queryByText(/Protected content/)).toBeNull();
   });
 
-  it("shows the connection-error screen when the session fetch fails", async () => {
+  it("keeps a NETWORK bootstrap failure recoverable with a focused Retry action", async () => {
+    let sessionCalls = 0;
     const fetchImpl = vi.fn((input: string) => {
-      if (input.includes("/v1/session")) return Promise.reject(new Error("network down"));
+      if (input.includes("/v1/session")) {
+        sessionCalls += 1;
+        return sessionCalls === 1
+          ? Promise.reject(new Error("network down"))
+          : Promise.resolve(sessionUnauthenticated());
+      }
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
     (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
 
     render(<Harness />);
 
-    await waitFor(() => expect(screen.getByText(/Connection error/i)).toBeTruthy());
+    await screen.findByRole("heading", { name: /Connection error/i });
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(document.activeElement).toBe(retry);
+    expect(screen.queryByText(/Account unavailable/i)).toBeNull();
+
+    fireEvent.click(retry);
+    await screen.findByText(/Protected content/);
+    expect(sessionCalls).toBe(2);
   });
 });

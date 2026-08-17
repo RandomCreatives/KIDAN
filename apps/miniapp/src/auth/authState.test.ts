@@ -22,6 +22,10 @@ describe("mapErrorToStatus", () => {
     expect(mapErrorToStatus("INTERNAL_ERROR", 500)).toBe("unavailable");
   });
 
+  it("keeps NETWORK failures in the recoverable fatal state", () => {
+    expect(mapErrorToStatus("NETWORK", 0)).toBe("fatal");
+  });
+
   it("maps other 4xx to fatal", () => {
     expect(mapErrorToStatus("INVALID_REQUEST", 400)).toBe("fatal");
   });

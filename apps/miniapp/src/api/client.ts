@@ -135,8 +135,8 @@ export class KidanApiClient {
       text = await response.text();
     } catch (error: unknown) {
       if (error instanceof ApiError) throw error;
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiError("NETWORK", responseStatus);
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
+        throw new ApiError("NETWORK", 0);
       }
       throw new ApiError("NETWORK", responseStatus);
     } finally {

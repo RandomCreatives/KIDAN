@@ -1,3 +1,5 @@
+import type { ClientErrorCode } from "../api/client.js";
+
 export type AuthStatus =
   | "initializing"
   | "unauthenticated"
@@ -7,7 +9,7 @@ export type AuthStatus =
   | "unavailable"
   | "fatal";
 
-export function mapErrorToStatus(code: string, httpStatus: number): AuthStatus {
+export function mapErrorToStatus(code: ClientErrorCode, httpStatus: number): AuthStatus {
   if (code === "UNAUTHENTICATED" || httpStatus === 401) return "expired";
   if (code === "ACCOUNT_UNAVAILABLE") return "unavailable";
   if (code === "INVALID_CSRF") return "fatal";

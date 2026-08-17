@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../api/client.js";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { OnboardingFlow } from "./OnboardingFlow.js";
 import { syntheticOnboardingState } from "./types.js";
@@ -35,12 +34,12 @@ function sessionUnauthenticated(): Response {
   });
 }
 
-function telegramOk(): Response {
+function telegramOk(csrfToken = "x".repeat(43)): Response {
   return new Response(
     JSON.stringify({
       data: {
         authenticated: true,
-        csrfToken: "x".repeat(43),
+        csrfToken,
         profileStatus: "new",
         expiresAt: new Date(Date.now() + 60000).toISOString(),
       },
@@ -640,25 +639,37 @@ describe("OnboardingFlow", () => {
     expect(onExit).not.toHaveBeenCalled();
   });
 
-  it("does not navigate backward after auth retry resolves during onboarding", async () => {
-    // Regression: resumedStep is only applied on initial hydration. A later
-    // auth-retry/re-hydration must not reset the visible step backward.
+  it("does not navigate backward when INVALID_CSRF recovery rehydrates an older server step", async () => {
+    let sessionGets = 0;
     let authCalls = 0;
+    let draftGets = 0;
+    let putCalls = 0;
     const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
-      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/session")) {
+        sessionGets += 1;
+        return Promise.resolve(sessionUnauthenticated());
+      }
       if (String(input).includes("/v1/auth/telegram")) {
         authCalls += 1;
-        return Promise.resolve(telegramOk());
+        const token = authCalls === 1 ? "x".repeat(43) : "y".repeat(43);
+        return Promise.resolve(telegramOk(token));
       }
       if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
-        return Promise.resolve(draftPutOk());
-      }
-      if (String(input).includes("/v1/onboarding/draft")) {
-        // Second load (after retry) returns a later step; must not affect visible step.
+        putCalls += 1;
+        if (putCalls === 1) return Promise.resolve(draftPutOk());
         return Promise.resolve(
-          draftGet(authCalls > 1 ? "faith_and_family" : "public_profile", syntheticPublicPayload),
+          new Response(JSON.stringify({ error: { code: "INVALID_CSRF", requestId: "retry" } }), {
+            status: 403,
+            headers: { "content-type": "application/json" },
+          }),
         );
       }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        draftGets += 1;
+        // The server remains on public_profile while the user is editing the
+        // next visible step. Recovery must not apply this older step again.
+        return Promise.resolve(draftGet("public_profile", syntheticPublicPayload));
+      }
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
     globalThis.fetch = fetchImpl as unknown as typeof fetch;
@@ -668,47 +679,19 @@ describe("OnboardingFlow", () => {
         <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
       </AuthProvider>,
     );
-    // Initial hydration resumes at step 2 (public_profile).
+
     await screen.findByText(/2 of 5/);
-    // Navigate forward to step 3 (faith_and_family).
     clickContinue();
     await screen.findByText(/3 of 5/);
-    // A retry (e.g. from INVALID_CSRF recovery) must not move us back to step 2.
+
+    clickContinue();
+    await screen.findByText(/Your session changed. Reconnecting/i);
+    await waitFor(() => expect(authCalls).toBe(2));
+    await waitFor(() => expect(draftGets).toBe(2));
+
+    expect(sessionGets).toBe(2);
+    expect(putCalls).toBe(2);
     expect(screen.queryByText(/2 of 5/)).toBeNull();
     expect(screen.getByText(/3 of 5/)).toBeTruthy();
-  });
-
-  it("shows a recoverable Connection error with Retry when a save times out (NETWORK → fatal not unavailable)", async () => {
-    // Regression: NETWORK errors from a stalled/timed-out save should expose a
-    // recoverable "Could not save" error, NOT map to 'unavailable' (which removes retry).
-    // The rejected NETWORK→unavailable CodeRabbit suggestion is covered here.
-    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
-      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
-      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
-      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
-        return Promise.reject(new ApiError("NETWORK", 0));
-      }
-      if (String(input).includes("/v1/onboarding/draft")) {
-        return Promise.resolve(draftGet("eligibility", syntheticPublicPayload));
-      }
-      return Promise.resolve(new Response("{}", { status: 200 }));
-    });
-    globalThis.fetch = fetchImpl as unknown as typeof fetch;
-
-    render(
-      <AuthProvider>
-        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
-      </AuthProvider>,
-    );
-    await screen.findByText(/1 of 5/);
-    clickContinue();
-    // The save error is shown and the user remains on the same step.
-    await screen.findByText(/Network error while saving/i);
-    expect(screen.getByText(/1 of 5/)).toBeTruthy();
-    // Continue is re-enabled so the user can retry.
-    const continueBtn = document.querySelector(".continue-button") as HTMLButtonElement;
-    expect(continueBtn.disabled).toBe(false);
-    // The auth gate must NOT have transitioned to unavailable.
-    expect(screen.queryByText(/Account unavailable/i)).toBeNull();
   });
 });

@@ -13,19 +13,20 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
   actionLabel?: string;
   busy?: boolean;
 }) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const focusedRef = useRef(false);
+  const hasAction = Boolean(action && actionLabel);
+
   useEffect(() => {
-    if (action && buttonRef.current && !focusedRef.current) {
-      focusedRef.current = true;
-      buttonRef.current.focus();
-    }
-  }, [action]);
+    if (hasAction) buttonRef.current?.focus();
+    else headingRef.current?.focus();
+  }, [hasAction, title]);
+
   return (
     <main className="screen standard-screen auth-gate" aria-live="polite" aria-busy={busy ? "true" : undefined}>
       <section className="page-intro">
         <span className="section-kicker">Kidan</span>
-        <h1>{title}</h1>
+        <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
         <p>{message}</p>
         {action && actionLabel && (
           <button
