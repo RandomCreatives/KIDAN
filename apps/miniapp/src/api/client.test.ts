@@ -151,7 +151,7 @@ describe("KidanApiClient", () => {
     expect((error as ApiError).status).toBe(status);
   });
 
-  it("maps response-body read failures to NETWORK", async () => {
+  it("maps response-body read failures to NETWORK/0", async () => {
     const response = {
       status: 500,
       ok: false,
@@ -162,7 +162,7 @@ describe("KidanApiClient", () => {
     });
     const error = await client.logout("csrf-token").catch((caught: unknown) => caught);
     expect((error as ApiError).code).toBe("NETWORK");
-    expect((error as ApiError).status).toBe(500);
+    expect((error as ApiError).status).toBe(0);
   });
 
   it("propagates network failures as a typed NETWORK error", async () => {

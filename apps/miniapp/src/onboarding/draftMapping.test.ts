@@ -90,4 +90,30 @@ describe("draftMapping", () => {
     expect(reset.publicProfile.city).toBe(initialOnboardingState.publicProfile.city);
     expect(reset.faithAndFamily.values).toEqual(initialOnboardingState.faithAndFamily.values);
   });
+
+  it("merges partner preferences from server payload", () => {
+    const serverPayload = {
+      partnerPreferences: {
+        ageMin: 25,
+        ageMax: 40,
+        preferredCities: ["Addis Ababa"],
+        openToAbroad: true,
+        acceptedMaritalStatuses: ["never_married"],
+        acceptsPartnerWithChildren: false,
+        desiredValues: ["family_oriented", "active_faith"],
+        acceptedMarriageIntentions: ["orthodox_church_marriage"],
+      },
+    };
+    const merged = mergeFormFromPayload(initialOnboardingState, serverPayload);
+    expect(merged.partnerPreferences.ageMin).toBe(25);
+    expect(merged.partnerPreferences.ageMax).toBe(40);
+    expect(merged.partnerPreferences.preferredCities).toEqual(["Addis Ababa"]);
+    expect(merged.partnerPreferences.openToAbroad).toBe(true);
+    expect(merged.partnerPreferences.acceptedMaritalStatuses).toEqual(["never_married"]);
+    expect(merged.partnerPreferences.acceptsPartnerWithChildren).toBe(false);
+    expect(merged.partnerPreferences.desiredValues).toEqual(["family_oriented", "active_faith"]);
+    expect(merged.partnerPreferences.acceptedMarriageIntentions).toEqual(["orthodox_church_marriage"]);
+    expect(merged.privateIdentity).toEqual(initialOnboardingState.privateIdentity);
+    expect(merged.consent).toEqual(initialOnboardingState.consent);
+  });
 });

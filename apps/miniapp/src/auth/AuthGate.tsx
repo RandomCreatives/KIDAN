@@ -91,20 +91,4 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 }
 
-export function AuthGateFooter() {
-  const { isDemo, logout, logoutError, loggingOut } = useAuth();
-  if (isDemo) return null;
-  return (
-    <div className="auth-gate-footer" aria-busy={loggingOut ? "true" : undefined}>
-      {logoutError && <span className="auth-logout-error" role="alert">{logoutError}</span>}
-      <button
-        type="button"
-        className="auth-logout"
-        onClick={() => void logout()}
-        disabled={loggingOut}
-      >
-        {loggingOut ? "Signing out…" : "Sign out"}
-      </button>
-    </div>
-  );
-}
+

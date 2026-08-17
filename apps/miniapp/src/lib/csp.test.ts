@@ -40,8 +40,8 @@ describe("kidanCspPolicy", () => {
     expect(TELEGRAM_SDK_SRC).toBe("https://telegram.org/js/telegram-web-app.js");
   });
 
-  it("only allows the same-origin or Telegram SDK host for scripts (T4-07)", () => {
-    expect(isAllowedCspScriptHost("localhost")).toBe(true);
+  it("only allows the Telegram SDK host for scripts (T4-07)", () => {
+    expect(isAllowedCspScriptHost("localhost")).toBe(false);
     expect(isAllowedCspScriptHost("telegram.org")).toBe(true);
     expect(isAllowedCspScriptHost("evil.example.com")).toBe(false);
     expect(isAllowedCspScriptHost(null)).toBe(false);

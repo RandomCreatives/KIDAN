@@ -30,5 +30,5 @@ export const TELEGRAM_SDK_SRC = `${TELEGRAM_SDK_ORIGIN}/js/telegram-web-app.js`;
 
 export function isAllowedCspScriptHost(host: string | null | undefined): boolean {
   if (!host) return false;
-  return host === "localhost" || host === TELEGRAM_SDK_HOST;
+  return host === TELEGRAM_SDK_HOST;
 }

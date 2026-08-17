@@ -138,7 +138,7 @@ export class KidanApiClient {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
         throw new ApiError("NETWORK", 0);
       }
-      throw new ApiError("NETWORK", responseStatus);
+      throw new ApiError("NETWORK", 0);
     } finally {
       clearTimeout(timeoutId);
     }

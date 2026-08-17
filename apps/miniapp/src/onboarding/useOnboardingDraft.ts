@@ -158,7 +158,7 @@ export function useOnboardingDraft(
               setSaveError("Could not save your progress. Retry.");
             }
           } else {
-            setSaveError("Network error while saving. Retry.");
+            setSaveError("Could not save your progress. Retry.");
           }
           return { success: false, persisted: false } as const;
         } finally {

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { useOnboardingDraft, type OnboardingDraftController } from "./useOnboardingDraft.js";
 import { syntheticOnboardingState, type OnboardingFormState } from "./types.js";
+import { ONBOARDING_SCHEMA_VERSION } from "@kidan/contracts";
 
 function setTelegram(initData: string): void {
   (window as unknown as { Telegram: unknown }).Telegram = {
@@ -37,7 +38,7 @@ function draftEmpty(): Response {
   return new Response(
     JSON.stringify({
       data: {
-        schemaVersion: "2026-08-12.v1",
+        schemaVersion: ONBOARDING_SCHEMA_VERSION,
         currentStep: "eligibility",
         payload: {},
         version: 0,
@@ -53,7 +54,7 @@ function draftWithVersion(version: number, payload: Record<string, unknown>): Re
   return new Response(
     JSON.stringify({
       data: {
-        schemaVersion: "2026-08-12.v1",
+        schemaVersion: ONBOARDING_SCHEMA_VERSION,
         currentStep: "eligibility",
         payload,
         version,

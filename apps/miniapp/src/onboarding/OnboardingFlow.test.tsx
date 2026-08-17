@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { OnboardingFlow } from "./OnboardingFlow.js";
 import { syntheticOnboardingState } from "./types.js";
+import { ONBOARDING_SCHEMA_VERSION } from "@kidan/contracts";
 
 const syntheticPublicPayload: Record<string, unknown> = {
   eligibility: syntheticOnboardingState.eligibility,
@@ -52,7 +53,7 @@ function draftGet(currentStep: string, payload: Record<string, unknown>): Respon
   return new Response(
     JSON.stringify({
       data: {
-        schemaVersion: "2026-08-12.v1",
+        schemaVersion: ONBOARDING_SCHEMA_VERSION,
         currentStep,
         payload,
         version: 2,
@@ -68,7 +69,7 @@ function draftEmpty(): Response {
   return new Response(
     JSON.stringify({
       data: {
-        schemaVersion: "2026-08-12.v1",
+        schemaVersion: ONBOARDING_SCHEMA_VERSION,
         currentStep: "eligibility",
         payload: {},
         version: 0,
@@ -630,13 +631,12 @@ describe("OnboardingFlow", () => {
     );
     await screen.findByText(/Loading your draft/i);
     const exit = screen.getByRole("button", { name: /Exit onboarding/i });
-    expect((exit as HTMLButtonElement).disabled).toBe(true);
+    expect((exit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(exit);
-    expect(onExit).not.toHaveBeenCalled();
+    expect(onExit).toHaveBeenCalledWith(false);
 
     await act(async () => resolveDraft(draftGet("eligibility", syntheticPublicPayload)));
     await screen.findByText(/1 of 5/);
-    expect(onExit).not.toHaveBeenCalled();
   });
 
   it("does not navigate backward when INVALID_CSRF recovery rehydrates an older server step", async () => {

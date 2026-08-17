@@ -252,7 +252,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             type="button"
             onClick={() => void requestExit(true)}
             aria-label="Exit onboarding"
-            disabled={!loadError || actionBusy}
+            disabled={actionBusy}
           ><XIcon size={19} /></button>
         </header>
         <section className="page-intro">
