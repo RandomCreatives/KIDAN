@@ -5,125 +5,99 @@ Last updated: 2026-08-17 (Africa/Nairobi)
 ## Current status
 
 - Repository: `https://github.com/RandomCreatives/KIDAN`.
-- Phase 01 baseline and PR #2 base: `053fb6ecf9cbff72b2e2d052588d5250ffd7d773`.
-- PR #2 (`phase2/miniapp-api-integration`) is open and unmerged.
-- Last independently observed remote head: `28ac6ac1e2f1f48f4d7de5608ce2c4cb67b6f236`; tree `8e8a921f4bc6bd1825977ffd2e59783e79aafa7e`.
-- Exact-head Actions run `32022518353` passed typecheck, unit tests, builds, audit, merge-base whitespace hygiene, and PostgreSQL integration.
-- The latest completed CodeRabbit review remains review `4949831122` against `e2d3e22`. CodeRabbit skipped automatic review of `28ac6ac` because this repository requires a manual request.
-- Decision remains **REQUEST CHANGES / DO NOT MERGE** until the local corrections below are published, exact-final-head checks and review pass, conversations are resolved, and deployment/operator evidence is complete.
-- `ENABLE_REAL_SUBMISSIONS` remains `false` and must remain false in local, CI, staging, and operator-test environments.
+- PR #2: `phase2/miniapp-api-integration` → `main`; open and unmerged.
+- PR base: `053fb6ecf9cbff72b2e2d052588d5250ffd7d773`.
+- Last independently observed remote head: `bb9881b0853fb8d0999b94de2dcd6a7f7fe3a25f`; tree `be113785f43af90b1f001300763127894bdc6ad8`.
+- Exact-head Actions run `32035252158` passed typecheck, all unit tests, all builds, dependency audit, and PostgreSQL integration, but the required check failed because `apps/miniapp/src/auth/AuthGate.tsx` had a new blank line at EOF. The failed required check must not be waived.
+- CodeRabbit review `4951473057` is a substantive full review of prior exact head `c6b9255ce8f4ea5e24c42f2de524e3eefa554859`. It reported six inline findings and six review-summary nitpicks.
+- Commit `bb9881b` addressed part of that review but did not address every item and failed diff hygiene. A follow-up correction set is prepared directly on `bb9881b`.
+- Decision: **DO NOT MERGE** until the follow-up is published, all exact-final-head checks and review pass, conversations are resolved, the PR description is corrected, and required deployment/operator evidence exists.
+- `ENABLE_REAL_SUBMISSIONS=false` remains binding for local, CI, staging, and operator-test environments.
 
-## Correction commits based exactly on publication base `28ac6ac`
+## Follow-up correction set based on `bb9881b`
 
-The publication mailbox carries normal commits with these subjects. Their applied commit IDs may differ because `git am` records the publisher’s committer identity and time; verify the resulting tree rather than copying local commit IDs. Publication is not approval, merge authorization, or evidence of resolved review conversations.
+The publication mailbox contains normal additive commits. Applied commit IDs may differ because `git am` records the publisher’s committer identity and time; verify the resulting tree. Publication is not approval or merge authorization.
 
-1. `fix(miniapp): prove timeout and recovery behavior`
-   - maps timeout aborts to `ApiError("NETWORK", 0)`;
-   - uses deterministic fake-timer tests that prove the configured timer calls `AbortController.abort()` during stalled fetch and stalled response-body reading;
-   - proves `INVALID_CSRF` authentication recovery and second hydration cannot move the active onboarding step backward;
-   - preserves the recoverable `Connection error` + `Retry` path for `NETWORK` failures;
-   - provides stable focus for action and no-action auth gate states without callback-ref focus stealing.
+The correction set:
 
-2. `refactor(phase2): resolve review maintainability findings`
-   - lazily creates the API client in `AuthProvider`;
-   - types auth error mapping with `ClientErrorCode`;
-   - removes the unused `errorBody` helper;
-   - centralizes onboarding schema-version and initial-step defaults in `@kidan/contracts`;
-   - deduplicates validated payload application;
-   - proves hydrated payload reaches form state and reload discards omitted local edits;
-   - covers the saved pilot-disabled screen;
-   - makes auth status labels exhaustive;
-   - deduplicates auth-route test setup.
+- removes the blank EOF line that failed exact-head diff hygiene;
+- preserves fetch and body-read transport failures as `ApiError("NETWORK", 0)` and removes the obsolete response-status variable;
+- canonicalizes persisted onboarding JSON through the strict public-draft allowlist before reads and writes;
+- keeps unknown legacy fields out of responses instead of broadening the public contract, and preserves the API’s validated `INTERNAL_ERROR` envelope for invalid persisted values;
+- makes CSP host validation accept the configured application host and reviewed Telegram host without hard-coding `localhost`;
+- returns typed save-failure messages so the onboarding component always renders feedback when a save returns `success: false`;
+- keeps forced exit available during initial draft loading while retaining the action lock during real mutations;
+- removes unsafe public-draft patch casts and validates every section patch with the shared contract;
+- makes authoritative reload explicitly discard unsaved local values and proves that behavior with a dirty input state;
+- uses a single two-attempt logout loop with exactly one `INVALID_CSRF` refresh;
+- keeps the logout alert outside the live status region so assistive technology does not announce it twice;
+- uses `vi.stubGlobal`/`vi.unstubAllGlobals` in the reviewed auth component tests;
+- proves contract-valid partner-preference merging and persisted-payload canonicalization;
+- retains shared `ONBOARDING_SCHEMA_VERSION` fixtures.
 
-CodeRabbit’s old component save-timer nitpick is superseded because the unsafe component-level `Promise.race` was removed; the API client owns the aborting timeout.
+## Review `4951473057` disposition
 
-## Review `4949831122` disposition
+### Six inline findings
 
-### Accepted and corrected
+1. **Persisted payload/schema alignment — corrected with a security-preserving interpretation.** Persistence is an untrusted boundary. Unknown legacy keys are canonicalized out before reads and writes; they are not exposed by weakening the public response schema. Invalid values fail closed through the existing API error envelope.
+2. **Transport/body-read status — corrected.** Non-`ApiError` fetch and body-read failures use `NETWORK/0`.
+3. **CSP `'self'` contract — corrected.** Same-origin comparison uses a supplied application host; Telegram remains separately allowlisted.
+4. **Reload reset test — corrected.** The test passes a dirty current state and proves omitted local data resets to clean defaults.
+5. **Save-failure fallback — corrected.** `SaveResult` carries an optional message and the component supplies a fallback.
+6. **Forced exit during load — corrected in `bb9881b` and covered by a component test.**
 
-- CI whitespace checks compare merge-base to head.
-- The cumulative static CSP meta policy was removed; environment-specific response headers are authoritative.
-- One request-layer controller and timer cover `fetch()` and `response.text()`.
-- Auth gate focus no longer uses a recreated callback ref.
-- The faith fixture’s explicit value wins over the spread.
-- The deferred failed-save test waits for a settled error and re-enabled controls.
-- `resumedStep` applies only on initial hydration; explicit reload/retry handlers apply their own returned step.
-- Demo progression proves each exact step transition.
+### Six review-summary nitpicks
 
-### Rejected with rationale
+1. The unused duplicate `AuthGateFooter` was deleted in `bb9881b`; the remaining logout alert is separated from `role="status"`.
+2. Reviewed auth tests now use `vi.stubGlobal("fetch", ...)` and `vi.unstubAllGlobals()`.
+3. Logout recovery is one loop bounded to two attempts and one CSRF refresh.
+4. Draft section patches are parsed with `partialPublicOnboardingPayloadSchema`; unsafe production casts are removed.
+5. Partner-preference merging is covered with a complete contract-valid value while malformed input remains ignored.
+6. Reviewed onboarding fixtures use `ONBOARDING_SCHEMA_VERSION`.
 
-Do **not** apply CodeRabbit’s literal `NETWORK → unavailable` recommendation without redesigning the state model. In the current UI:
-
-- `fatal` renders a recoverable **Connection error** with **Retry**;
-- `unavailable` renders **Account unavailable** with no recovery action.
-
-Mapping temporary transport failure to `unavailable` would mislabel the condition and trap the user. The local tests pin `mapErrorToStatus("NETWORK", 0) === "fatal"`, focused Retry availability, and successful recovery. Post this rationale in the review thread before resolving it.
-
-### `401` logout warning
-
-The walkthrough warning is not reproducible against the current implementation:
-
-- final session GET `401 UNAUTHENTICATED` becomes successful `already-absent` sign-out without a logout POST;
-- logout POST `401 UNAUTHENTICATED` becomes successful concurrent `already-absent` sign-out;
-- both paths end in `unauthenticated` and have component tests;
-- malformed or unvalidated responses do not falsely claim sign-out.
-
-Document this disposition rather than changing the working path.
-
-## Local verification after the two follow-up commits
+## Local verification of the follow-up
 
 - `npm ci`: passed; 201 packages installed, 206 audited, 0 vulnerabilities.
-- `npm run typecheck`: passed across contracts, Mini App, API, and bot.
-- `npm test`: **152 tests passed**:
-  - Mini App: 102;
-  - API: 37;
+- `npm run check`: passed across all workspaces.
+- Tests: **155 passed**:
   - contracts: 12;
+  - Mini App: 103;
+  - API: 39;
   - bot: 1.
-- `npm run build`: passed across all workspaces.
-- `npm audit --audit-level=low`: passed with 0 vulnerabilities.
+- Typechecks: passed across contracts, Mini App, API, and bot.
+- Builds: passed across contracts, Mini App, API, and bot.
 - `git diff --check`: clean.
-- PostgreSQL cannot run in this sandbox. Remote integration passed at `28ac6ac`; it must run again after these local commits are published.
+- `npm audit --audit-level=low`: passed with 0 vulnerabilities; rerun is still required in exact-head CI.
+- PostgreSQL passed remotely for `bb9881b`, but the follow-up changes onboarding persistence-boundary behavior; PostgreSQL integration must pass again on the published final head.
 
-## Implemented security and privacy boundary
+## Publication and review procedure
 
-- Telegram authentication uses validated raw `initData`; `initDataUnsafe` is not trusted.
-- The browser receives an opaque HttpOnly session cookie and a CSRF token.
-- Auth/session operations are ordered; logout uses the final cookie-backed session and only claims revocation after 204 or validated already-absent 401.
-- Public draft saves are serialized, versioned, validated, and limited to public onboarding sections.
-- Private identity, phone, date of birth, verification photo, consent, Telegram identifiers, session token, and CSRF do not enter public-draft payloads.
-- Demo mode is synthetic, local-only, and network-free.
-- Real identity upload, submission, review, discovery, matching, messaging, contact reveal, and payment remain disabled/out of scope.
-- The production CSP must come from response headers. `apps/miniapp/index.html` intentionally has no static CSP meta policy.
+1. Apply the follow-up mailbox to exact head `bb9881b0853fb8d0999b94de2dcd6a7f7fe3a25f` with `git am`.
+2. Confirm the expected resulting tree, clean status, and base-to-head `git diff --check`.
+3. Push normally to `phase2/miniapp-api-integration`; do not amend, rebase, squash, force-push, approve, or merge.
+4. Require both exact-final-head Actions jobs to pass, including diff hygiene and PostgreSQL integration.
+5. Reply to each of the six inline threads with the verified disposition and resolve only after the published code and CI support it.
+6. Post dispositions for the six summary nitpicks.
+7. Replace the stale PR description: remove the 70-test claim, obsolete commit list, and obsolete Testing Library gap; use exact final-head facts.
+8. Request `@coderabbitai full review` after publication and require a substantive exact-final-head result.
+9. Independently inspect the final head, checks, review, thread resolution, PR body, and evidence before any merge decision.
 
-## Publication procedure
+## External gates still open
 
-1. Apply the generated mailbox `.txt` to the exact remote head `28ac6ac` using `git am`.
-2. Confirm the resulting commit IDs and tree match the local commits.
-3. Push normally to `phase2/miniapp-api-integration`; do not amend, rebase, squash, force-push, or merge.
-4. Require both exact-final-head Actions checks to pass.
-5. Reply to the `NETWORK → unavailable` thread with the rationale above and disposition the `401` warning.
-6. Request a new CodeRabbit full review only after the fixes are published and rolling review allowance is available.
-7. Independently review the exact final head and confirm conversation resolution.
+Tracked configuration and automated tests are not substitutes for deployment/operator evidence. The repository still has no completed Phase 02 operator record.
 
-## Hard gates still open
-
-1. Publish the two normal local commits.
-2. Obtain green exact-final-head typecheck/test/build/audit/hygiene and PostgreSQL integration.
-3. Obtain fresh exact-final-head CodeRabbit and independent review.
-4. Resolve all required review conversations only after source and tests support the disposition.
-5. Deploy the exact final SHA to an approved HTTPS synthetic Telegram test host using same-origin `/api` and production response-header CSP.
-6. Complete `docs/evidence/phase-02/OPERATOR_RECORD_TEMPLATE.md` with synthetic, redacted evidence.
-7. Verify auth, restore, five writes, resume, conflict/reload, expiry/re-auth, logout, post-logout 401, and no accepted cookie after logout.
-8. Verify narrow/wide layouts, safe areas, overflow, 200% text/zoom, reduced motion, keyboard/focus, and a real screen reader.
-9. Prove `ENABLE_REAL_SUBMISSIONS=false` and absence of forbidden data in network, storage, URLs, logs, analytics, and evidence.
-10. Reconfirm active ruleset `20794921` and update the PR description truthfully.
-11. Approve or merge only as a separate decision after every gate closes.
+1. Deploy the exact final SHA to an approved HTTPS synthetic Telegram test host with same-origin `/api`.
+2. Record actual production response headers, including CSP, rather than relying only on the tracked Nginx candidate.
+3. Verify Telegram authentication, restore, five ordered public-only writes, resume, conflict/reload, expiry/re-authentication, logout, post-logout 401, and absence of accepted cookies after logout.
+4. Verify narrow/wide layouts, safe areas, overflow, 200% text/zoom, reduced motion, keyboard/focus, and a real screen reader.
+5. Prove `ENABLE_REAL_SUBMISSIONS=false` and absence of forbidden data in network, storage, URLs, logs, analytics, and evidence.
+6. Complete `docs/evidence/phase-02/OPERATOR_RECORD_TEMPLATE.md` using synthetic, redacted evidence only.
+7. Reconfirm ruleset `20794921` and all required conversations.
 
 ## Locked product scope
 
 - First-release eligibility is limited to adult Ethiopian Orthodox Tewahedo Church candidates.
-- Discovery is anonymous, values-only, and photo-free.
-- No social-media links belong in candidate profiles.
+- Discovery is anonymous, values-only, photo-free, and contains no candidate social links.
 - Name, phone, Telegram username, and direct-message links remain hidden.
 - A future verification photo is private/admin-only and deleted 30 days after approval.
 - Mutual interest, administrator approval, and both users’ final confirmations may later open only a restricted in-app introduction.
