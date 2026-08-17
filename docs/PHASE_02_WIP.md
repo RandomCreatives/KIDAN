@@ -1,164 +1,135 @@
 # Phase 02 — Mini App and API Integration — Working Context
 
-Last updated: 2026-08-14 (Africa/Nairobi)
-Status: corrective implementation prepared locally; **not approved, not merged**
+Last updated: 2026-08-17 (Africa/Nairobi)
+
+Status: post-review corrections prepared locally; **not approved, not merged**
 
 ## Objective and boundary
 
-Connect the Telegram Mini App to opaque-cookie authentication and resumable public drafts while keeping browser demo mode synthetic and network-free. Real identity, verification-photo upload, submission, administrator review, live discovery, matching, messaging, contact reveal, and payment remain outside this phase and disabled.
+Connect the Telegram Mini App to opaque-cookie authentication and resumable public drafts while keeping browser demo mode synthetic and network-free. Real identity, verification-photo upload, submission, administrator review, discovery, matching, messaging, contact reveal, and payment remain outside Phase 02 and disabled.
 
-`ENABLE_REAL_SUBMISSIONS=false` is binding for local, CI, and deployed synthetic-test environments.
+`ENABLE_REAL_SUBMISSIONS=false` is binding for local, CI, staging, and operator-test environments.
 
-## Review state
+## Repository and review state
 
 - PR #2: `phase2/miniapp-api-integration` → `main`.
 - Base: `053fb6ecf9cbff72b2e2d052588d5250ffd7d773`.
-- Last observed remote head: `8ee6278ed98b9db80fcfb3cc5f828fcbb1402864`.
-- The first through fifth independent reviews returned REQUEST CHANGES / DO NOT MERGE.
-- Fifth-review implementation commits prepared locally on top of `8ee6278`:
-  - `8821254aa295ece40785daf77598c1ded6480c00` — client/auth/logout lifecycle;
-  - `6f5ff508076376f43d8d4f9ff7274b2f036397ff` — onboarding action lifecycle, exact tests, and privacy copy;
-  - `5f9f7363bda9e821e0868108de1a2a0a95e57cd8` — production CSP host configuration, range-aware CI, and operator template.
-- These commits still require publication, exact-final-head CI, CodeRabbit, and independent re-review. No conversation may be resolved from local implementation alone.
+- Last observed remote head/tree: `28ac6ac1e2f1f48f4d7de5608ce2c4cb67b6f236` / `8e8a921f4bc6bd1825977ffd2e59783e79aafa7e`.
+- Exact-head Actions run `32022518353` passed both required jobs.
+- Latest completed CodeRabbit review: `4949831122` against `e2d3e22`; automatic review of later commits was skipped pending a manual request.
+- Two normal local commits are prepared directly on `28ac6ac`:
+  - `369f025d221627becdd6c7880439f41595854d4d` — complete timeout/recovery/focus regressions;
+  - `ac7b0468fc6fa69ec0bdc185af575ee2c3d02c05` — valid maintainability nitpicks and shared defaults.
+- These commits are not pushed or reviewed. Keep PR #2 open and unmerged.
 
-## Implemented architecture
+## Typed same-origin transport
 
-### Typed same-origin transport
+- `KidanApiClient` sends `credentials: "include"` to same-origin `/api` routes.
+- Shared contracts validate outgoing public-draft patches and every auth/session/draft success response.
+- Valid non-2xx envelopes preserve declared server error codes; malformed responses fail closed as `INVALID_RESPONSE`.
+- A configurable request-layer `AbortController` and one timer cover both `fetch()` and `response.text()`.
+- Timeout aborts map to `ApiError("NETWORK", 0)` and always clear the timer.
+- Deterministic fake-timer tests prove:
+  - the request is pending before the configured deadline;
+  - the client’s timer calls `controller.abort()`;
+  - `signal.aborted` becomes true;
+  - the same deadline remains active while the response body is pending.
+- Logout accepts only 204 as confirmed revocation while preserving validated 401 already-absent handling.
 
-- `apps/miniapp/src/api/client.ts` sends `credentials: "include"` to same-origin `/api` routes.
-- Shared contracts validate outgoing public draft patches and all auth/session/draft success responses.
-- Valid non-2xx error envelopes are parsed before any success-only status assertion.
-- Network/body-stream errors are typed `NETWORK`; malformed bodies/envelopes are `INVALID_RESPONSE`.
-- Logout accepts only 204 as successful revocation; the real 401 `UNAUTHENTICATED` path is preserved.
+## Authentication and gate behavior
 
-### Telegram authentication and terminal logout
+- Only raw Telegram `initData` is accepted as short-lived authentication input.
+- The API verifies signature and freshness before extracting Telegram identity data.
+- Auth bootstrap, recovery, invalidation, and logout are ordered and single-flight where required.
+- Logout establishes terminal intent synchronously, restores the final cookie-backed session, and never trusts stale browser CSRF state as proof of the current cookie.
+- Final GET 401 and logout POST 401 are treated as validated already-absent outcomes; network, malformed, and server failures remain retryable and never falsely claim sign-out.
+- A bounded `INVALID_CSRF` logout refresh/retry is supported.
+- Auth gate focus is stable:
+  - no-action status screens focus a programmatic heading once per displayed status;
+  - actionable status screens focus their recovery button;
+  - ordinary parent rerenders do not invoke a callback ref or steal focus.
+- Temporary `NETWORK` failures remain `fatal`, which currently means recoverable **Connection error** with **Retry**. They are intentionally not mapped to non-recoverable **Account unavailable**.
 
-- Only raw Telegram `initData` is accepted as the short-lived authentication input; `initDataUnsafe` is never trusted.
-- The API verifies Telegram signature/freshness and extracts the validated Telegram ID and auth date.
-- The browser receives an opaque HttpOnly cookie and a CSRF token; the opaque token is never exposed to JavaScript.
-- `AuthProvider` orders bootstrap, Telegram exchange, recovery, invalidation, and logout through one operation tail.
-- Recovery and invalidation are awaitable.
-- Logout sets terminal intent synchronously, returns one shared promise, blocks later automatic recovery, and waits for earlier auth work.
-- Logout always restores the final cookie-backed session before revocation. Stored CSRF is not treated as authoritative for the current cookie.
-- Final GET 401 confirms absence. GET/logout network, 500, malformed, and body-read failures never produce a false “Signed out.”
-- One bounded INVALID_CSRF refresh/retry is allowed; unresolved revocation stays visible and retryable.
-- An auth request cannot begin after terminal logout intent. An exchange already active before intent is followed by final-session restoration and revocation.
-- Signing out and failure are exposed with disabled/`aria-busy`/live-region semantics.
+## Resumable public drafts
 
-### Browser demo mode
+- Only eligibility, public profile, faith/family, partner preferences, and the public-preview checkpoint reach the public-draft API.
+- Saves are serialized and read the latest expected version when each queued request begins.
+- Initial hydration applies the server resume step once.
+- Explicit reload/retry handlers apply their returned step directly.
+- `INVALID_CSRF` recovery may refresh authentication and rehydrate an older server draft, but cannot move an actively editing user backward.
+- The regression test proves the full path: successful forward navigation, rejected save with `INVALID_CSRF`, second session/auth exchange with a new CSRF token, second draft GET returning the older step, and unchanged visible position.
+- Conflict/reload, saving, and loading states disable conflicting form/navigation actions.
+- Failed-save tests wait for the request, settled error state, and re-enabled controls.
+- Demo progression asserts every exact step from 1 through 7 and makes zero network calls.
 
-- Mode detection requires non-empty Telegram launch `initData` for real mode.
-- Browser demo uses synthetic local values only and makes zero API requests.
-- Demo copy never claims persistence or live review/connection behavior.
+## Shared contracts and maintainability
 
-### Resumable public drafts
+- `ONBOARDING_SCHEMA_VERSION` and `INITIAL_ONBOARDING_STEP` are exported by `@kidan/contracts`.
+- Contract schemas, the empty-draft route fallback, and Mini App save requests use the shared values.
+- Auth error mapping accepts `ClientErrorCode`, and auth status labels are exhaustive over `AuthStatus`.
+- `AuthProvider` lazily constructs one API client.
+- The unused session-bootstrap error-body helper is removed.
+- Draft merge and reset delegate to one validated payload-application helper.
+- Hook tests expose actual form state and prove server payload hydration.
+- Reload mapping tests match production defaults and prove omitted unsaved edits reset.
+- Pilot-disabled tests cover both unsaved and saved public-draft copy.
+- Auth-route tests use one setup factory while preserving explicit per-test cookie/origin options.
+- The obsolete component save-timeout nitpick is superseded because the component race was removed entirely.
 
-- Only eligibility, public profile, faith/family, partner preferences, and an empty public-preview checkpoint reach `/v1/onboarding/draft`.
-- Private identity, consent, verification-photo, Telegram, contact, cookie, and CSRF fields are excluded by mapping, contracts, route validation, and tests.
-- Saves are serialized and awaitable with optimistic `expectedVersion` checks.
-- `persisted=true` is derived only from a versioned server draft or confirmed write.
-- Footer exit and completion consume the authoritative operation result, not stale render state.
-- `reloadLatest` and initial retry load are shared, awaitable operations.
-- Continue, Back, header/footer Exit, Reload latest, and load Retry use one synchronous action guard; form/navigation controls are disabled while an operation is pending.
-- Conflict reload preserves edits/state when it fails and coherently replaces payload, version, persistence, conflict, and visible step when it succeeds.
-- `reloadRevision` preserves the corrected same-valued server-step behavior.
+## Privacy and security boundary
 
-### Privacy copy
+- Public requests exclude private identity, full name, phone, date of birth, verification-photo data, consent, Telegram fields, session tokens, and CSRF values.
+- Demo mode is synthetic and network-free.
+- Real mode saves only public profile sections and truthfully states that verification, consent, review, discovery, and connections are disabled.
+- `apps/miniapp/index.html` has no static CSP meta policy. Development/preview and production response headers are authoritative and environment-specific.
+- The production Nginx candidate supplies same-origin `/api`, SPA routing, CSP, and security headers, but tracked configuration is not deployment evidence.
 
-The real preview distinguishes data sent to Kidan, data retained for authentication, fields placed in the public draft, and fields shown in discovery. It no longer uses an unqualified “no identity/contact details are shared” claim.
+## CodeRabbit disposition
 
-### CSP and same-origin host
+### Corrected
 
-- `apps/miniapp/src/lib/csp.ts` generates reviewed development and production policies.
-- `apps/miniapp/vite.config.ts` applies policies to Vite development/preview only.
-- `apps/miniapp/index.html` contains a supplemental meta policy; it is not relied on for `frame-ancestors`.
-- `apps/miniapp/deploy/nginx.conf` is the production-serving candidate: static SPA + same-origin `/api` proxy + production CSP/security headers.
-- `apps/miniapp/src/lib/csp.test.ts` requires the Nginx header to match the generated production policy exactly.
-- No third-party font, tracker, analytics, pixel, ad, or replay source is present; the Telegram SDK is the only reviewed external Mini App origin.
-- Deployment is still pending. A tracked Nginx file is not proof that the approved HTTPS host emits the header.
+The seven valid actionable recommendations are implemented: merge-base hygiene, CSP composition, complete request timeout, stable focus, fixture precedence, settled deferred-save test, and initial-only resume behavior.
 
-### CI hygiene
+### Rejected literal mapping
 
-- PR jobs check out the exact PR head with full history.
-- CI checks `pull_request.base.sha..HEAD`, not an empty working-tree diff.
-- Push jobs check `before..HEAD` with a safe fallback.
-- The current Vite EOF whitespace defect is removed.
-- jsdom `scrollTo` and the Vite native-loader import warning are fixed, producing warning-clean local output.
+The literal `NETWORK → unavailable` recommendation is rejected because `unavailable` currently means **Account unavailable** and supplies no recovery action. Regression coverage pins `NETWORK → fatal` and proves **Connection error + Retry** recovers successfully. This rationale must be posted in the review thread.
 
-## Exact deterministic coverage
+### Walkthrough `401` warning
 
-The Mini App suite now includes:
-
-- valid logout 204 and concurrent-already-absent 401;
-- final-session network, valid 500, malformed, body-read, and unavailable-storage paths;
-- stale token A vs. authoritative final token B;
-- bounded INVALID_CSRF refresh/retry success and failure;
-- shared deferred logout callers;
-- logout during active GET/auth and same-tick retry/invalidate barriers;
-- no Telegram auth start after terminal intent;
-- announced logout busy/failure UI;
-- first-save footer persistence result;
-- deferred save/reload vs. header/footer/back/continue;
-- same-tick Back+Continue;
-- shared reload callers and reload-error state preservation;
-- initial-load exit lock;
-- original-server-step reload after local navigation;
-- exactly five ordered real-mode PUTs with increasing versions and exact section-only bodies;
-- intermediate/final save failure blocking;
-- no private/consent/contact/auth fields in public requests, localStorage, or URLs;
-- network-free complete demo flow;
-- production CSP/Nginx drift.
+The warning that logout 401 may not reach signed-out recovery is not reproducible. Valid final-session and logout 401 paths are tested and end in `unauthenticated`; malformed envelopes remain failures. Document this disposition rather than weakening logout truthfulness.
 
 ## Local verification
 
-- `npm ci`: passed (201 packages installed; 206 audited; 0 vulnerabilities).
-- `npm run check`: green and warning-clean.
-- Tests: **146 total**.
-  - Mini App: 97
-  - API: 37
-  - Contracts: 11
-  - Bot: 1
-- All typechecks and production builds passed.
-- `npm audit --audit-level=low`: 0 vulnerabilities.
-- Exact Phase 02 base-to-final-local-head `git diff --check`: clean.
-- PostgreSQL integration remains CI-only in this sandbox and must pass on the exact final pushed SHA.
+- `npm ci`: passed; 201 packages installed, 206 audited, 0 vulnerabilities.
+- `npm run typecheck`: passed.
+- `npm test`: **152 passed**:
+  - Mini App: 102;
+  - API: 37;
+  - contracts: 12;
+  - bot: 1.
+- `npm run build`: passed.
+- `npm audit --audit-level=low`: passed with 0 vulnerabilities.
+- `git diff --check`: clean.
+- PostgreSQL integration passed remotely at `28ac6ac` but must pass again on the published final head.
 
-## Hard merge gates still open
+## Publication and remaining gates
 
-1. Publish normal follow-up commits without force-push/history rewrite.
-2. Run fresh exact-final-head Actions `check` and PostgreSQL 17 integration.
-3. Deploy the exact final SHA to an approved HTTPS synthetic Telegram test host.
-4. Verify the actual CSP response header and same-origin `/api`; test `frame-ancestors` in approved Telegram clients.
-5. Complete the explicitly pending `docs/evidence/phase-02/OPERATOR_RECORD_TEMPLATE.md` with redacted synthetic evidence.
-6. Cover first auth, restore, refresh, five writes, resume, two-client conflict, expiry/re-auth, logout, post-logout 401, and no accepted cookie after logout.
-7. Cover narrow/wide viewports, safe areas, overflow, 200% text/zoom, reduced motion, keyboard/focus, and a real screen reader.
-8. Prove `ENABLE_REAL_SUBMISSIONS=false` and zero forbidden data in network/storage/URL/log/analytics/evidence on that deployment.
-9. Reconfirm active ruleset `20794921`, receive fresh CodeRabbit, and complete independent final-head review.
-10. Resolve review threads only after verification.
-11. Rewrite the PR body only when the final head, evidence, checks, counts, and review status are known.
-12. Keep PR #2 open/unmerged until every gate is closed.
-
-## Key files
-
-- API auth/session: `apps/api/src/auth/{telegramInitData,sessionService}.ts`, `apps/api/src/routes/auth.ts`.
-- API public drafts: `apps/api/src/routes/onboarding.ts`, `apps/api/src/onboarding/onboardingService.ts`.
-- API persistence: `apps/api/src/persistence/{types,memoryRepository,postgresRepository}.ts`.
-- Mini App transport: `apps/miniapp/src/api/client.ts` and `client.test.ts`.
-- Mini App auth: `apps/miniapp/src/auth/{AuthProvider,AuthGate,AuthStatusBar,sessionBootstrap,authState,useAuth}.ts(x)` and adjacent tests.
-- Mini App drafts: `apps/miniapp/src/onboarding/{OnboardingFlow,useOnboardingDraft,draftMapping,types}.ts(x)` and adjacent tests.
-- Privacy copy: `apps/miniapp/src/PilotDisabledScreen.tsx` and test.
-- CSP: `apps/miniapp/src/lib/csp.ts`, `csp.test.ts`, `apps/miniapp/index.html`, `apps/miniapp/vite.config.ts`.
-- Production host candidate: `apps/miniapp/deploy/{nginx.conf,README.md}`.
-- Operator gate: `docs/evidence/phase-02/{README.md,OPERATOR_RECORD_TEMPLATE.md}`.
-- CI: `.github/workflows/ci.yml`.
-- Contracts: `packages/contracts/src/{auth,onboarding}.ts`.
+1. Apply the generated mailbox `.txt` to exact head `28ac6ac` and push normally without history rewriting.
+2. Require green exact-final-head Actions for typecheck/tests/build/audit/hygiene and PostgreSQL integration.
+3. Post the network-mapping and logout-401 dispositions; resolve conversations only after verification.
+4. Request a fresh CodeRabbit full review and complete independent final-head review.
+5. Deploy the exact final SHA to an approved HTTPS synthetic Telegram host.
+6. Verify actual response-header CSP, same-origin `/api`, Telegram auth/restore/recovery, five writes, resume, conflict/reload, expiry/re-auth, and logout/post-logout behavior.
+7. Complete the redacted synthetic operator evidence template, including keyboard, focus, screen-reader, responsive, zoom/text, safe-area, overflow, and reduced-motion checks.
+8. Prove `ENABLE_REAL_SUBMISSIONS=false` and absence of forbidden data in network, storage, URLs, logs, analytics, and evidence.
+9. Reconfirm ruleset `20794921`, update the PR description with exact facts, and keep PR #2 unmerged until all gates close.
 
 ## Product constraints unchanged
 
-- EOTC-only adult first release.
+- Adult Ethiopian Orthodox Tewahedo candidates only for the first release.
 - Anonymous, values-only, photo-free discovery.
 - No candidate social links.
 - No chat before mutual decisions, administrator approval, and both final confirmations.
 - Restricted in-app introduction before any future contact reveal.
 - Verification photo remains private/admin-only with 30-day post-approval deletion.
-- Pilot remains free; monetization ideas stay out of implementation.
+- Pilot remains free; payment, wallet, credits, ratings, VIP, and paid verification remain unauthorized.
