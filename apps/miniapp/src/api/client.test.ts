@@ -173,6 +173,60 @@ describe("KidanApiClient", () => {
     expect((error as ApiError).code).toBe("NETWORK");
   });
 
+  it("maps a stalled fetch (AbortError on fetch) to NETWORK", async () => {
+    // The shared AbortController aborts both fetch and response.text().
+    // Simulate the timeout firing: the fetch rejects with AbortError.
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      // Immediately abort via the signal to simulate timeout.
+      return new Promise<Response>((_resolve, reject) => {
+        if (init?.signal) {
+          init.signal.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }
+        // Trigger abort on next tick so the listener is registered first.
+        setTimeout(() => (init?.signal as AbortSignal | undefined)?.dispatchEvent(new Event("abort")), 0);
+      });
+    });
+    const client = new KidanApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestTimeoutMs: 10,
+    });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("NETWORK");
+    expect((error as ApiError).status).toBe(0);
+  });
+
+  it("maps a stalled response body (AbortError on text()) to NETWORK", async () => {
+    // Simulate the timeout firing after fetch returns but during body read.
+    const fetchImpl = vi.fn((_url: string, init?: RequestInit) => {
+      const stalledText = () =>
+        new Promise<string>((_resolve, reject) => {
+          if (init?.signal) {
+            init.signal.addEventListener("abort", () => {
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }
+          setTimeout(
+            () => (init?.signal as AbortSignal | undefined)?.dispatchEvent(new Event("abort")),
+            0,
+          );
+        });
+      return Promise.resolve({
+        status: 500,
+        ok: false,
+        text: stalledText,
+      } as unknown as Response);
+    });
+    const client = new KidanApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestTimeoutMs: 10,
+    });
+    const error = await client.getSession().catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("NETWORK");
+    expect((error as ApiError).status).toBe(500);
+  });
+
   it("fails closed on malformed (non-JSON) success body", async () => {
     const fetchImpl = vi
       .fn()

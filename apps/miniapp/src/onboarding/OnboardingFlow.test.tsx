@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../api/client.js";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { OnboardingFlow } from "./OnboardingFlow.js";
 import { syntheticOnboardingState } from "./types.js";
@@ -184,14 +185,26 @@ describe("OnboardingFlow", () => {
       </AuthProvider>,
     );
 
+    // Step 1 — eligibility
+    await screen.findByText(/1 of 7/);
     fireEvent.click(screen.getByRole("button", { name: /use synthetic sample/i }));
-    for (let i = 0; i < 8; i += 1) {
-      if (screen.queryByText(/Your profile would now enter private review/i)) break;
-      clickContinue();
-      await waitFor(() => expect(screen.getByText(/of \d+/)).toBeTruthy());
-    }
+    clickContinue();
 
-    expect(screen.getByText(/Your profile would now enter private review/i)).toBeTruthy();
+    // Steps 2–6: navigate through each step and assert the counter advances
+    await screen.findByText(/2 of 7/);
+    clickContinue();
+    await screen.findByText(/3 of 7/);
+    clickContinue();
+    await screen.findByText(/4 of 7/);
+    clickContinue();
+    await screen.findByText(/5 of 7/);
+    clickContinue();
+    await screen.findByText(/6 of 7/);
+    clickContinue();
+    await screen.findByText(/7 of 7/);
+    clickContinue();
+
+    await screen.findByText(/Your profile would now enter private review/i);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -304,14 +317,16 @@ describe("OnboardingFlow", () => {
       );
       expect(putStarted).toBe(true);
     });
-    
     fireEvent.click(screen.getByLabelText(/Exit onboarding/i));
     expect(onExit).not.toHaveBeenCalled();
 
     await act(async () => {
       resolveFirstPut(draftPutError());
     });
-    await waitFor(() => expect(screen.queryByText(/Your public draft is saved/i)).toBeNull());
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByText(/Could not save your progress/i)).toBeTruthy();
+    const continueBtn = document.querySelector(".continue-button") as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(false);
     expect(onExit).not.toHaveBeenCalled();
     expect(screen.getByText(/Know exactly what others can see/i)).toBeTruthy();
   });
@@ -623,5 +638,77 @@ describe("OnboardingFlow", () => {
     await act(async () => resolveDraft(draftGet("eligibility", syntheticPublicPayload)));
     await screen.findByText(/1 of 5/);
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate backward after auth retry resolves during onboarding", async () => {
+    // Regression: resumedStep is only applied on initial hydration. A later
+    // auth-retry/re-hydration must not reset the visible step backward.
+    let authCalls = 0;
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) {
+        authCalls += 1;
+        return Promise.resolve(telegramOk());
+      }
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.resolve(draftPutOk());
+      }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        // Second load (after retry) returns a later step; must not affect visible step.
+        return Promise.resolve(
+          draftGet(authCalls > 1 ? "faith_and_family" : "public_profile", syntheticPublicPayload),
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    // Initial hydration resumes at step 2 (public_profile).
+    await screen.findByText(/2 of 5/);
+    // Navigate forward to step 3 (faith_and_family).
+    clickContinue();
+    await screen.findByText(/3 of 5/);
+    // A retry (e.g. from INVALID_CSRF recovery) must not move us back to step 2.
+    expect(screen.queryByText(/2 of 5/)).toBeNull();
+    expect(screen.getByText(/3 of 5/)).toBeTruthy();
+  });
+
+  it("shows a recoverable Connection error with Retry when a save times out (NETWORK → fatal not unavailable)", async () => {
+    // Regression: NETWORK errors from a stalled/timed-out save should expose a
+    // recoverable "Could not save" error, NOT map to 'unavailable' (which removes retry).
+    // The rejected NETWORK→unavailable CodeRabbit suggestion is covered here.
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        return Promise.reject(new ApiError("NETWORK", 0));
+      }
+      if (String(input).includes("/v1/onboarding/draft")) {
+        return Promise.resolve(draftGet("eligibility", syntheticPublicPayload));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    await screen.findByText(/1 of 5/);
+    clickContinue();
+    // The save error is shown and the user remains on the same step.
+    await screen.findByText(/Network error while saving/i);
+    expect(screen.getByText(/1 of 5/)).toBeTruthy();
+    // Continue is re-enabled so the user can retry.
+    const continueBtn = document.querySelector(".continue-button") as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(false);
+    // The auth gate must NOT have transitioned to unavailable.
+    expect(screen.queryByText(/Account unavailable/i)).toBeNull();
   });
 });

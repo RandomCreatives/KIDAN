@@ -109,6 +109,9 @@ export class KidanApiClient {
     }
     if (csrfToken) headers["x-csrf-token"] = csrfToken;
 
+    // One controller and one timer cover both fetch() and response.text() so a
+    // stalled response body cannot hang indefinitely any more than a stalled
+    // connection can.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
 
@@ -116,39 +119,28 @@ export class KidanApiClient {
     if (payload !== undefined) init.body = payload;
 
     let response: Response;
+    let text = "";
+    let responseStatus = 0;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
-    } catch (error: unknown) {
-      clearTimeout(timeoutId);
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiError("NETWORK", 0);
+      responseStatus = response.status;
+
+      if (response.status === 204) {
+        if (expectStatus !== undefined && response.status !== expectStatus) {
+          throw new ApiError("INVALID_RESPONSE", response.status);
+        }
+        return undefined;
       }
-      throw new ApiError("NETWORK", 0);
+
+      text = await response.text();
+    } catch (error: unknown) {
+      if (error instanceof ApiError) throw error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("NETWORK", responseStatus);
+      }
+      throw new ApiError("NETWORK", responseStatus);
     } finally {
       clearTimeout(timeoutId);
-    }
-
-    if (response.status === 204) {
-      if (expectStatus !== undefined && response.status !== expectStatus) {
-        throw new ApiError("INVALID_RESPONSE", response.status);
-      }
-      return undefined;
-    }
-
-    let text: string;
-    try {
-      const textController = new AbortController();
-      const textTimeoutId = setTimeout(() => textController.abort(), this.requestTimeoutMs);
-      try {
-        text = await response.text();
-      } finally {
-        clearTimeout(textTimeoutId);
-      }
-    } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ApiError("NETWORK", response.status);
-      }
-      throw new ApiError("NETWORK", response.status);
     }
 
     let parsed: Envelope;
