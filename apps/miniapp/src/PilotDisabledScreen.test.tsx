@@ -16,4 +16,12 @@ describe("PilotDisabledScreen", () => {
     expect(copy).not.toMatch(/no verification identity, phone number, or contact details are shared/i);
     expect(screen.getByText(/In this preview you can sign in and save your public profile sections/i)).toBeTruthy();
   });
+
+  it("confirms the saved public-draft state without implying pilot submission", () => {
+    render(<PilotDisabledScreen onReopen={() => undefined} saved />);
+
+    expect(screen.getByRole("heading", { name: /Your draft is saved/i })).toBeTruthy();
+    expect(screen.getByText(/Your public draft was transmitted and saved/i)).toBeTruthy();
+    expect(screen.getByText(/Verification, consent, and review remain disabled/i)).toBeTruthy();
+  });
 });

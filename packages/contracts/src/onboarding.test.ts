@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  INITIAL_ONBOARDING_STEP,
+  ONBOARDING_SCHEMA_VERSION,
   onboardingDraftSchema,
   onboardingFieldVisibility,
+  onboardingStepSchema,
   partnerPreferencesDraftSchema,
 } from "./onboarding.js";
 
 const validDraft = {
-  schemaVersion: "2026-08-12.v1",
+  schemaVersion: ONBOARDING_SCHEMA_VERSION,
   eligibility: {
     adultConfirmed: true,
     eotcConfirmed: true,
@@ -58,6 +61,13 @@ const validDraft = {
     botNotifications: false,
   },
 } as const;
+
+describe("shared onboarding defaults", () => {
+  it("keeps the exported version and initial step accepted by their schemas", () => {
+    expect(onboardingDraftSchema.shape.schemaVersion.parse(ONBOARDING_SCHEMA_VERSION)).toBe(ONBOARDING_SCHEMA_VERSION);
+    expect(onboardingStepSchema.parse(INITIAL_ONBOARDING_STEP)).toBe(INITIAL_ONBOARDING_STEP);
+  });
+});
 
 describe("onboardingDraftSchema", () => {
   it("accepts a normalized complete draft", () => {

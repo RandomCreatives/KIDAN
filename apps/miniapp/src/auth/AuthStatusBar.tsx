@@ -1,6 +1,7 @@
+import type { AuthStatus } from "./authState.js";
 import { useAuth } from "./useAuth.js";
 
-const LABELS: Record<string, string> = {
+const LABELS: Record<AuthStatus, string> = {
   initializing: "Connecting…",
   authenticating: "Connecting…",
   unauthenticated: "Signed out",

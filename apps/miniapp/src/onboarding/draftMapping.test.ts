@@ -76,9 +76,11 @@ describe("draftMapping", () => {
       ...initialOnboardingState,
       publicProfile: { ...initialOnboardingState.publicProfile, city: "Local unsaved city" },
     };
-    const serverPayload = { publicProfile: { city: "Server city" } };
-    const reset = resetFormFromPayload(dirty, serverPayload);
-    expect(reset.publicProfile.city).toBe("Server city");
+    const serverPayload = { publicProfile: { occupationCategory: "Education" } };
+    const reset = resetFormFromPayload(initialOnboardingState, serverPayload);
+    expect(reset.publicProfile.occupationCategory).toBe("Education");
+    expect(reset.publicProfile.city).toBe(initialOnboardingState.publicProfile.city);
+    expect(dirty.publicProfile.city).toBe("Local unsaved city");
     expect(reset.privateIdentity).toEqual(initialOnboardingState.privateIdentity);
     expect(reset.consent).toEqual(initialOnboardingState.consent);
   });

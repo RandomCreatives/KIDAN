@@ -4,7 +4,7 @@ import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../auth/AuthProvider.js";
 import { useOnboardingDraft, type OnboardingDraftController } from "./useOnboardingDraft.js";
-import { syntheticOnboardingState } from "./types.js";
+import { syntheticOnboardingState, type OnboardingFormState } from "./types.js";
 
 function setTelegram(initData: string): void {
   (window as unknown as { Telegram: unknown }).Telegram = {
@@ -67,9 +67,11 @@ function draftWithVersion(version: number, payload: Record<string, unknown>): Re
 
 describe("useOnboardingDraft", () => {
   let ctrlRef: { current: OnboardingDraftController | null } = { current: null };
+  let stateRef: { current: OnboardingFormState | null } = { current: null };
 
   beforeEach(() => {
     ctrlRef = { current: null };
+    stateRef = { current: null };
     setTelegram("valid-init-data");
     try {
       window.sessionStorage.clear();
@@ -85,8 +87,9 @@ describe("useOnboardingDraft", () => {
 
   function mountHarness(): void {
     function Harness() {
-      const [, setDraft] = useState(syntheticOnboardingState);
-      const ctrl = useOnboardingDraft(syntheticOnboardingState, setDraft);
+      const [draft, setDraft] = useState(syntheticOnboardingState);
+      const ctrl = useOnboardingDraft(draft, setDraft);
+      stateRef.current = draft;
       ctrlRef.current = ctrl;
       return null;
     }
@@ -157,6 +160,8 @@ describe("useOnboardingDraft", () => {
     await waitFor(() => expect(ctrlRef.current?.hydrated).toBe(true));
     expect(ctrlRef.current!.persisted).toBe(true);
     expect(ctrlRef.current!.resumedStep).not.toBeNull();
+    await waitFor(() => expect(stateRef.current?.publicProfile.city).toBe("Saved City"));
+    expect(stateRef.current?.faithAndFamily.bio).toBe("A saved introduction that is long enough.");
     const putCalls = fetchImpl.mock.calls.filter((call) => String(call[0]).includes("/v1/onboarding/draft") && call[1]?.method === "PUT");
     expect(putCalls.length).toBe(0);
   });

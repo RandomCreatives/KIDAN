@@ -95,8 +95,8 @@ export function serverStepToClientStep(serverStep: string, isDemo: boolean): num
   return best;
 }
 
-export function mergeFormFromPayload(
-  prev: OnboardingFormState,
+function applyPayload(
+  base: OnboardingFormState,
   payload: Record<string, unknown>,
 ): OnboardingFormState {
   const eligibility = pickValidFields(eligibilitySchema, payload.eligibility);
@@ -105,32 +105,26 @@ export function mergeFormFromPayload(
   const partnerPreferences = pickValidFields(partnerPreferencesDraftSchema, payload.partnerPreferences);
 
   return {
-    ...prev,
-    ...(eligibility ? { eligibility: { ...prev.eligibility, ...eligibility } } : {}),
-    ...(publicProfile ? { publicProfile: { ...prev.publicProfile, ...publicProfile } } : {}),
-    ...(faithAndFamily ? { faithAndFamily: { ...prev.faithAndFamily, ...faithAndFamily } } : {}),
+    ...base,
+    ...(eligibility ? { eligibility: { ...base.eligibility, ...eligibility } } : {}),
+    ...(publicProfile ? { publicProfile: { ...base.publicProfile, ...publicProfile } } : {}),
+    ...(faithAndFamily ? { faithAndFamily: { ...base.faithAndFamily, ...faithAndFamily } } : {}),
     ...(partnerPreferences
-      ? { partnerPreferences: { ...prev.partnerPreferences, ...partnerPreferences } }
+      ? { partnerPreferences: { ...base.partnerPreferences, ...partnerPreferences } }
       : {}),
   } as unknown as OnboardingFormState;
+}
+
+export function mergeFormFromPayload(
+  prev: OnboardingFormState,
+  payload: Record<string, unknown>,
+): OnboardingFormState {
+  return applyPayload(prev, payload);
 }
 
 export function resetFormFromPayload(
   defaults: OnboardingFormState,
   payload: Record<string, unknown>,
 ): OnboardingFormState {
-  const eligibility = pickValidFields(eligibilitySchema, payload.eligibility);
-  const publicProfile = pickValidFields(publicProfileDraftSchema, payload.publicProfile);
-  const faithAndFamily = pickValidFields(faithAndFamilyDraftSchema, payload.faithAndFamily);
-  const partnerPreferences = pickValidFields(partnerPreferencesDraftSchema, payload.partnerPreferences);
-
-  return {
-    ...defaults,
-    ...(eligibility ? { eligibility: { ...defaults.eligibility, ...eligibility } } : {}),
-    ...(publicProfile ? { publicProfile: { ...defaults.publicProfile, ...publicProfile } } : {}),
-    ...(faithAndFamily ? { faithAndFamily: { ...defaults.faithAndFamily, ...faithAndFamily } } : {}),
-    ...(partnerPreferences
-      ? { partnerPreferences: { ...defaults.partnerPreferences, ...partnerPreferences } }
-      : {}),
-  } as unknown as OnboardingFormState;
+  return applyPayload(defaults, payload);
 }

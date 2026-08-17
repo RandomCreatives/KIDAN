@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
+import { buildApp, type BuildAppOptions } from "../src/app.js";
 import { SessionService } from "../src/auth/sessionService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
 import { IdentityCipher, SecretHasher } from "../src/security/crypto.js";
@@ -23,18 +23,27 @@ function signedInitData(telegramId: string, authDate = new Date()): string {
   return params.toString();
 }
 
+async function buildTestApp(
+  options: Pick<BuildAppOptions, "allowedOrigin" | "secureCookies"> = {},
+): Promise<FastifyInstance> {
+  const repository = new MemoryPersistenceRepository();
+  return buildApp({
+    botToken,
+    sessionService: new SessionService(
+      repository,
+      new IdentityCipher(randomBytes(32), randomBytes(32)),
+      new SecretHasher(randomBytes(32)),
+    ),
+    ...options,
+  });
+}
+
 describe("authentication routes", () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => app?.close());
 
   it("exchanges Telegram initData for an opaque secure cookie without returning IDs", async () => {
-    const repository = new MemoryPersistenceRepository();
-    const sessions = new SessionService(
-      repository,
-      new IdentityCipher(randomBytes(32), randomBytes(32)),
-      new SecretHasher(randomBytes(32)),
-    );
-    app = await buildApp({ botToken, sessionService: sessions, secureCookies: true });
+    app = await buildTestApp({ secureCookies: true });
     const telegramId = "900719925474000";
     const response = await app.inject({
       method: "POST",
@@ -55,15 +64,7 @@ describe("authentication routes", () => {
   });
 
   it("rejects stale initData through the public route", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp();
     const response = await app.inject({
       method: "POST",
       url: "/v1/auth/telegram",
@@ -74,16 +75,7 @@ describe("authentication routes", () => {
   });
 
   it("restores a session with a stable CSRF token that verifies", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-      secureCookies: false,
-    });
+    app = await buildTestApp({ secureCookies: false });
     const auth = await app.inject({
       method: "POST",
       url: "/v1/auth/telegram",
@@ -113,30 +105,14 @@ describe("authentication routes", () => {
   });
 
   it("rejects session restore without a cookie", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp();
     const response = await app.inject({ method: "GET", url: "/v1/session" });
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("UNAUTHENTICATED");
   });
 
   it("rejects logout with a missing session (401)", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp();
     const response = await app.inject({
       method: "POST",
       url: "/v1/session/logout",
@@ -147,15 +123,7 @@ describe("authentication routes", () => {
   });
 
   it("rejects logout with an invalid CSRF token (403)", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp();
     const auth = await app.inject({
       method: "POST",
       url: "/v1/auth/telegram",
@@ -172,15 +140,7 @@ describe("authentication routes", () => {
   });
 
   it("returns the same stable CSRF token for concurrent restorations (R2-02)", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp();
     const auth = await app.inject({
       method: "POST",
       url: "/v1/auth/telegram",
@@ -197,16 +157,7 @@ describe("authentication routes", () => {
   });
 
   it("rejects a mutation with an invalid Origin (T3-06)", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      allowedOrigin: "https://kidan.app",
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp({ allowedOrigin: "https://kidan.app" });
     const response = await app.inject({
       method: "POST",
       url: "/v1/auth/telegram",
@@ -218,16 +169,7 @@ describe("authentication routes", () => {
   });
 
   it("does not require Origin matching for safe GET requests (T3-06)", async () => {
-    const repository = new MemoryPersistenceRepository();
-    app = await buildApp({
-      botToken,
-      allowedOrigin: "https://kidan.app",
-      sessionService: new SessionService(
-        repository,
-        new IdentityCipher(randomBytes(32), randomBytes(32)),
-        new SecretHasher(randomBytes(32)),
-      ),
-    });
+    app = await buildTestApp({ allowedOrigin: "https://kidan.app" });
     const response = await app.inject({
       method: "GET",
       url: "/v1/session",

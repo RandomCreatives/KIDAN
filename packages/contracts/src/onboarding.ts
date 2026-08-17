@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { genderSchema, marriageIntentionSchema, valueTagSchema } from "./profile.js";
 
+export const ONBOARDING_SCHEMA_VERSION = "2026-08-12.v1" as const;
+export const INITIAL_ONBOARDING_STEP = "eligibility" as const;
+
 export const fieldVisibilitySchema = z.enum([
   "admin_only",
   "discovery",
@@ -9,7 +12,7 @@ export const fieldVisibilitySchema = z.enum([
 ]);
 
 export const onboardingStepSchema = z.enum([
-  "eligibility",
+  INITIAL_ONBOARDING_STEP,
   "private_identity",
   "public_profile",
   "faith_and_family",
@@ -110,7 +113,7 @@ export const consentDraftSchema = z.object({
 });
 
 export const onboardingDraftSchema = z.object({
-  schemaVersion: z.literal("2026-08-12.v1"),
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   eligibility: eligibilitySchema,
   privateIdentity: privateIdentityDraftSchema,
   publicProfile: publicProfileDraftSchema,
@@ -136,7 +139,7 @@ export const partialPublicOnboardingPayloadSchema = z
   .partial();
 
 export const onboardingProgressPatchSchema = z.object({
-  schemaVersion: z.literal("2026-08-12.v1"),
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   expectedVersion: z.number().int().min(0),
   currentStep: onboardingStepSchema.exclude(["private_identity", "consent", "submitted"]),
   patch: partialPublicOnboardingPayloadSchema,
@@ -154,7 +157,7 @@ export const onboardingSubmitRequestSchema = z.object({
 });
 
 export const draftResponseSchema = z.object({
-  schemaVersion: z.literal("2026-08-12.v1"),
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   currentStep: onboardingStepSchema,
   payload: partialPublicOnboardingPayloadSchema,
   version: z.number().int().min(0),

@@ -10,9 +10,7 @@ import {
   stepToServerStep,
 } from "./draftMapping.js";
 import { initialOnboardingState, type OnboardingFormState } from "./types.js";
-import type { PartialPublicOnboardingPayload } from "@kidan/contracts";
-
-const SCHEMA_VERSION = "2026-08-12.v1";
+import { ONBOARDING_SCHEMA_VERSION, type PartialPublicOnboardingPayload } from "@kidan/contracts";
 
 export interface SaveResult {
   success: boolean;
@@ -131,7 +129,7 @@ export function useOnboardingDraft(
         try {
           const res = await clientRef.current.saveDraft(
             {
-              schemaVersion: SCHEMA_VERSION,
+              schemaVersion: ONBOARDING_SCHEMA_VERSION,
               expectedVersion: expectedVersionRef.current,
               currentStep: serverStep,
               patch,

@@ -1,6 +1,8 @@
 import {
   draftResponseSchema,
   draftSaveResponseSchema,
+  INITIAL_ONBOARDING_STEP,
+  ONBOARDING_SCHEMA_VERSION,
   onboardingProgressPatchSchema,
   onboardingSubmitRequestSchema,
 } from "@kidan/contracts";
@@ -79,8 +81,8 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
           identityComplete,
         }
       : {
-          schemaVersion: "2026-08-12.v1",
-          currentStep: "eligibility",
+          schemaVersion: ONBOARDING_SCHEMA_VERSION,
+          currentStep: INITIAL_ONBOARDING_STEP,
           payload: {},
           version: 0,
           submitted: false,

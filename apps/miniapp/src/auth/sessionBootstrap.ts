@@ -1,9 +1,4 @@
-import type {
-  ApiErrorBody,
-  ApiErrorCode,
-  SessionStatus,
-  TelegramAuthResponse,
-} from "@kidan/contracts";
+import type { SessionStatus, TelegramAuthResponse } from "@kidan/contracts";
 import { ApiError } from "../api/client.js";
 import { mapErrorToStatus, type AuthStatus } from "./authState.js";
 
@@ -47,8 +42,4 @@ export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResu
     }
     return { kind: "error", status: normalizeAuthError(error) };
   }
-}
-
-export function errorBody(code: ApiErrorCode, requestId: string): ApiErrorBody {
-  return { code, requestId };
 }

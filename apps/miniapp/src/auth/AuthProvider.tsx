@@ -48,7 +48,9 @@ function clientErrorCode(error: unknown): ClientErrorCode {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const isTelegram = Boolean(window.Telegram?.WebApp && window.Telegram.WebApp.initData);
-  const clientRef = useRef(new KidanApiClient());
+  const clientRef = useRef<KidanApiClient | null>(null);
+  clientRef.current ??= new KidanApiClient();
+  const client = clientRef.current;
   const operationTailRef = useRef<Promise<void>>(Promise.resolve());
   const bootstrapPromiseRef = useRef<Promise<BootstrapResult> | null>(null);
   const logoutPromiseRef = useRef<Promise<LogoutResult> | null>(null);
@@ -113,8 +115,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const promise = runExclusive(async () => {
       if (lifecycleRef.current !== "active") return { kind: "unauthenticated" } as const;
       const result = await resolveSession({
-        getSession: () => clientRef.current.getSession(),
-        authenticateWithTelegram: (initData: string) => clientRef.current.authenticateWithTelegram(initData),
+        getSession: () => client.getSession(),
+        authenticateWithTelegram: (initData: string) => client.authenticateWithTelegram(initData),
         getInitData,
         canAuthenticate: () => lifecycleRef.current === "active" && generationRef.current === myGeneration,
         onAuthenticating: () => {
@@ -181,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const restoreFinalSession = async () => {
       try {
-        return await clientRef.current.getSession();
+        return await client.getSession();
       } catch (error) {
         if (error instanceof ApiError && error.code === "UNAUTHENTICATED") return null;
         throw error;
@@ -206,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       try {
-        await clientRef.current.logout(session.csrfToken);
+        await client.logout(session.csrfToken);
         return markSignedOut("revoked");
       } catch (error) {
         if (!(error instanceof ApiError) || error.code !== "INVALID_CSRF") {
@@ -233,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profileStatus: refreshed.profileStatus,
       });
       try {
-        await clientRef.current.logout(refreshed.csrfToken);
+        await client.logout(refreshed.csrfToken);
         return markSignedOut("revoked");
       } catch (error) {
         if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
