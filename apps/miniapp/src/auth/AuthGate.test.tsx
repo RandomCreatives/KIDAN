@@ -72,12 +72,13 @@ describe("AuthGate", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     (window as unknown as { Telegram?: unknown }).Telegram = undefined;
   });
 
   it("shows a connecting screen before authentication resolves", async () => {
     const fetchImpl = vi.fn((input: string) => bootFetch(input, "never"));
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     render(<Harness />);
 
@@ -88,7 +89,7 @@ describe("AuthGate", () => {
 
   it("renders children once authenticated", async () => {
     const fetchImpl = vi.fn((input: string) => bootFetch(input, "auth"));
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     render(<Harness />);
 
@@ -97,7 +98,7 @@ describe("AuthGate", () => {
 
   it("shows the session-expired screen after invalidate (T3-03)", async () => {
     const fetchImpl = vi.fn((input: string) => bootFetch(input, "auth"));
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     render(<Harness />);
     await waitFor(() => expect(screen.getByText(/Protected content/)).toBeTruthy());
@@ -121,7 +122,7 @@ describe("AuthGate", () => {
       if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       return Promise.resolve(new Response("{}", { status: 200 }));
     });
-    (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     render(<Harness />);
 

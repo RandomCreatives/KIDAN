@@ -90,5 +90,3 @@ export function AuthGate({ children }: AuthGateProps) {
       return <GateScreen title="Connecting…" message="Securing your private session." />;
   }
 }
-
-

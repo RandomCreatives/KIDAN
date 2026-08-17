@@ -10,7 +10,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import type { SessionService } from "../auth/sessionService.js";
 import type { OnboardingService } from "../onboarding/onboardingService.js";
-import type { SessionRecord } from "../persistence/types.js";
+import type { DraftRecord, SessionRecord } from "../persistence/types.js";
 import { SubmissionStateError, VersionConflictError } from "../persistence/types.js";
 
 interface OnboardingRouteOptions {
@@ -67,10 +67,20 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
   app.get("/v1/onboarding/draft", async (request, reply) => {
     const session = await requireSession(request, reply);
     if (!session) return;
-    const [draft, identityComplete] = await Promise.all([
-      options.onboardingService.getDraft(session.user.id),
-      options.onboardingService.hasCompletePrivateIdentity(session.user.id),
-    ]);
+    let draft: DraftRecord | null;
+    let identityComplete: boolean;
+    try {
+      [draft, identityComplete] = await Promise.all([
+        options.onboardingService.getDraft(session.user.id),
+        options.onboardingService.hasCompletePrivateIdentity(session.user.id),
+      ]);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        request.log.error({ msg: "persisted draft failed contract validation", error: error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      throw error;
+    }
     const responseData = draft
       ? {
           schemaVersion: draft.schemaVersion,

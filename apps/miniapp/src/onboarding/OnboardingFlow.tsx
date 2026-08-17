@@ -165,6 +165,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       haptic("decision");
       const result = await saveProgress(currentIndex, draft);
       if (!result.success) {
+        setError(result.message ?? "We couldn’t save your progress. Please retry.");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
@@ -207,7 +208,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         if (result.success) {
           onExit(result.persisted);
         } else {
-          setError("We couldn’t save your progress. Please retry.");
+          setError(result.message ?? "We couldn’t save your progress. Please retry.");
           haptic("warning");
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
@@ -322,8 +323,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
       <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
 
-      {error && <div className="form-error" role="alert">{error}</div>}
-      {saveError && <div className="form-error" role="alert">{saveError}</div>}
+      {(error ?? saveError) && <div className="form-error" role="alert">{error ?? saveError}</div>}
       {saving && <div className="form-notice" role="status" aria-live="polite">Saving…</div>}
       {(conflict || reloadError) && !isDemo && (
         <div className="form-error draft-conflict" role="alert" aria-live="assertive">

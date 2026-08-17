@@ -127,6 +127,34 @@ describe("onboarding routes", () => {
     expect(payload.faithAndFamily?.values).toEqual(["active_faith", "honesty", "family_oriented"]);
   });
 
+  it("fails closed with the API error envelope when persisted draft JSON violates the contract", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const issued = await sessions.issueForTelegramUser(505n, new Date());
+    const session = await sessions.authenticate(issued.sessionToken);
+    await repository.saveDraft({
+      userId: session!.user.id,
+      schemaVersion: progress.schemaVersion,
+      currentStep: "public_profile",
+      publicPayload: { publicProfile: { gender: "unsupported" } },
+      expectedVersion: 0,
+      now: new Date(),
+    });
+    app = await buildApp({
+      sessionService: sessions,
+      onboardingService: new OnboardingService(repository, cipher, false),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}` },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatchObject({ code: "INTERNAL_ERROR" });
+  });
+
   it("never persists an out-of-scope (identity) key sent in the draft patch", async () => {
     const repository = new MemoryPersistenceRepository();
     const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));

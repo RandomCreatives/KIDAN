@@ -120,10 +120,8 @@ export class KidanApiClient {
 
     let response: Response;
     let text = "";
-    let responseStatus = 0;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
-      responseStatus = response.status;
 
       if (response.status === 204) {
         if (expectStatus !== undefined && response.status !== expectStatus) {

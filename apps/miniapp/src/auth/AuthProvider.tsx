@@ -199,50 +199,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         return markUnconfirmed(error);
       }
-      if (!session) return markSignedOut("already-absent");
 
-      commit({
-        kind: "authenticated",
-        csrfToken: session.csrfToken,
-        profileStatus: session.profileStatus,
-      });
+      // At most two revocation attempts are permitted. Only the first
+      // INVALID_CSRF response may refresh the final cookie-backed session.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        if (!session) return markSignedOut("already-absent");
+        commit({
+          kind: "authenticated",
+          csrfToken: session.csrfToken,
+          profileStatus: session.profileStatus,
+        });
 
-      try {
-        await client.logout(session.csrfToken);
-        return markSignedOut("revoked");
-      } catch (error) {
-        if (!(error instanceof ApiError) || error.code !== "INVALID_CSRF") {
+        try {
+          await client.logout(session.csrfToken);
+          return markSignedOut("revoked");
+        } catch (error) {
           if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
             return markSignedOut("already-absent");
           }
+          if (!(error instanceof ApiError) || error.code !== "INVALID_CSRF" || attempt === 1) {
+            return markUnconfirmed(error);
+          }
+        }
+
+        try {
+          session = await restoreFinalSession();
+        } catch (error) {
           return markUnconfirmed(error);
         }
       }
 
-      // One bounded INVALID_CSRF recovery: refresh the final cookie-backed token
-      // and retry revocation exactly once.
-      let refreshed;
-      try {
-        refreshed = await restoreFinalSession();
-      } catch (error) {
-        return markUnconfirmed(error);
-      }
-      if (!refreshed) return markSignedOut("already-absent");
-
-      commit({
-        kind: "authenticated",
-        csrfToken: refreshed.csrfToken,
-        profileStatus: refreshed.profileStatus,
-      });
-      try {
-        await client.logout(refreshed.csrfToken);
-        return markSignedOut("revoked");
-      } catch (error) {
-        if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
-          return markSignedOut("already-absent");
-        }
-        return markUnconfirmed(error);
-      }
+      // The loop returns for every success and failure path.
+      return markUnconfirmed(new ApiError("INVALID_CSRF", 403));
     });
 
     const shared = operation.finally(() => {

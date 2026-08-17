@@ -70,6 +70,7 @@ describe("AuthProvider", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     (window as unknown as { Telegram?: unknown }).Telegram = undefined;
     window.sessionStorage.clear();
   });
@@ -80,7 +81,7 @@ describe("AuthProvider", () => {
       if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       return Promise.resolve(json({}));
     });
-    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -94,7 +95,7 @@ describe("AuthProvider", () => {
       if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
       return Promise.resolve(json({}));
     });
-    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
     let first!: ReturnType<typeof result.current.retry>;
@@ -114,10 +115,10 @@ describe("AuthProvider", () => {
   });
 
   it("makes invalidation awaitable and clears local state", async () => {
-    globalThis.fetch = vi.fn((input: string) => {
+    vi.stubGlobal("fetch", vi.fn((input: string) => {
       if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
       return Promise.resolve(json({}));
-    }) as unknown as typeof fetch;
+    }) as unknown as typeof fetch);
 
     const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -141,7 +142,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -172,7 +173,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk(CSRF_B));
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -197,7 +198,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -219,7 +220,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -247,7 +248,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -275,7 +276,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -298,7 +299,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -330,7 +331,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -357,7 +358,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -378,7 +379,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -424,7 +425,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -455,7 +456,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -479,7 +480,7 @@ describe("AuthProvider", () => {
         if (input.includes("/v1/session")) return Promise.resolve(sessionOk());
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(result.current.status).toBe("authenticated"));
@@ -515,7 +516,7 @@ describe("AuthProvider", () => {
         }
         return Promise.resolve(json({}));
       });
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
 
       const { result } = renderHook(() => useAuth(), { wrapper: AuthProvider });
       await waitFor(() => expect(sessionGets).toBe(1));

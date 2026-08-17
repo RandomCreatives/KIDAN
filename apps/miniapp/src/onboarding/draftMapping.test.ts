@@ -1,3 +1,4 @@
+import { partnerPreferencesDraftSchema } from "@kidan/contracts";
 import { describe, expect, it } from "vitest";
 import {
   buildSectionPatch,
@@ -16,8 +17,13 @@ describe("draftMapping", () => {
     expect((patch as Record<string, unknown>).partnerPreferences).toEqual(syntheticOnboardingState.partnerPreferences);
   });
 
-  it("returns null for non-saving steps", () => {
+  it("returns null for non-saving or contract-invalid section data", () => {
     expect(buildSectionPatch(5, syntheticOnboardingState)).toBeNull();
+    const invalidEligibility = {
+      ...syntheticOnboardingState,
+      eligibility: { ...syntheticOnboardingState.eligibility, adultConfirmed: false },
+    } as unknown as typeof syntheticOnboardingState;
+    expect(buildSectionPatch(0, invalidEligibility)).toBeNull();
   });
 
   it("projects only the public onboarding payload", () => {
@@ -77,10 +83,10 @@ describe("draftMapping", () => {
       publicProfile: { ...initialOnboardingState.publicProfile, city: "Local unsaved city" },
     };
     const serverPayload = { publicProfile: { occupationCategory: "Education" } };
-    const reset = resetFormFromPayload(initialOnboardingState, serverPayload);
+    const reset = resetFormFromPayload(dirty, serverPayload);
     expect(reset.publicProfile.occupationCategory).toBe("Education");
     expect(reset.publicProfile.city).toBe(initialOnboardingState.publicProfile.city);
-    expect(dirty.publicProfile.city).toBe("Local unsaved city");
+    expect(reset.publicProfile.city).not.toBe(dirty.publicProfile.city);
     expect(reset.privateIdentity).toEqual(initialOnboardingState.privateIdentity);
     expect(reset.consent).toEqual(initialOnboardingState.consent);
   });
@@ -91,28 +97,20 @@ describe("draftMapping", () => {
     expect(reset.faithAndFamily.values).toEqual(initialOnboardingState.faithAndFamily.values);
   });
 
-  it("merges partner preferences from server payload", () => {
-    const serverPayload = {
-      partnerPreferences: {
-        ageMin: 25,
-        ageMax: 40,
-        preferredCities: ["Addis Ababa"],
-        openToAbroad: true,
-        acceptedMaritalStatuses: ["never_married"],
-        acceptsPartnerWithChildren: false,
-        desiredValues: ["family_oriented", "active_faith"],
-        acceptedMarriageIntentions: ["orthodox_church_marriage"],
-      },
-    };
-    const merged = mergeFormFromPayload(initialOnboardingState, serverPayload);
-    expect(merged.partnerPreferences.ageMin).toBe(25);
-    expect(merged.partnerPreferences.ageMax).toBe(40);
-    expect(merged.partnerPreferences.preferredCities).toEqual(["Addis Ababa"]);
-    expect(merged.partnerPreferences.openToAbroad).toBe(true);
-    expect(merged.partnerPreferences.acceptedMaritalStatuses).toEqual(["never_married"]);
-    expect(merged.partnerPreferences.acceptsPartnerWithChildren).toBe(false);
-    expect(merged.partnerPreferences.desiredValues).toEqual(["family_oriented", "active_faith"]);
-    expect(merged.partnerPreferences.acceptedMarriageIntentions).toEqual(["orthodox_church_marriage"]);
+  it("merges a contract-valid partner-preferences payload field by field", () => {
+    const partnerPreferences = partnerPreferencesDraftSchema.parse({
+      ageMin: 25,
+      ageMax: 40,
+      preferredCities: ["Addis Ababa"],
+      openToAbroad: true,
+      acceptedMaritalStatuses: ["never_married"],
+      acceptsPartnerWithChildren: false,
+      desiredValues: ["family_oriented", "active_faith"],
+      acceptedMarriageIntentions: ["orthodox_church_marriage"],
+      additionalPreferences: "Shared faith and family priorities.",
+    });
+    const merged = mergeFormFromPayload(initialOnboardingState, { partnerPreferences });
+    expect(merged.partnerPreferences).toEqual(partnerPreferences);
     expect(merged.privateIdentity).toEqual(initialOnboardingState.privateIdentity);
     expect(merged.consent).toEqual(initialOnboardingState.consent);
   });

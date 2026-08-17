@@ -24,15 +24,17 @@ export function AuthStatusBar() {
   }
 
   return (
-    <div className="auth-status-bar" role="status" aria-live="polite" aria-busy={loggingOut ? "true" : undefined}>
-      <span className={`auth-dot auth-${status}`} aria-hidden="true" />
-      <span>{loggingOut ? "Signing out…" : (LABELS[status] ?? status)}</span>
-      {logoutError && <span className="auth-logout-error" role="alert">{logoutError}</span>}
-      {status === "authenticated" && (
-        <button type="button" className="auth-logout" onClick={() => void logout()} disabled={loggingOut}>
-          {loggingOut ? "Signing out…" : "Sign out"}
-        </button>
-      )}
-    </div>
+    <>
+      <div className="auth-status-bar" role="status" aria-live="polite" aria-busy={loggingOut ? "true" : undefined}>
+        <span className={`auth-dot auth-${status}`} aria-hidden="true" />
+        <span>{loggingOut ? "Signing out…" : (LABELS[status] ?? status)}</span>
+        {status === "authenticated" && (
+          <button type="button" className="auth-logout" onClick={() => void logout()} disabled={loggingOut}>
+            {loggingOut ? "Signing out…" : "Sign out"}
+          </button>
+        )}
+      </div>
+      {logoutError && <div className="auth-logout-error" role="alert">{logoutError}</div>}
+    </>
   );
 }

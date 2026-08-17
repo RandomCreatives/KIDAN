@@ -3,11 +3,12 @@ import {
   eligibilitySchema,
   faithAndFamilyDraftSchema,
   onboardingProgressPatchSchema,
+  partialPublicOnboardingPayloadSchema,
   partnerPreferencesDraftSchema,
   publicProfileDraftSchema,
   type PartialPublicOnboardingPayload,
 } from "@kidan/contracts";
-import type { OnboardingFormState } from "./types.js";
+import { initialOnboardingState, type OnboardingFormState } from "./types.js";
 
 type DraftStep = z.infer<typeof onboardingProgressPatchSchema>["currentStep"];
 
@@ -43,20 +44,28 @@ export function buildSectionPatch(
   stepIndex: number,
   state: OnboardingFormState,
 ): PartialPublicOnboardingPayload | null {
+  let candidate: unknown;
   switch (stepIndex) {
     case 0:
-      return { eligibility: state.eligibility } as unknown as PartialPublicOnboardingPayload;
+      candidate = { eligibility: state.eligibility };
+      break;
     case 2:
-      return { publicProfile: state.publicProfile };
+      candidate = { publicProfile: state.publicProfile };
+      break;
     case 3:
-      return {
+      candidate = {
         faithAndFamily: { faithTradition: "ethiopian_orthodox_tewahedo", ...state.faithAndFamily },
-      } as unknown as PartialPublicOnboardingPayload;
+      };
+      break;
     case 4:
-      return { partnerPreferences: state.partnerPreferences };
+      candidate = { partnerPreferences: state.partnerPreferences };
+      break;
     default:
       return null;
   }
+
+  const parsed = partialPublicOnboardingPayloadSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }
 
 export function stepToServerStep(stepIndex: number): DraftStep {
@@ -123,8 +132,10 @@ export function mergeFormFromPayload(
 }
 
 export function resetFormFromPayload(
-  defaults: OnboardingFormState,
+  _current: OnboardingFormState,
   payload: Record<string, unknown>,
 ): OnboardingFormState {
-  return applyPayload(defaults, payload);
+  // A reload is authoritative: discard every unsaved local value before
+  // applying the server payload, regardless of the caller's current state.
+  return applyPayload(initialOnboardingState, payload);
 }

@@ -22,6 +22,7 @@ function setTelegram(): void {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   (window as unknown as { Telegram?: unknown }).Telegram = undefined;
   window.sessionStorage.clear();
 });
@@ -32,11 +33,11 @@ it("announces and disables the sign-out action while revocation is pending", asy
   const pendingLogout = new Promise<Response>((resolve) => {
     resolveLogout = resolve;
   });
-  globalThis.fetch = vi.fn((input: string) => {
+  vi.stubGlobal("fetch", vi.fn((input: string) => {
     if (input.includes("/v1/session/logout")) return pendingLogout;
     if (input.includes("/v1/session")) return Promise.resolve(session());
     return Promise.resolve(json({}));
-  }) as unknown as typeof fetch;
+  }) as unknown as typeof fetch);
 
   render(<AuthProvider><AuthStatusBar /></AuthProvider>);
   const signOut = await screen.findByRole("button", { name: "Sign out" });
@@ -53,7 +54,7 @@ it("announces an unconfirmed logout failure and keeps sign out available", async
   setTelegram();
   let sessionGets = 0;
   let logoutPosts = 0;
-  globalThis.fetch = vi.fn((input: string, init?: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn((input: string, init?: RequestInit) => {
     if (String(input).includes("/v1/session/logout") && init?.method === "POST") {
       logoutPosts += 1;
       return Promise.resolve(new Response(null, { status: 204 }));
@@ -63,12 +64,13 @@ it("announces an unconfirmed logout failure and keeps sign out available", async
       return sessionGets === 1 ? Promise.resolve(session()) : Promise.reject(new Error("offline"));
     }
     return Promise.resolve(json({}));
-  }) as unknown as typeof fetch;
+  }) as unknown as typeof fetch);
 
   render(<AuthProvider><AuthStatusBar /></AuthProvider>);
   fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toMatch(/not confirmed/i);
+  expect(screen.getByRole("status").contains(alert)).toBe(false);
   expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
   expect(screen.getByText("Signed in")).toBeTruthy();
   expect(logoutPosts).toBe(0);

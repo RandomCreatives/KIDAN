@@ -15,6 +15,7 @@ import { ONBOARDING_SCHEMA_VERSION, type PartialPublicOnboardingPayload } from "
 export interface SaveResult {
   success: boolean;
   persisted: boolean;
+  message?: string;
 }
 
 export interface DraftLoadResult {
@@ -114,16 +115,25 @@ export function useOnboardingDraft(
   const saveProgress = useCallback(
     async (stepIndex: number, currentDraft: OnboardingFormState): Promise<SaveResult> => {
       if (isDemo) return { success: true, persisted: false };
-      if (!csrfToken || !hydrated || conflictRef.current) return { success: false, persisted: false };
-      let patch = buildSectionPatch(stepIndex, currentDraft);
-      if (!patch && stepToServerStep(stepIndex) === "public_preview") {
-        patch = {} as unknown as PartialPublicOnboardingPayload;
+      if (!csrfToken || !hydrated) {
+        return { success: false, persisted: false, message: "Your session is not ready. Reconnect and retry." };
       }
-      if (!patch) return { success: true, persisted };
+      if (conflictRef.current) {
+        return { success: false, persisted: false, message: "Reload the latest draft before continuing." };
+      }
       const serverStep = stepToServerStep(stepIndex);
+      let patch = buildSectionPatch(stepIndex, currentDraft);
+      if (!patch && serverStep === "public_preview") {
+        patch = {} satisfies PartialPublicOnboardingPayload;
+      }
+      if (!patch) {
+        return { success: false, persisted, message: "Could not prepare this section for saving. Review it and retry." };
+      }
 
-      const run = saveChainRef.current.then(async () => {
-        if (conflictRef.current) return { success: false, persisted: false } as const;
+      const run = saveChainRef.current.then(async (): Promise<SaveResult> => {
+        if (conflictRef.current) {
+          return { success: false, persisted: false, message: "Reload the latest draft before continuing." };
+        }
         setSaving(true);
         setSaveError(null);
         try {
@@ -141,32 +151,36 @@ export function useOnboardingDraft(
           conflictRef.current = false;
           setReloadError(false);
           setPersisted(true);
-          return { success: true, persisted: true } as const;
+          return { success: true, persisted: true };
         } catch (error: unknown) {
+          let message = "Could not save your progress. Retry.";
           if (error instanceof ApiError) {
             if (error.code === "DRAFT_VERSION_CONFLICT") {
               conflictRef.current = true;
               setConflict(true);
+              message = "Your saved progress changed elsewhere. Reload the latest draft.";
             } else if (error.code === "UNAUTHENTICATED") {
+              message = "Your session expired. Reconnect and retry.";
               await invalidate();
             } else if (error.code === "INVALID_CSRF") {
-              setSaveError("Your session changed. Reconnecting before you continue.");
+              message = "Your session changed. Reconnecting before you continue.";
               await retry();
             } else if (error.code === "NETWORK") {
-              setSaveError("Network error while saving. Retry.");
-            } else {
-              setSaveError("Could not save your progress. Retry.");
+              message = "Network error while saving. Retry.";
             }
-          } else {
-            setSaveError("Could not save your progress. Retry.");
           }
-          return { success: false, persisted: false } as const;
+          setSaveError(message);
+          return { success: false, persisted: false, message };
         } finally {
           setSaving(false);
         }
       });
 
-      const tracked = run.catch(() => ({ success: false, persisted: false }) as const);
+      const tracked = run.catch((): SaveResult => ({
+        success: false,
+        persisted: false,
+        message: "Could not save your progress. Retry.",
+      }));
       saveChainRef.current = run.catch(() => undefined);
       return tracked;
     },

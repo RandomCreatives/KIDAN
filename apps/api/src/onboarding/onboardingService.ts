@@ -1,9 +1,11 @@
 import {
   consentDraftSchema,
+  partialPublicOnboardingPayloadSchema,
   privateIdentitySaveRequestSchema,
   publicOnboardingPayloadSchema,
   type OnboardingProgressPatch,
   type OnboardingSubmitRequest,
+  type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent } from "../persistence/types.js";
@@ -29,7 +31,14 @@ export class OnboardingService {
   ) {}
 
   async getDraft(userId: string): Promise<DraftRecord | null> {
-    return this.repository.getDraft(userId);
+    const draft = await this.repository.getDraft(userId);
+    if (!draft) return null;
+    return {
+      ...draft,
+      // Treat persistence as an untrusted boundary. The response remains a
+      // strict public-field allowlist rather than exposing legacy JSON keys.
+      publicPayload: partialPublicOnboardingPayloadSchema.parse(draft.publicPayload),
+    };
   }
 
   async hasCompletePrivateIdentity(userId: string): Promise<boolean> {
@@ -39,7 +48,8 @@ export class OnboardingService {
   async saveProgress(userId: string, progress: OnboardingProgressPatch, now = new Date()): Promise<DraftRecord> {
     const current = await this.repository.getDraft(userId);
     if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
-    const merged: Record<string, unknown> = { ...(current?.publicPayload ?? {}) };
+    const currentPayload = partialPublicOnboardingPayloadSchema.parse(current?.publicPayload ?? {});
+    const merged: Record<string, unknown> = { ...currentPayload };
     for (const [key, section] of Object.entries(progress.patch)) {
       if (section !== null && typeof section === "object") {
         merged[key] = { ...(typeof merged[key] === "object" && merged[key] !== null ? merged[key] : {}), ...section };
@@ -48,11 +58,12 @@ export class OnboardingService {
       }
     }
     assertNoIdentityKeys(merged);
+    const canonicalPayload: PartialPublicOnboardingPayload = partialPublicOnboardingPayloadSchema.parse(merged);
     return this.repository.saveDraft({
       userId,
       schemaVersion: progress.schemaVersion,
       currentStep: progress.currentStep,
-      publicPayload: merged,
+      publicPayload: canonicalPayload,
       expectedVersion: progress.expectedVersion,
       now,
     });
