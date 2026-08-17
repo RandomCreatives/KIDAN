@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "./useAuth.js";
 
 interface AuthGateProps {
@@ -12,7 +13,14 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
   actionLabel?: string;
   busy?: boolean;
 }) {
-  const buttonRef = action ? (ref: HTMLButtonElement | null) => { if (ref) ref.focus(); } : undefined;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    if (action && buttonRef.current && !focusedRef.current) {
+      focusedRef.current = true;
+      buttonRef.current.focus();
+    }
+  }, [action]);
   return (
     <main className="screen standard-screen auth-gate" aria-live="polite" aria-busy={busy ? "true" : undefined}>
       <section className="page-intro">
@@ -25,7 +33,6 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
             type="button"
             onClick={action}
             ref={buttonRef}
-            autoFocus
           >
             {actionLabel}
           </button>

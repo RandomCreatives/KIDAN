@@ -65,6 +65,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const actionLockRef = useRef(false);
+  const initialHydrationRef = useRef(true);
 
   const {
     hydrated,
@@ -89,8 +90,11 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const currentIndex = activeIndices[step] ?? 0;
 
   useEffect(() => {
-    if (hydrated && resumedStep != null) setStep(resumedStep);
-  }, [hydrated, resumedStep, reloadRevision]);
+    if (hydrated && initialHydrationRef.current && resumedStep != null) {
+      setStep(resumedStep);
+      initialHydrationRef.current = false;
+    }
+  }, [hydrated, resumedStep]);
 
   const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
   const controlsBusy = actionBusy || saving || reloading;
@@ -147,8 +151,6 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     return null;
   };
 
-  const SAVE_TIMEOUT_MS = 30_000;
-
   const continueFlow = async () => {
     if (!beginAction()) return;
     try {
@@ -161,16 +163,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       }
       setError(null);
       haptic("decision");
-      let timedOut = false;
-      const timeoutPromise = new Promise<{ success: false; persisted: false }>((resolve) =>
-        setTimeout(() => {
-          timedOut = true;
-          resolve({ success: false, persisted: false });
-        }, SAVE_TIMEOUT_MS),
-      );
-      const result = await Promise.race([saveProgress(currentIndex, draft), timeoutPromise]);
+      const result = await saveProgress(currentIndex, draft);
       if (!result.success) {
-        if (timedOut) setError("Save timed out. Please retry.");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }

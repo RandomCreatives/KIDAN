@@ -9,8 +9,8 @@ const syntheticPublicPayload: Record<string, unknown> = {
   eligibility: syntheticOnboardingState.eligibility,
   publicProfile: syntheticOnboardingState.publicProfile,
   faithAndFamily: {
-    faithTradition: "ethiopian_orthodox_tewahedo",
     ...syntheticOnboardingState.faithAndFamily,
+    faithTradition: "ethiopian_orthodox_tewahedo",
   },
   partnerPreferences: syntheticOnboardingState.partnerPreferences,
 };
@@ -297,7 +297,14 @@ describe("OnboardingFlow", () => {
     );
 
     await waitFor(() => expect(screen.getByText(/Know exactly what others can see/i)).toBeTruthy());
-    clickContinue();
+    await act(async () => clickContinue());
+    await waitFor(() => {
+      const putStarted = fetchImpl.mock.calls.some(
+        (call) => String(call[0]).includes("/v1/onboarding/draft") && call[1]?.method === "PUT",
+      );
+      expect(putStarted).toBe(true);
+    });
+    
     fireEvent.click(screen.getByLabelText(/Exit onboarding/i));
     expect(onExit).not.toHaveBeenCalled();
 

@@ -21,6 +21,7 @@ export type ClientErrorCode = ApiErrorCode | "NETWORK";
 export interface ApiClientOptions {
   baseUrl?: string;
   fetchImpl?: typeof fetch;
+  requestTimeoutMs?: number;
 }
 
 export class ApiError extends Error {
@@ -45,6 +46,7 @@ interface Envelope {
 export class KidanApiClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly requestTimeoutMs: number;
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? "/api";
@@ -57,6 +59,7 @@ export class KidanApiClient {
     } else {
       this.fetchImpl = injected;
     }
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
   }
 
   async authenticateWithTelegram(initData: string): Promise<TelegramAuthResponse> {
@@ -106,14 +109,23 @@ export class KidanApiClient {
     }
     if (csrfToken) headers["x-csrf-token"] = csrfToken;
 
-    const init: RequestInit = { method, headers, credentials: "include" };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+
+    const init: RequestInit = { method, headers, credentials: "include", signal: controller.signal };
     if (payload !== undefined) init.body = payload;
 
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, init);
-    } catch {
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("NETWORK", 0);
+      }
       throw new ApiError("NETWORK", 0);
+    } finally {
+      clearTimeout(timeoutId);
     }
 
     if (response.status === 204) {
@@ -125,8 +137,17 @@ export class KidanApiClient {
 
     let text: string;
     try {
-      text = await response.text();
-    } catch {
+      const textController = new AbortController();
+      const textTimeoutId = setTimeout(() => textController.abort(), this.requestTimeoutMs);
+      try {
+        text = await response.text();
+      } finally {
+        clearTimeout(textTimeoutId);
+      }
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new ApiError("NETWORK", response.status);
+      }
       throw new ApiError("NETWORK", response.status);
     }
 
