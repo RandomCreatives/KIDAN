@@ -46,7 +46,7 @@ The correction is not yet published.
 
 ## Operational gates still open
 
-- publish and round-trip-verify the new correction mailbox;
+- publish the round-trip-verified correction mailbox;
 - confirm new remote head/tree;
 - obtain passing strict exact-head Actions on that new head;
 - request and complete another substantive exact-head review;
