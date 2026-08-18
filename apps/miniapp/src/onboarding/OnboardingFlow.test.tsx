@@ -49,7 +49,7 @@ function telegramOk(csrfToken = "x".repeat(43)): Response {
   );
 }
 
-function draftGet(currentStep: string, payload: Record<string, unknown>): Response {
+function draftGet(currentStep: string, payload: Record<string, unknown>, submitted = false): Response {
   return new Response(
     JSON.stringify({
       data: {
@@ -57,7 +57,7 @@ function draftGet(currentStep: string, payload: Record<string, unknown>): Respon
         currentStep,
         payload,
         version: 2,
-        submitted: false,
+        submitted,
         identityComplete: false,
       },
     }),
@@ -172,6 +172,35 @@ describe("OnboardingFlow", () => {
 
     await waitFor(() => expect(screen.getByText(/3 of 5/)).toBeTruthy());
     expect(screen.getByText(/Describe the life you hope to build/)).toBeTruthy();
+  });
+
+  it("renders the completion state for an already-submitted server draft", async () => {
+    let puts = 0;
+    const fetchImpl = vi.fn((input: string, init?: RequestInit) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft") && init?.method === "PUT") {
+        puts += 1;
+      }
+      if (input.includes("/v1/onboarding/draft")) {
+        return Promise.resolve(draftGet("submitted", syntheticPublicPayload, true));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+    const onComplete = vi.fn();
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={onComplete} />
+      </AuthProvider>,
+    );
+
+    await screen.findByText(/Your public draft is saved/i);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onComplete).toHaveBeenCalledWith(true);
+    expect(puts).toBe(0);
+    expect(screen.queryByText(/1 of 5/)).toBeNull();
   });
 
   it("demo completes all steps end-to-end with zero network calls (T3-01)", async () => {
@@ -639,7 +668,31 @@ describe("OnboardingFlow", () => {
     await screen.findByText(/1 of 5/);
   });
 
-  it("does not navigate backward when INVALID_CSRF recovery rehydrates an older server step", async () => {
+  it("announces the transition from draft loading to a retryable load error", async () => {
+    const fetchImpl = vi.fn((input: string) => {
+      if (String(input).includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (String(input).includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (String(input).includes("/v1/onboarding/draft")) {
+        return Promise.resolve(new Response("gateway failure", { status: 502 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status.textContent).toMatch(/Loading your draft/i);
+    await screen.findByRole("heading", { name: /Could not load your draft/i });
+    expect(status.textContent).toMatch(/Could not load your draft/i);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("does not navigate backward or overwrite unsaved edits when INVALID_CSRF recovery rehydrates an older server step", async () => {
     let sessionGets = 0;
     let authCalls = 0;
     let draftGets = 0;
@@ -683,6 +736,10 @@ describe("OnboardingFlow", () => {
     await screen.findByText(/2 of 5/);
     clickContinue();
     await screen.findByText(/3 of 5/);
+    const localBio = "Local unsaved introduction that must survive automatic session recovery.";
+    const bio = screen.getByLabelText(/A short introduction/i) as HTMLTextAreaElement;
+    fireEvent.change(bio, { target: { value: localBio } });
+    expect(bio.value).toBe(localBio);
 
     clickContinue();
     await screen.findByText(/Your session changed. Reconnecting/i);
@@ -693,5 +750,6 @@ describe("OnboardingFlow", () => {
     expect(putCalls).toBe(2);
     expect(screen.queryByText(/2 of 5/)).toBeNull();
     expect(screen.getByText(/3 of 5/)).toBeTruthy();
+    expect((screen.getByLabelText(/A short introduction/i) as HTMLTextAreaElement).value).toBe(localBio);
   });
 });

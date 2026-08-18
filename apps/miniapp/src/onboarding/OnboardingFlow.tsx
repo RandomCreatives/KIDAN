@@ -70,6 +70,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const {
     hydrated,
     persisted,
+    submitted: draftSubmitted,
     loadError,
     saving,
     saveError,
@@ -258,8 +259,10 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         </header>
         <section className="page-intro">
           <span className="section-kicker">Kidan</span>
-          <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
-          <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
+          <div role="status" aria-live="polite" aria-atomic="true">
+            <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
+            <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
+          </div>
           {loadError && (
             <button
               className="primary-button"
@@ -275,7 +278,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     );
   }
 
-  if (submitted) {
+  if (submitted || draftSubmitted) {
     return (
       <main className="onboarding-shell success-shell">
         <div className="success-mark"><CheckIcon size={34} /></div>
@@ -298,7 +301,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           <LockIcon size={18} />
           <p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p>
         </div>
-        <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(submittedPersisted)}>
+        <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(submittedPersisted || draftSubmitted)}>
           {isDemo ? "Enter the demo app" : "Continue"}
         </button>
       </main>

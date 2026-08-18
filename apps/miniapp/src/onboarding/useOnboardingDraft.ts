@@ -5,6 +5,7 @@ import { useAuth } from "../auth/useAuth.js";
 import {
   buildSectionPatch,
   mergeFormFromPayload,
+  publicPayloadFromForm,
   resetFormFromPayload,
   serverStepToClientStep,
   stepToServerStep,
@@ -27,6 +28,7 @@ export interface DraftLoadResult {
 export interface OnboardingDraftController {
   hydrated: boolean;
   persisted: boolean;
+  submitted: boolean;
   loadError: boolean;
   saving: boolean;
   saveError: string | null;
@@ -48,6 +50,7 @@ export function useOnboardingDraft(
   const clientRef = useRef(new KidanApiClient());
   const [hydrated, setHydrated] = useState(isDemo);
   const [persisted, setPersisted] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -58,9 +61,18 @@ export function useOnboardingDraft(
   const [reloadRevision, setReloadRevision] = useState(0);
   const expectedVersionRef = useRef(0);
   const conflictRef = useRef(false);
+  const hydratedRef = useRef(isDemo);
+  const draftRef = useRef(draft);
+  const baselineDraftRef = useRef(draft);
   const saveChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const loadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
   const reloadPromiseRef = useRef<Promise<DraftLoadResult> | null>(null);
+  draftRef.current = draft;
+
+  const hasUnsavedPublicEdits = useCallback((): boolean => (
+    JSON.stringify(publicPayloadFromForm(draftRef.current))
+    !== JSON.stringify(publicPayloadFromForm(baselineDraftRef.current))
+  ), []);
 
   const loadDraft = useCallback((): Promise<DraftLoadResult> => {
     if (isDemo) {
@@ -76,14 +88,33 @@ export function useOnboardingDraft(
       try {
         const res = await clientRef.current.getDraft();
         const payload = res.payload as Record<string, unknown>;
-        if (res.version > 0 && payload && Object.keys(payload).length > 0) {
-          setDraft((prev) => mergeFormFromPayload(prev, payload));
+        const wasHydrated = hydratedRef.current;
+        const hasUnsavedEdits = wasHydrated && hasUnsavedPublicEdits();
+        const serverVersionChanged = wasHydrated && res.version !== expectedVersionRef.current;
+
+        if (!hasUnsavedEdits) {
+          const nextDraft = wasHydrated
+            ? resetFormFromPayload(draftRef.current, payload)
+            : (res.version > 0 && Object.keys(payload).length > 0
+                ? mergeFormFromPayload(draftRef.current, payload)
+                : draftRef.current);
+          draftRef.current = nextDraft;
+          baselineDraftRef.current = nextDraft;
+          setDraft(nextDraft);
+        } else if (serverVersionChanged) {
+          // Keep local edits intact and require an explicit authoritative reload
+          // before writing over a newer server version.
+          conflictRef.current = true;
+          setConflict(true);
         }
+
         const nextStep = serverStepToClientStep(res.currentStep, isDemo);
         expectedVersionRef.current = res.version;
         setPersisted(res.version > 0);
+        setSubmitted(res.submitted);
         setResumedStep(nextStep);
         setReloadRevision((revision) => revision + 1);
+        hydratedRef.current = true;
         setHydrated(true);
         return { success: true, persisted: res.version > 0, step: nextStep };
       } catch (error: unknown) {
@@ -100,11 +131,14 @@ export function useOnboardingDraft(
     });
     loadPromiseRef.current = shared;
     return shared;
-  }, [invalidate, isDemo, setDraft]);
+  }, [hasUnsavedPublicEdits, invalidate, isDemo, setDraft]);
 
   useEffect(() => {
     if (isDemo) {
+      hydratedRef.current = true;
+      baselineDraftRef.current = draftRef.current;
       setHydrated(true);
+      setSubmitted(false);
       setResumedStep(0);
       return;
     }
@@ -147,6 +181,7 @@ export function useOnboardingDraft(
             csrfToken,
           );
           expectedVersionRef.current = res.version;
+          baselineDraftRef.current = mergeFormFromPayload(baselineDraftRef.current, patch);
           setConflict(false);
           conflictRef.current = false;
           setReloadError(false);
@@ -199,12 +234,16 @@ export function useOnboardingDraft(
         const res = await clientRef.current.getDraft();
         const payload = res.payload as Record<string, unknown>;
         const nextStep = serverStepToClientStep(res.currentStep, isDemo);
-        setDraft(resetFormFromPayload(initialOnboardingState, payload ?? {}));
+        const nextDraft = resetFormFromPayload(initialOnboardingState, payload ?? {});
+        draftRef.current = nextDraft;
+        baselineDraftRef.current = nextDraft;
+        setDraft(nextDraft);
         expectedVersionRef.current = res.version;
         setConflict(false);
         conflictRef.current = false;
         setReloadError(false);
         setPersisted(res.version > 0);
+        setSubmitted(res.submitted);
         setResumedStep(nextStep);
         setReloadRevision((revision) => revision + 1);
         return { success: true, persisted: res.version > 0, step: nextStep };
@@ -228,6 +267,7 @@ export function useOnboardingDraft(
   return {
     hydrated,
     persisted,
+    submitted,
     loadError,
     saving,
     saveError,

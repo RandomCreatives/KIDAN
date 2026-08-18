@@ -13,7 +13,7 @@ export function mapErrorToStatus(code: ClientErrorCode, httpStatus: number): Aut
   if (code === "UNAUTHENTICATED" || httpStatus === 401) return "expired";
   if (code === "ACCOUNT_UNAVAILABLE") return "unavailable";
   if (code === "INVALID_CSRF") return "fatal";
-  if (code === "REAL_SUBMISSIONS_DISABLED" || httpStatus === 503) return "unavailable";
-  if (httpStatus >= 500) return "unavailable";
+  if (code === "REAL_SUBMISSIONS_DISABLED") return "unavailable";
+  if (httpStatus >= 500) return "fatal";
   return "fatal";
 }

@@ -5,6 +5,7 @@ import {
   onboardingDraftSchema,
   onboardingFieldVisibility,
   onboardingStepSchema,
+  partialPublicOnboardingPayloadSchema,
   partnerPreferencesDraftSchema,
 } from "./onboarding.js";
 
@@ -91,6 +92,16 @@ describe("partnerPreferencesDraftSchema", () => {
       ageMax: 30,
     });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects inverted age bounds when both are present in a partial patch", () => {
+    const result = partialPublicOnboardingPayloadSchema.safeParse({
+      partnerPreferences: { ageMin: 40, ageMax: 30 },
+    });
+    expect(result.success).toBe(false);
+    expect(partialPublicOnboardingPayloadSchema.safeParse({
+      partnerPreferences: { ageMin: 30 },
+    }).success).toBe(true);
   });
 });
 

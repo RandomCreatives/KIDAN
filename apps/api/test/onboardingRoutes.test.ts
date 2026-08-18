@@ -176,6 +176,9 @@ describe("onboarding routes", () => {
       } as unknown as OnboardingProgressPatch,
     });
     expect(response.statusCode).toBe(200);
+    const session = await sessions.authenticate(issued.sessionToken);
+    const persisted = await repository.getDraft(session!.user.id);
+    expect(persisted?.publicPayload.privateIdentity).toBeUndefined();
 
     const draft = await app.inject({
       method: "GET",

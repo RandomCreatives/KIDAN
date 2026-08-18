@@ -2,6 +2,7 @@ export type CspEnvironment = "development" | "production";
 
 const TELEGRAM_SDK_ORIGIN = "https://telegram.org";
 const TELEGRAM_SDK_HOST = "telegram.org";
+const TELEGRAM_WEB_ORIGIN = "https://web.telegram.org";
 
 export function kidanCspPolicy(environment: CspEnvironment): string {
   const isDev = environment === "development";
@@ -18,7 +19,7 @@ export function kidanCspPolicy(environment: CspEnvironment): string {
     `img-src 'self' data:`,
     `font-src 'self'`,
     `connect-src ${connectSources.join(" ")}`,
-    `frame-ancestors 'none'`,
+    `frame-ancestors ${TELEGRAM_WEB_ORIGIN}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

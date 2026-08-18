@@ -129,12 +129,22 @@ export const publicOnboardingPayloadSchema = z.object({
   partnerPreferences: partnerPreferencesDraftSchema,
 });
 
+const partialPartnerPreferencesDraftSchema = partnerPreferencesObjectSchema.partial().superRefine((value, context) => {
+  if (value.ageMin !== undefined && value.ageMax !== undefined && value.ageMin > value.ageMax) {
+    context.addIssue({
+      code: "custom",
+      message: "Minimum age must not exceed maximum age",
+      path: ["ageMin"],
+    });
+  }
+});
+
 export const partialPublicOnboardingPayloadSchema = z
   .object({
     eligibility: eligibilitySchema.partial(),
     publicProfile: publicProfileDraftSchema.partial(),
     faithAndFamily: faithAndFamilyDraftSchema.partial(),
-    partnerPreferences: partnerPreferencesObjectSchema.partial(),
+    partnerPreferences: partialPartnerPreferencesDraftSchema,
   })
   .partial();
 

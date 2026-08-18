@@ -72,14 +72,14 @@ describe("resolveSession", () => {
     expect(result).toEqual({ kind: "unavailable" });
   });
 
-  it("maps server errors to an unavailable error status", async () => {
+  it("maps transient server errors to a recoverable fatal status", async () => {
     const deps = {
       getSession: vi.fn().mockRejectedValue(new ApiError("INTERNAL_ERROR", 500)),
       authenticateWithTelegram: vi.fn(),
       getInitData: vi.fn().mockReturnValue(""),
     };
     const result = await resolveSession(deps);
-    expect(result).toEqual({ kind: "error", status: "unavailable" });
+    expect(result).toEqual({ kind: "error", status: "fatal" });
   });
 
   it("leaves a stale concurrent result to the caller (single-flight at the component)", async () => {

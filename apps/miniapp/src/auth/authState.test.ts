@@ -18,8 +18,9 @@ describe("mapErrorToStatus", () => {
     expect(mapErrorToStatus("REAL_SUBMISSIONS_DISABLED", 503)).toBe("unavailable");
   });
 
-  it("maps other 5xx to unavailable", () => {
-    expect(mapErrorToStatus("INTERNAL_ERROR", 500)).toBe("unavailable");
+  it("keeps transient 5xx failures in the recoverable fatal state", () => {
+    expect(mapErrorToStatus("INTERNAL_ERROR", 500)).toBe("fatal");
+    expect(mapErrorToStatus("INTERNAL_ERROR", 503)).toBe("fatal");
   });
 
   it("keeps NETWORK failures in the recoverable fatal state", () => {

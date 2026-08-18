@@ -14,12 +14,16 @@ describe("kidanCspPolicy", () => {
     expect(policy).toContain("default-src 'self'");
     expect(directives["script-src"]).toBe("'self' https://telegram.org");
     expect(directives["style-src"]).toContain("'unsafe-inline'");
-    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain("frame-ancestors https://web.telegram.org");
+    expect(policy).not.toContain("frame-ancestors 'none'");
     expect(policy).toContain("object-src 'none'");
     expect(policy).toContain("block-all-mixed-content");
     expect(policy).not.toContain("'unsafe-eval'");
     expect(directives["script-src"]).not.toContain("'unsafe-inline'");
-    expect(policy).not.toMatch(/https?:\/\/(?!telegram\.org)/);
+    expect(policy.match(/https?:\/\/[^ ;]+/g)).toEqual([
+      "https://telegram.org",
+      "https://web.telegram.org",
+    ]);
   });
 
   it("permits dev HMR sockets but still blocks eval (T4-07)", () => {
