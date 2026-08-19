@@ -128,7 +128,7 @@ describe("AuthGate", () => {
 
     await screen.findByRole("heading", { name: /Connection error/i });
     const retry = screen.getByRole("button", { name: "Retry" });
-    expect(document.activeElement).toBe(retry);
+    await waitFor(() => expect(document.activeElement).toBe(retry));
     expect(screen.queryByText(/Account unavailable/i)).toBeNull();
 
     fireEvent.click(retry);
