@@ -2,5 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "fastify",
   "installCommand": "npm ci --include=dev",
-  "regions": ["fra1"]
+  "regions": ["fra1"],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "main": "src/main.ts"
 }
