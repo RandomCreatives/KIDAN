@@ -4,6 +4,5 @@
   "installCommand": "npm ci --include=dev",
   "regions": ["fra1"],
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "main": "src/main.ts"
+  "outputDirectory": "dist"
 }
