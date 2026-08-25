@@ -19,8 +19,13 @@ export interface BuildAppOptions {
   readinessCheck?: () => Promise<void>;
 }
 
-export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({
+export type FastifyFactory = typeof Fastify;
+
+export async function buildApp(
+  options: BuildAppOptions = {},
+  fastifyFactory: FastifyFactory = Fastify,
+): Promise<FastifyInstance> {
+  const app = fastifyFactory({
     logger: options.logger
       ? {
           level: "info",

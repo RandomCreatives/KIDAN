@@ -9,6 +9,12 @@ describe("Vercel Fastify entrypoint", () => {
     expect(entrypoint.default).toBeInstanceOf(Server);
   });
 
+  it("keeps a direct Fastify import in the recognized entrypoint", async () => {
+    const source = await readFile(new URL("../src/app.ts", import.meta.url), "utf8");
+
+    expect(source).toMatch(/from ["']fastify["']/);
+  });
+
   it("keeps Fastify zero-configuration detection enabled", async () => {
     const config = JSON.parse(
       await readFile(new URL("../vercel.json", import.meta.url), "utf8"),

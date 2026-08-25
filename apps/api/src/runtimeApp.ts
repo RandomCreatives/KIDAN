@@ -1,4 +1,4 @@
-import { buildApp, type BuildAppOptions } from "./appFactory.js";
+import { buildApp, type BuildAppOptions, type FastifyFactory } from "./appFactory.js";
 import { SessionService } from "./auth/sessionService.js";
 import { parseEnvironment, type RuntimeEnvironment } from "./config/environment.js";
 import { createDatabasePool } from "./database/pool.js";
@@ -16,6 +16,7 @@ export function loadLocalEnvironmentFile(): void {
 
 export async function buildRuntimeApp(
   input: NodeJS.ProcessEnv = process.env,
+  fastifyFactory?: FastifyFactory,
 ): Promise<{ app: Awaited<ReturnType<typeof buildApp>>; environment: RuntimeEnvironment }> {
   const environment = parseEnvironment(input);
   const production = environment.NODE_ENV === "production";
@@ -56,5 +57,8 @@ export async function buildRuntimeApp(
     options.onClose = () => pool.end();
   }
 
-  return { app: await buildApp(options), environment };
+  const app = fastifyFactory
+    ? await buildApp(options, fastifyFactory)
+    : await buildApp(options);
+  return { app, environment };
 }
