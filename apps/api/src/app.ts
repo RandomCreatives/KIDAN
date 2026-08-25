@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance } from "fastify";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SessionService } from "./auth/sessionService.js";
 import type { OnboardingService } from "./onboarding/onboardingService.js";
 import { authRoutes } from "./routes/auth.js";
@@ -93,4 +94,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   return app;
+}
+
+let appPromise: Promise<FastifyInstance> | undefined;
+
+async function getApp(): Promise<FastifyInstance> {
+  if (!appPromise) {
+    appPromise = buildApp({ logger: true });
+  }
+  const app = await appPromise;
+  await app.ready();
+  return app;
+}
+
+export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const app = await getApp();
+  app.server.emit("request", req, res);
 }
