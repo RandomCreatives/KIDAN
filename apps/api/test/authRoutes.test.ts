@@ -1,7 +1,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp, type BuildAppOptions } from "../src/app.js";
+import { buildApp, type BuildAppOptions } from "../src/appFactory.js";
 import { SessionService } from "../src/auth/sessionService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
 import { IdentityCipher, SecretHasher } from "../src/security/crypto.js";

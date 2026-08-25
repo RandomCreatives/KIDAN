@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { OnboardingProgressPatch } from "@kidan/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
+import { buildApp } from "../src/appFactory.js";
 import { SessionService } from "../src/auth/sessionService.js";
 import { OnboardingService } from "../src/onboarding/onboardingService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
