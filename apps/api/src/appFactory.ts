@@ -50,7 +50,11 @@ export async function buildApp(
 
   app.addHook("onRequest", async (request, reply) => {
     if (!options.allowedOrigin || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return;
-    if (request.headers.origin !== options.allowedOrigin) {
+    const origin = request.headers.origin;
+    // Accept requests with no Origin header — these are server-side proxy
+    // rewrites (e.g. Vercel's /api/* rewrite) where the browser already
+    // enforced same-origin on the frontend side.
+    if (origin !== undefined && origin !== options.allowedOrigin) {
       return reply.code(403).send({ error: { code: "INVALID_ORIGIN", requestId: request.id } });
     }
   });
