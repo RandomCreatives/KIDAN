@@ -47,6 +47,7 @@ export const apiErrorCodeSchema = z.enum([
   "NOT_FOUND",
   "INTERNAL_ERROR",
   "INVALID_RESPONSE",
+  "SERVICE_NOT_READY",
 ]);
 
 export const apiErrorSchema = z.object({

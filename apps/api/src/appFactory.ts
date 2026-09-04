@@ -92,6 +92,13 @@ export async function buildApp(
       cookieName,
       secureCookies: options.secureCookies ?? false,
     });
+  } else {
+    app.post("/v1/auth/telegram", async (_request, reply) =>
+      reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: _request.id } }),
+    );
+    app.get("/v1/session", async (_request, reply) =>
+      reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: _request.id } }),
+    );
   }
   if (options.sessionService && options.onboardingService) {
     await app.register(onboardingRoutes, {
@@ -99,6 +106,13 @@ export async function buildApp(
       onboardingService: options.onboardingService,
       cookieName,
     });
+  } else {
+    app.get("/v1/onboarding/draft", async (_request, reply) =>
+      reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: _request.id } }),
+    );
+    app.put("/v1/onboarding/draft", async (_request, reply) =>
+      reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: _request.id } }),
+    );
   }
 
   return app;

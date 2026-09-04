@@ -1,6 +1,8 @@
+import { loadLocalEnvironmentFile } from "../runtimeApp.js";
 import { createDatabasePool } from "./pool.js";
 import { applyMigrations } from "./migrations.js";
 
+loadLocalEnvironmentFile();
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required for migrations");
 
