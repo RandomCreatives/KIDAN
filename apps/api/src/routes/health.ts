@@ -5,6 +5,13 @@ interface HealthRouteOptions {
 }
 
 export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (app, options) => {
+  app.get("/", async () => ({
+    data: {
+      status: "ok",
+      service: "kidan-api",
+      timestamp: new Date().toISOString(),
+    },
+  }));
   app.get("/health", async () => ({
     data: {
       status: "ok",
