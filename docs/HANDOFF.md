@@ -1,6 +1,29 @@
 # Kidan — Agent Handoff
 
-Updated: 2026-08-18 (Africa/Nairobi)
+Updated: 2026-09-04 (Africa/Nairobi)
+
+## Connection error fix
+
+The TMA displayed "Connection error" on load. Root cause analysis and fixes:
+
+### Root causes
+1. **`.env` not loaded by API** — `process.loadEnvFile()` loads from `process.cwd()`, which is `apps/api/` when running via npm workspace. The root `.env` was never found.
+2. **Missing `SERVICE_NOT_READY` contract** — API had no fallback when persistence was unconfigured; auth routes returned 404 instead of 503.
+3. **`migrate.ts` did not load `.env`** — the migration script also failed to find the root `.env`.
+
+### Changes made
+- `apps/api/src/runtimeApp.ts` — `loadLocalEnvironmentFile()` now walks up the directory tree to find the root `.env`.
+- `apps/api/src/database/migrate.ts` — imports and calls `loadLocalEnvironmentFile()` before reading `DATABASE_URL`.
+- `apps/api/src/appFactory.ts` — registers fallback 503 `SERVICE_NOT_READY` routes for `/v1/auth/telegram`, `/v1/session`, `/v1/onboarding/draft` when persistence is not configured.
+- `packages/contracts/src/auth.ts` — added `SERVICE_NOT_READY` to `apiErrorCodeSchema`.
+- `apps/miniapp/src/auth/authState.ts` — added explicit `SERVICE_NOT_READY` → `fatal` mapping.
+
+### Local verification
+- `npm run typecheck` — passed (all 4 workspaces)
+- `npm run test` — 162/162 passed (contracts: 13, miniapp: 105, api: 43, bot: 1)
+- API started on `:4000`, health check OK
+- Vite proxy confirmed working: `/api/v1/session` → 401 `UNAUTHENTICATED` (expected without cookie)
+- PostgreSQL running natively on `:5432`, database accessible, migrations applied
 
 ## Current position
 

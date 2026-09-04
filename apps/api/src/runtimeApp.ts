@@ -1,3 +1,4 @@
+import { dirname, join } from "node:path";
 import { buildApp, type BuildAppOptions, type FastifyFactory } from "./appFactory.js";
 import { SessionService } from "./auth/sessionService.js";
 import { parseEnvironment, type RuntimeEnvironment } from "./config/environment.js";
@@ -6,11 +7,29 @@ import { OnboardingService } from "./onboarding/onboardingService.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
 
+function isENOENT(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code: string }).code === "ENOENT";
+}
+
 export function loadLocalEnvironmentFile(): void {
   try {
     process.loadEnvFile();
+    return;
   } catch (error) {
-    if (!(typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT")) throw error;
+    if (!isENOENT(error)) throw error;
+  }
+  let dir = process.cwd();
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+    try {
+      process.loadEnvFile(join(dir, ".env"));
+      return;
+    } catch (error) {
+      if (!isENOENT(error)) throw error;
+    }
   }
 }
 
