@@ -8,6 +8,7 @@ const LABELS: Record<AuthStatus, string> = {
   authenticated: "Signed in",
   expired: "Session expired",
   unavailable: "Account unavailable",
+  service_unavailable: "Service temporarily unavailable",
   fatal: "Connection error",
 };
 

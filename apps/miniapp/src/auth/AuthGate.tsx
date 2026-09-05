@@ -77,6 +77,15 @@ export function AuthGate({ children }: AuthGateProps) {
           message="This account cannot be used right now. Contact support if this persists."
         />
       );
+    case "service_unavailable":
+      return (
+        <GateScreen
+          title="Kidan is temporarily unavailable"
+          message="Our service is finishing setup on our side. Your connection is fine — please try again in a few minutes."
+          action={retry}
+          actionLabel="Retry"
+        />
+      );
     case "fatal":
       return (
         <GateScreen

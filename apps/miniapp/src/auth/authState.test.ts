@@ -20,7 +20,12 @@ describe("mapErrorToStatus", () => {
 
   it("keeps transient 5xx failures in the recoverable fatal state", () => {
     expect(mapErrorToStatus("INTERNAL_ERROR", 500)).toBe("fatal");
-    expect(mapErrorToStatus("INTERNAL_ERROR", 503)).toBe("fatal");
+    expect(mapErrorToStatus("NETWORK", 502)).toBe("fatal");
+  });
+
+  it("maps 503 / SERVICE_NOT_READY to the service-unavailable state", () => {
+    expect(mapErrorToStatus("SERVICE_NOT_READY", 503)).toBe("service_unavailable");
+    expect(mapErrorToStatus("INTERNAL_ERROR", 503)).toBe("service_unavailable");
   });
 
   it("keeps NETWORK failures in the recoverable fatal state", () => {

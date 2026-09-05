@@ -16,6 +16,13 @@ function sessionUnauthenticated(): Response {
   });
 }
 
+function sessionNotReady(): Response {
+  return new Response(JSON.stringify({ error: { code: "SERVICE_NOT_READY", requestId: "r" } }), {
+    status: 503,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 function telegramOk(): Response {
   return new Response(
     JSON.stringify({
@@ -134,5 +141,28 @@ describe("AuthGate", () => {
     fireEvent.click(retry);
     await screen.findByText(/Protected content/);
     expect(sessionCalls).toBe(2);
+  });
+
+  it("shows the service-unavailable screen (not 'Connection error') when the API returns 503", async () => {
+    let sessionCalls = 0;
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) {
+        sessionCalls += 1;
+        return sessionCalls === 1
+          ? Promise.resolve(sessionNotReady())
+          : Promise.resolve(sessionUnauthenticated());
+      }
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    vi.stubGlobal("fetch", fetchImpl as unknown as typeof fetch);
+
+    render(<Harness />);
+
+    const heading = await screen.findByRole("heading", { name: /temporarily unavailable/i });
+    expect(screen.queryByRole("heading", { name: /Connection error/i })).toBeNull();
+    const retry = screen.getByRole("button", { name: "Retry" });
+    fireEvent.click(retry);
+    await screen.findByText(/Protected content/);
   });
 });

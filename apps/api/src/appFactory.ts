@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import cookie from "@fastify/cookie";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { SessionService } from "./auth/sessionService.js";
 import type { OnboardingService } from "./onboarding/onboardingService.js";
 import { authRoutes } from "./routes/auth.js";
@@ -92,6 +92,15 @@ export async function buildApp(
       cookieName,
       secureCookies: options.secureCookies ?? false,
     });
+  } else {
+    // Persistence is not configured (or not ready). Answer the auth endpoints
+    // with an explicit 503 instead of falling through to a 404/500 so the
+    // mini app can show a recoverable "service unavailable" state.
+    const authNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.post("/v1/auth/telegram", authNotReady);
+    app.get("/v1/session", authNotReady);
   }
   if (options.sessionService && options.onboardingService) {
     await app.register(onboardingRoutes, {
@@ -99,6 +108,12 @@ export async function buildApp(
       onboardingService: options.onboardingService,
       cookieName,
     });
+  } else {
+    const draftNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.get("/v1/onboarding/draft", draftNotReady);
+    app.put("/v1/onboarding/draft", draftNotReady);
   }
 
   return app;
