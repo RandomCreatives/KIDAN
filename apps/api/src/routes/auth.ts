@@ -43,6 +43,9 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
       return reply.code(200).send({ data: response.data });
     } catch (error) {
       if (error instanceof TelegramValidationError) {
+        // Log the rejection reason (code only — initData/body are redacted by
+        // the logger config) so a token/clock/format mismatch is diagnosable.
+        request.log.warn({ reason: error.code }, "telegram init data rejected");
         return reply.code(401).send({ error: { code: error.code, requestId: request.id } });
       }
       if (error instanceof SessionAccessError) {
