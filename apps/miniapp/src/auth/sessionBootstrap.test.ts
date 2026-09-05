@@ -79,7 +79,8 @@ describe("resolveSession", () => {
       getInitData: vi.fn().mockReturnValue(""),
     };
     const result = await resolveSession(deps);
-    expect(result).toEqual({ kind: "error", status: "fatal" });
+    expect(result).toMatchObject({ kind: "error", status: "fatal" });
+    expect((result as { detail?: string }).detail).toMatch(/INTERNAL_ERROR/);
   });
 
   it("leaves a stale concurrent result to the caller (single-flight at the component)", async () => {

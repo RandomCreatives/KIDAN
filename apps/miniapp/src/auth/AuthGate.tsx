@@ -6,12 +6,13 @@ interface AuthGateProps {
   children: ReactNode;
 }
 
-function GateScreen({ title, message, action, actionLabel, busy }: {
+function GateScreen({ title, message, action, actionLabel, busy, detail }: {
   title: string;
   message: string;
   action?: () => void;
   actionLabel?: string;
   busy?: boolean;
+  detail?: string | null;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -28,6 +29,9 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
         <span className="section-kicker">Kidan</span>
         <h1 ref={headingRef} tabIndex={-1}>{title}</h1>
         <p>{message}</p>
+        {detail && (
+          <p className="error-detail" data-testid="auth-error-detail">{detail}</p>
+        )}
         {action && actionLabel && (
           <button
             className="primary-button"
@@ -44,7 +48,7 @@ function GateScreen({ title, message, action, actionLabel, busy }: {
 }
 
 export function AuthGate({ children }: AuthGateProps) {
-  const { status, isDemo, retry } = useAuth();
+  const { status, isDemo, retry, lastError } = useAuth();
 
   if (isDemo) return <>{children}</>;
 
@@ -84,6 +88,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="Our service is finishing setup on our side. Your connection is fine — please try again in a few minutes."
           action={retry}
           actionLabel="Retry"
+          detail={lastError}
         />
       );
     case "fatal":
@@ -93,6 +98,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="We could not reach Kidan. Check your connection and try again."
           action={retry}
           actionLabel="Retry"
+          detail={lastError}
         />
       );
     default:

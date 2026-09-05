@@ -16,6 +16,7 @@ export interface AuthContextValue {
   csrfToken: string | null;
   isDemo: boolean;
   profileStatus: string | null;
+  lastError: string | null;
   logoutError: string | null;
   loggingOut: boolean;
   logout: () => Promise<LogoutResult>;
@@ -62,6 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [csrfToken, setCsrfToken] = useState<string | null>(isTelegram ? null : "demo");
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const updateStatus = useCallback((next: AuthStatus) => {
@@ -83,21 +85,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveCsrf(result.csrfToken);
       setCsrfToken(result.csrfToken);
       setProfileStatus(result.profileStatus);
+      setLastError(null);
       updateStatus("authenticated");
     } else if (result.kind === "unauthenticated") {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setLastError(null);
       updateStatus("unauthenticated");
     } else if (result.kind === "unavailable") {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setLastError(null);
       updateStatus("unavailable");
     } else {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setLastError(result.detail);
       updateStatus(result.status);
     }
   }, [updateStatus]);
@@ -263,6 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         csrfToken,
         isDemo: !isTelegram,
         profileStatus,
+        lastError,
         logoutError,
         loggingOut,
         logout,

@@ -14,11 +14,14 @@ export type BootstrapResult =
   | { kind: "authenticated"; csrfToken: string; profileStatus: SessionStatus["profileStatus"] }
   | { kind: "unauthenticated" }
   | { kind: "unavailable" }
-  | { kind: "error"; status: AuthStatus };
+  | { kind: "error"; status: AuthStatus; detail: string };
 
-export function normalizeAuthError(error: unknown): AuthStatus {
-  if (error instanceof ApiError) return mapErrorToStatus(error.code, error.status);
-  return "fatal";
+export function describeAuthError(error: unknown): { status: AuthStatus; detail: string } {
+  if (error instanceof ApiError) {
+    return { status: mapErrorToStatus(error.code, error.status), detail: `${error.code} (HTTP ${error.status})` };
+  }
+  const name = error instanceof Error ? error.name : typeof error;
+  return { status: "fatal", detail: `network/unknown (${name})` };
 }
 
 export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResult> {
@@ -37,9 +40,9 @@ export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResu
         if (authError instanceof ApiError && authError.code === "ACCOUNT_UNAVAILABLE") {
           return { kind: "unavailable" };
         }
-        return { kind: "error", status: normalizeAuthError(authError) };
+        return { kind: "error", ...describeAuthError(authError) };
       }
     }
-    return { kind: "error", status: normalizeAuthError(error) };
+    return { kind: "error", ...describeAuthError(error) };
   }
 }
