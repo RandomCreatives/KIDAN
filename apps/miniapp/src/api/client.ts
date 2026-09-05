@@ -28,13 +28,15 @@ export class ApiError extends Error {
   readonly code: ClientErrorCode;
   readonly status: number;
   readonly requestId: string | undefined;
+  readonly networkCause: string | undefined;
 
-  constructor(code: ClientErrorCode, status: number, requestId?: string) {
+  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.requestId = requestId;
+    this.networkCause = networkCause;
   }
 }
 
@@ -133,10 +135,12 @@ export class KidanApiClient {
       text = await response.text();
     } catch (error: unknown) {
       if (error instanceof ApiError) throw error;
-      if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
-        throw new ApiError("NETWORK", 0);
-      }
-      throw new ApiError("NETWORK", 0);
+      const causeText =
+        (error instanceof Error && error.message) ? error.message
+        : typeof error === "string" ? error
+        : "unknown fetch failure";
+      const timedOut = controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+      throw new ApiError("NETWORK", 0, undefined, timedOut ? `timeout after ${this.requestTimeoutMs}ms` : causeText.slice(0, 120));
     } finally {
       clearTimeout(timeoutId);
     }
