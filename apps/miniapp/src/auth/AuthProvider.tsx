@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, KidanApiClient, type ClientErrorCode } from "../api/client.js";
 import { resolveSession, type BootstrapResult } from "./sessionBootstrap.js";
+import { describeRuntimeContext } from "./runtimeContext.js";
 import type { AuthStatus } from "./authState.js";
 
 const CSRF_KEY = "kidan_csrf";
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
   const client = clientRef.current;
+  const runtimeContext = describeRuntimeContext("/api");
   const operationTailRef = useRef<Promise<void>>(Promise.resolve());
   const bootstrapPromiseRef = useRef<Promise<BootstrapResult> | null>(null);
   const logoutPromiseRef = useRef<Promise<LogoutResult> | null>(null);
@@ -103,7 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
-      setLastError(result.detail);
+      setLastError(`${result.detail}\n${runtimeContext}`);
       updateStatus(result.status);
     }
   }, [updateStatus]);
