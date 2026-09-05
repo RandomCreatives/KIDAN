@@ -53,6 +53,8 @@ export const apiErrorCodeSchema = z.enum([
 export const apiErrorSchema = z.object({
   code: apiErrorCodeSchema,
   requestId: z.string().max(64),
+  // Non-secret numeric bot id, included only on initData rejection for diagnostics.
+  configuredBotId: z.string().max(32).optional(),
 });
 
 export const apiErrorEnvelopeSchema = z.object({ error: apiErrorSchema });

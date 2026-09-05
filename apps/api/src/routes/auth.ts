@@ -51,7 +51,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
           { reason: error.code, configuredBotId, tokenFormatOk: /^\d+:/.test(options.botToken) },
           "telegram init data rejected",
         );
-        return reply.code(401).send({ error: { code: error.code, requestId: request.id } });
+        return reply.code(401).send({ error: { code: error.code, requestId: request.id, configuredBotId } });
       }
       if (error instanceof SessionAccessError) {
         return reply.code(403).send({ error: { code: "ACCOUNT_UNAVAILABLE", requestId: request.id } });

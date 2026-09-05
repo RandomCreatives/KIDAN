@@ -69,7 +69,9 @@ export async function buildRuntimeApp(
     }
     const identityCipher = new IdentityCipher(encryptionKey, lookupKey);
     const sessionService = new SessionService(repository, identityCipher, new SecretHasher(sessionKey));
-    options.botToken = environment.TELEGRAM_BOT_TOKEN as string;
+    // Defensive: a trailing space/newline in the pasted env var breaks the
+    // initData HMAC while leaving the numeric bot id prefix looking correct.
+    options.botToken = (environment.TELEGRAM_BOT_TOKEN as string).trim();
     // Log the public bot id (numeric user id, before ':') at startup so a
     // token-vs-bot mismatch can be confirmed without a login attempt.
     const configuredBotId = (environment.TELEGRAM_BOT_TOKEN as string).includes(":")

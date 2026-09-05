@@ -29,14 +29,16 @@ export class ApiError extends Error {
   readonly status: number;
   readonly requestId: string | undefined;
   readonly networkCause: string | undefined;
+  readonly configuredBotId: string | undefined;
 
-  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string) {
+  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string, configuredBotId?: string) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
     this.status = status;
     this.requestId = requestId;
     this.networkCause = networkCause;
+    this.configuredBotId = configuredBotId;
   }
 }
 
@@ -159,7 +161,7 @@ export class KidanApiClient {
       const envelope = apiErrorEnvelopeSchema.safeParse(parsed);
       if (!envelope.success) throw new ApiError("INVALID_RESPONSE", response.status);
       const code = apiErrorCodeSchema.safeParse(envelope.data.error.code).data ?? "INVALID_RESPONSE";
-      throw new ApiError(code, response.status, envelope.data.error.requestId);
+      throw new ApiError(code, response.status, envelope.data.error.requestId, undefined, (envelope.data.error as { configuredBotId?: string }).configuredBotId);
     }
 
     if (expectStatus !== undefined && response.status !== expectStatus) {

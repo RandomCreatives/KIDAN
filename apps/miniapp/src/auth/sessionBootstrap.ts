@@ -18,9 +18,14 @@ export type BootstrapResult =
 
 export function describeAuthError(error: unknown): { status: AuthStatus; detail: string } {
   if (error instanceof ApiError) {
-    const detail = error.code === "NETWORK"
-      ? `NETWORK (HTTP 0)${error.networkCause ? ` — ${error.networkCause}` : ""}`
-      : `${error.code} (HTTP ${error.status})`;
+    let detail: string;
+    if (error.code === "NETWORK") {
+      detail = `NETWORK (HTTP 0)${error.networkCause ? ` — ${error.networkCause}` : ""}`;
+    } else if (error.configuredBotId) {
+      detail = `${error.code} (HTTP ${error.status}) · server bot id: ${error.configuredBotId}`;
+    } else {
+      detail = `${error.code} (HTTP ${error.status})`;
+    }
     return { status: mapErrorToStatus(error.code, error.status), detail };
   }
   const name = error instanceof Error ? error.name : typeof error;
