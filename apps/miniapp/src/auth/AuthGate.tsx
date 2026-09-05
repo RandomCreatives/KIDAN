@@ -72,6 +72,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="Your private session ended. Reconnect to continue."
           action={retry}
           actionLabel="Reconnect"
+          detail={lastError}
         />
       );
     case "unavailable":
