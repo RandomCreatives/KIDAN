@@ -5,6 +5,13 @@ interface HealthRouteOptions {
 }
 
 export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (app, options) => {
+  // Root: a tiny service marker so that deployment verifiers, uptime probes,
+  // and link previews that hit "/" get a 200 instead of a 404. This is NOT a
+  // health/liveness signal — use /health and /ready for those.
+  app.get("/", async () => ({
+    data: { service: "kidan-api" },
+  }));
+
   app.get("/health", async () => ({
     data: {
       status: "ok",

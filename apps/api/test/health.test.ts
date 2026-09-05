@@ -5,6 +5,14 @@ const apps: Awaited<ReturnType<typeof buildApp>>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
 describe("health route", () => {
+  it("answers the root path with a service marker instead of 404", async () => {
+    const app = await buildApp();
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.service).toBe("kidan-api");
+  });
+
   it("responds without cacheable or sensitive data", async () => {
     const app = await buildApp();
     apps.push(app);
