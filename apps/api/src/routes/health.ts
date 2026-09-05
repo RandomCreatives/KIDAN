@@ -17,7 +17,14 @@ export const healthRoutes: FastifyPluginAsync<HealthRouteOptions> = async (app, 
     try {
       if (options.readinessCheck) await options.readinessCheck();
       return reply.send({ data: { status: "ready", service: "kidan-api" } });
-    } catch {
+    } catch (error) {
+      // Log enough to diagnose server-side (missing table, privilege, or
+      // divergent DDL) without returning any internal detail to the client.
+      const code = typeof error === "object" && error !== null && "code" in error
+        ? String((error as { code: unknown }).code)
+        : undefined;
+      const message = error instanceof Error ? error.message : "unknown readiness error";
+      request.log.error({ code, errorName: error instanceof Error ? error.name : "UnknownError" }, `readiness check failed: ${message}`);
       return reply.code(503).send({
         error: { code: "SERVICE_NOT_READY", requestId: request.id },
       });
