@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   consentDraftSchema,
   eligibilitySchema,
@@ -10,6 +10,7 @@ import {
   type MaritalStatus,
   type ValueTag,
 } from "@kidan/contracts";
+import { useAuth } from "../auth/useAuth";
 import { Brand } from "../components/Brand";
 import {
   ArrowLeftIcon,
@@ -28,13 +29,15 @@ import { ChoiceChips, Field, SegmentedChoice, StepHeading, ToggleCard, Visibilit
 import { PublicPreview } from "./PublicPreview";
 import { cityOptions, marriageOptions, maritalOptions, valueOptions } from "./options";
 import { initialOnboardingState, syntheticOnboardingState, type OnboardingFormState } from "./types";
+import { useOnboardingDraft } from "./useOnboardingDraft";
 
 interface OnboardingFlowProps {
-  onExit: () => void;
-  onComplete: () => void;
+  mode: "demo" | "real";
+  onExit: (saved?: boolean) => void;
+  onComplete: (saved: boolean) => void;
 }
 
-const steps = [
+const LABELS = [
   "Eligibility",
   "Private identity",
   "Public profile",
@@ -53,23 +56,71 @@ function isAdult(dateOfBirth: string): boolean {
   return birth <= threshold;
 }
 
-export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
+export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps) {
+  const isDemo = mode === "demo";
   const [draft, setDraft] = useState<OnboardingFormState>(initialOnboardingState);
   const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedPersisted, setSubmittedPersisted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const actionLockRef = useRef(false);
+  const initialHydrationRef = useRef(true);
 
-  const progress = useMemo(() => ((step + 1) / steps.length) * 100, [step]);
+  const {
+    hydrated,
+    persisted,
+    submitted: draftSubmitted,
+    loadError,
+    saving,
+    saveError,
+    conflict,
+    reloading,
+    reloadError,
+    resumedStep,
+    reloadRevision,
+    retryLoad,
+    saveProgress,
+    reloadLatest,
+  } = useOnboardingDraft(draft, setDraft);
+
+  const activeIndices = useMemo(
+    () => (isDemo ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5]),
+    [isDemo],
+  );
+  const currentIndex = activeIndices[step] ?? 0;
+
+  useEffect(() => {
+    if (hydrated && initialHydrationRef.current && resumedStep != null) {
+      setStep(resumedStep);
+      initialHydrationRef.current = false;
+    }
+  }, [hydrated, resumedStep]);
+
+  const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
+  const controlsBusy = actionBusy || saving || reloading;
+
+  const beginAction = useCallback((): boolean => {
+    if (actionLockRef.current) return false;
+    actionLockRef.current = true;
+    setActionBusy(true);
+    return true;
+  }, []);
+
+  const endAction = useCallback(() => {
+    actionLockRef.current = false;
+    setActionBusy(false);
+  }, []);
 
   const patch = <K extends keyof OnboardingFormState>(section: K, value: Partial<OnboardingFormState[K]>) => {
     setDraft((current) => ({ ...current, [section]: { ...current[section], ...value } }));
   };
 
   const validationMessage = (): string | null => {
-    if (step === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
+    if (currentIndex === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
       return "Confirm all three eligibility requirements to continue.";
     }
-    if (step === 1) {
+    if (currentIndex === 1) {
       if (!isAdult(draft.privateIdentity.dateOfBirth)) return "Enter a valid date of birth for an adult aged 18 or older.";
       const result = privateIdentityDraftSchema.safeParse({
         ...draft.privateIdentity,
@@ -77,17 +128,17 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
       });
       if (!result.success) return "Complete your full name, date of birth, and phone number.";
     }
-    if (step === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
+    if (currentIndex === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
       return "Complete the required public-profile fields before continuing.";
     }
-    if (step === 3) {
+    if (currentIndex === 3) {
       const result = faithAndFamilyDraftSchema.safeParse({
         faithTradition: "ethiopian_orthodox_tewahedo",
         ...draft.faithAndFamily,
       });
       if (!result.success) return "Choose at least three values and write a short introduction of 20–280 characters.";
     }
-    if (step === 4) {
+    if (currentIndex === 4) {
       if (/(@|https?:|t\.me|\+?\d[\d\s-]{7,})/i.test(draft.partnerPreferences.additionalPreferences)) {
         return "Do not include phone numbers, usernames, or links in partner preferences.";
       }
@@ -95,69 +146,200 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
         return "Review the age range and select at least one status, value, and marriage intention.";
       }
     }
-    if (step === 6 && !consentDraftSchema.safeParse(draft.consent).success) {
+    if (currentIndex === 6 && !consentDraftSchema.safeParse(draft.consent).success) {
       return "Accept every required consent. Bot notifications remain optional.";
     }
     return null;
   };
 
-  const continueFlow = () => {
-    const message = validationMessage();
-    if (message) {
-      setError(message);
-      haptic("warning");
+  const continueFlow = async () => {
+    if (!beginAction()) return;
+    try {
+      const message = validationMessage();
+      if (message) {
+        setError(message);
+        haptic("warning");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      setError(null);
+      haptic("decision");
+      const result = await saveProgress(currentIndex, draft);
+      if (!result.success) {
+        setError(result.message ?? "We couldn’t save your progress. Please retry.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+      if (step === activeIndices.length - 1) {
+        setSubmittedPersisted(result.persisted);
+        setSubmitted(true);
+        haptic("success");
+        return;
+      }
+      setStep((current) => current + 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
+    } finally {
+      endAction();
     }
-    setError(null);
-    haptic("decision");
-    if (step === steps.length - 1) {
-      setSubmitted(true);
-      haptic("success");
-      return;
-    }
-    setStep((current) => current + 1);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const goBack = () => {
-    setError(null);
-    setStep((current) => Math.max(0, current - 1));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+  const goBack = async () => {
+    if (!beginAction()) return;
+    try {
+      setError(null);
+      setStep((current) => Math.max(0, current - 1));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Hold the synchronous guard through this event-loop turn so a same-tick
+      // second navigation cannot use stale render state.
+      await Promise.resolve();
+    } finally {
+      endAction();
+    }
   };
 
-  if (submitted) {
+  const requestExit = useCallback(
+    async (force: boolean) => {
+      if (!beginAction()) return;
+      try {
+        if (force) {
+          onExit(persisted);
+          return;
+        }
+        const result = await saveProgress(currentIndex, draft);
+        if (result.success) {
+          onExit(result.persisted);
+        } else {
+          setError(result.message ?? "We couldn’t save your progress. Please retry.");
+          haptic("warning");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } catch {
+        setError("We couldn’t save your progress. Please retry.");
+        haptic("warning");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } finally {
+        endAction();
+      }
+    },
+    [beginAction, currentIndex, draft, endAction, onExit, persisted, saveProgress],
+  );
+
+  const handleReload = useCallback(async () => {
+    if (!beginAction()) return;
+    try {
+      const result = await reloadLatest();
+      if (result.success && result.step != null) setStep(result.step);
+    } finally {
+      endAction();
+    }
+  }, [beginAction, endAction, reloadLatest]);
+
+  const handleRetryLoad = useCallback(async () => {
+    if (!beginAction()) return;
+    try {
+      const result = await retryLoad();
+      if (result.success && result.step != null) setStep(result.step);
+    } finally {
+      endAction();
+    }
+  }, [beginAction, endAction, retryLoad]);
+
+  if (!hydrated && !isDemo) {
     return (
-      <main className="onboarding-shell success-shell">
-        <div className="success-mark"><CheckIcon size={34} /></div>
-        <span className="section-kicker">Prototype complete</span>
-        <h1>Your profile would now enter private review.</h1>
-        <p>No information was uploaded or saved. This prototype used in-memory draft data only.</p>
-        <div className="review-status-card">
-          <span><ShieldCheckIcon /></span>
-          <div><strong>Profile review</strong><small>Pending administrator verification</small></div>
-          <i>Demo</i>
-        </div>
-        <div className="success-promise"><LockIcon size={18} /><p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p></div>
-        <button className="primary-button onboarding-primary" type="button" onClick={onComplete}>Enter the demo app</button>
+      <main className="onboarding-shell" aria-busy={!loadError || actionBusy ? "true" : undefined}>
+        <header className="onboarding-topbar">
+          <Brand />
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void requestExit(true)}
+            aria-label="Exit onboarding"
+            disabled={actionBusy}
+          ><XIcon size={19} /></button>
+        </header>
+        <section className="page-intro">
+          <span className="section-kicker">Kidan</span>
+          <div role="status" aria-live="polite" aria-atomic="true">
+            <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
+            <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
+          </div>
+          {loadError && (
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => void handleRetryLoad()}
+              disabled={actionBusy}
+            >
+              {actionBusy ? "Retrying…" : "Retry"}
+            </button>
+          )}
+        </section>
       </main>
     );
   }
 
+  if (submitted || draftSubmitted) {
+    return (
+      <main className="onboarding-shell success-shell">
+        <div className="success-mark"><CheckIcon size={34} /></div>
+        <span className="section-kicker">{isDemo ? "Prototype complete" : "Draft saved"}</span>
+        <h1>{isDemo ? "Your profile would now enter private review." : "Your public draft is saved."}</h1>
+        <p>
+          {isDemo
+            ? "No information was uploaded or saved. This prototype used in-memory draft data only."
+            : "In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled."}
+        </p>
+        <div className="review-status-card">
+          <span><ShieldCheckIcon /></span>
+          <div>
+            <strong>{isDemo ? "Profile review" : "Preview only"}</strong>
+            <small>{isDemo ? "Pending administrator verification" : "Submission not enabled in this preview"}</small>
+          </div>
+          <i>{isDemo ? "Demo" : "Preview"}</i>
+        </div>
+        <div className="success-promise">
+          <LockIcon size={18} />
+          <p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p>
+        </div>
+        <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(submittedPersisted || draftSubmitted)}>
+          {isDemo ? "Enter the demo app" : "Continue"}
+        </button>
+      </main>
+    );
+  }
+
+  const showSample = isDemo;
+
   return (
-    <main className="onboarding-shell">
+    <main className="onboarding-shell" aria-busy={controlsBusy ? "true" : undefined}>
       <header className="onboarding-topbar">
         <Brand />
-        <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding"><XIcon size={19} /></button>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={() => void requestExit(true)}
+          aria-label="Exit onboarding"
+          disabled={controlsBusy}
+        ><XIcon size={19} /></button>
       </header>
 
-      <div className="progress-meta"><span>{steps[step]}</span><strong>{step + 1} of {steps.length}</strong></div>
+      <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
       <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
 
-      {error && <div className="form-error" role="alert">{error}</div>}
+      {(error ?? saveError) && <div className="form-error" role="alert">{error ?? saveError}</div>}
+      {saving && <div className="form-notice" role="status" aria-live="polite">Saving…</div>}
+      {(conflict || reloadError) && !isDemo && (
+        <div className="form-error draft-conflict" role="alert" aria-live="assertive">
+          <span>{reloadError ? "Could not reload the latest draft. Try again." : "Your saved progress changed elsewhere. Reload the latest draft?"}</span>
+          <button type="button" className="sample-link" onClick={() => void handleReload()} disabled={controlsBusy}>Reload latest</button>
+        </div>
+      )}
+      {!isDemo && (
+        <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
+      )}
 
-      <div className="onboarding-content">
-        {step === 0 && (
+      <fieldset className="onboarding-content" disabled={controlsBusy || conflict || reloadError} aria-busy={controlsBusy ? "true" : undefined}>
+        {currentIndex === 0 && (
           <>
             <StepHeading eyebrow="Welcome to Kidan" title="A private path to intentional marriage." description="Before creating a profile, confirm that this community and its privacy model are right for you." />
             <section className="privacy-hero">
@@ -175,14 +357,16 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
               <ToggleCard checked={draft.eligibility.eotcConfirmed} onChange={(value) => patch("eligibility", { eotcConfirmed: value })} title="I am Ethiopian Orthodox Tewahedo" description="The first release is dedicated to the EOTC community." icon={<ChurchIcon size={20} />} />
               <ToggleCard checked={draft.eligibility.marriageIntentConfirmed} onChange={(value) => patch("eligibility", { marriageIntentConfirmed: value })} title="I am seeking an intentional marriage" description="Kidan is not an open social or casual-chat platform." />
             </section>
-            <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>Use synthetic sample data for this prototype</button>
+            {showSample && (
+              <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>Use synthetic sample data for this prototype</button>
+            )}
           </>
         )}
 
-        {step === 1 && (
+        {currentIndex === 1 && (
           <>
             <StepHeading eyebrow="Private identity" title="Verify the person, protect the identity." description="Only authorized verification administrators can access this section." />
-            <div className="prototype-warning"><SparkIcon size={17} /><p>This is a local prototype. Use the synthetic sample—not real personal information.</p><button type="button" onClick={() => setDraft(syntheticOnboardingState)}>Fill sample</button></div>
+            <div className="prototype-warning"><SparkIcon size={17} /><p>This is a local prototype. Use the synthetic sample—not real personal information.</p>{showSample && <button type="button" onClick={() => setDraft(syntheticOnboardingState)}>Fill sample</button>}</div>
             <div className="form-stack">
               <Field label="Full legal name" visibility="admin" hint="Never used as your discovery name.">
                 <input value={draft.privateIdentity.fullName} onChange={(event) => patch("privateIdentity", { fullName: event.target.value })} placeholder="Admin verification only" autoComplete="off" />
@@ -202,7 +386,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 2 && (
+        {currentIndex === 2 && (
           <>
             <StepHeading eyebrow="Public profile" title="Share context, not your identity." description="These approved fields form your anonymous discovery card." />
             <div className="visibility-banner"><EyeIcon size={17} /> Everything on this page may appear in discovery.</div>
@@ -227,7 +411,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 3 && (
+        {currentIndex === 3 && (
           <>
             <StepHeading eyebrow="Faith & family" title="Describe the life you hope to build." description="Kidan supports faith-centered introductions without scoring anyone’s spiritual worth." />
             <section className="fixed-faith-card"><ChurchIcon /><div><small>Community</small><strong>Ethiopian Orthodox Tewahedo</strong></div><CheckIcon size={18} /></section>
@@ -240,7 +424,7 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 4 && (
+        {currentIndex === 4 && (
           <>
             <StepHeading eyebrow="Partner preferences" title="Choose compatibility, not a ranking." description="Hard preferences are reciprocal. Optional preferences do not make one person more valuable than another." />
             <div className="form-stack">
@@ -256,15 +440,15 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
           </>
         )}
 
-        {step === 5 && (
+        {currentIndex === 5 && (
           <>
-            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection before submitting anything for administrator approval." />
-            <PublicPreview draft={draft} />
+            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection. Submission for administrator approval is not enabled in this preview." />
+            <PublicPreview draft={draft} mode={mode} />
             <div className="preview-rule"><LockIcon size={17} /><p>The private verification photo cannot later become a discovery photo without a separate upload and a new consent.</p></div>
           </>
         )}
 
-        {step === 6 && (
+        {currentIndex === 6 && (
           <>
             <StepHeading eyebrow="Consent & submission" title="Your information, your choices." description="Required purposes are separated. Notifications remain optional and can be changed later." />
             <section className="consent-group">
@@ -281,11 +465,17 @@ export function OnboardingFlow({ onExit, onComplete }: OnboardingFlowProps) {
             <div className="prototype-submit-note"><SparkIcon size={17} /><p>Prototype mode: submitting will not upload, persist, or transmit any information.</p></div>
           </>
         )}
-      </div>
+      </fieldset>
 
       <footer className="onboarding-footer">
-        {step > 0 ? <button className="back-button" type="button" onClick={goBack}><ArrowLeftIcon size={18} /> Back</button> : <button className="back-button" type="button" onClick={onExit}>Explore demo</button>}
-        <button className="continue-button" type="button" onClick={continueFlow}>{step === steps.length - 1 ? "Submit for review" : "Continue"}<span>→</span></button>
+        {step > 0 ? (
+          <button className="back-button" type="button" onClick={() => void goBack()} disabled={controlsBusy || conflict || reloadError}><ArrowLeftIcon size={18} /> Back</button>
+        ) : (
+          <button className="back-button" type="button" onClick={() => void requestExit(false)} disabled={controlsBusy || conflict || reloadError}>{isDemo ? "Explore demo" : "Exit"}</button>
+        )}
+        <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={controlsBusy || conflict || reloadError}>
+          {currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span>
+        </button>
       </footer>
     </main>
   );

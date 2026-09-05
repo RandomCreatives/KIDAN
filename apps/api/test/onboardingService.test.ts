@@ -48,6 +48,60 @@ describe("OnboardingService", () => {
     expect(JSON.stringify(saved.publicPayload)).not.toContain("phoneNumber");
   });
 
+  it("canonicalizes persisted JSON to the public draft schema before reads and writes", async () => {
+    const { repository, service, userId } = await fixture();
+    await repository.saveDraft({
+      userId,
+      schemaVersion: completePatch.schemaVersion,
+      currentStep: "public_profile",
+      publicPayload: {
+        publicProfile: { city: "Addis Ababa", legacyAlias: "must-not-leak" },
+        legacySection: { privateNote: "must-not-leak" },
+      },
+      expectedVersion: 0,
+      now: new Date(),
+    });
+
+    const publicDraft = await service.getDraft(userId);
+    expect(publicDraft?.publicPayload).toEqual({ publicProfile: { city: "Addis Ababa" } });
+
+    await service.saveProgress(userId, {
+      schemaVersion: completePatch.schemaVersion,
+      expectedVersion: 1,
+      currentStep: "public_profile",
+      patch: { publicProfile: { occupationCategory: "Education" } },
+    });
+    const persisted = await repository.getDraft(userId);
+    expect(persisted?.publicPayload).toEqual({
+      publicProfile: { city: "Addis Ababa", occupationCategory: "Education" },
+    });
+  });
+
+  it("rejects an age-bound patch that becomes inverted after merging persisted data", async () => {
+    const { repository, service, userId } = await fixture();
+    await repository.saveDraft({
+      userId,
+      schemaVersion: completePatch.schemaVersion,
+      currentStep: "partner_preferences",
+      publicPayload: { partnerPreferences: { ageMin: 40 } },
+      expectedVersion: 0,
+      now: new Date(),
+    });
+
+    await expect(service.saveProgress(userId, {
+      schemaVersion: completePatch.schemaVersion,
+      expectedVersion: 1,
+      currentStep: "partner_preferences",
+      patch: { partnerPreferences: { ageMax: 30 } },
+    })).rejects.toThrow();
+
+    const unchanged = await repository.getDraft(userId);
+    expect(unchanged).toMatchObject({
+      version: 1,
+      publicPayload: { partnerPreferences: { ageMin: 40 } },
+    });
+  });
+
   it("keeps real identity/submission paths disabled by default and enforces adult eligibility", async () => {
     const { service, userId } = await fixture(false);
     await expect(service.savePrivateIdentity(userId, {

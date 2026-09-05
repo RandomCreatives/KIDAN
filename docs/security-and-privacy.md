@@ -17,7 +17,9 @@ Blocks, reports, moderation actions, review evidence, and audit events. Never ex
 - Constant-time compare the computed and received hash.
 - Reject stale `auth_date` and malformed or bot users.
 - Exchange successful validation for a short-lived opaque application session.
+- Raw init data is transmitted to Kidan and may contain Telegram account attributes. The current validator extracts the Telegram ID and authentication date; the service retains an encrypted/hash-indexed Telegram ID mapping and the session authentication date, but does not put Telegram names/usernames into the public draft or discovery projection.
 - Never log raw init data, because it contains account attributes.
+- Logout is successful only after the final cookie-backed session is revoked with 204 or validly confirmed absent with 401. Ambiguous transport/server failures remain visible and retryable; automatic recovery cannot run after terminal logout intent.
 
 ## Authorization
 - Deny by default.
@@ -27,7 +29,7 @@ Blocks, reports, moderation actions, review evidence, and audit events. Never ex
 - Block relationships override every discovery and connection state.
 
 ## Browser and API controls
-- Strict Content Security Policy in production.
+- Strict Content Security Policy in production. The reviewed Nginx candidate is `apps/miniapp/deploy/nginx.conf`; its drift test must pass, and the exact deployed HTTPS response header must be captured before merge.
 - Secure, HttpOnly, SameSite cookies where compatible with the Telegram WebView deployment model.
 - Origin validation, CSRF protection for cookie-authenticated mutations, and idempotency keys.
 - Per-user and per-device rate limits; aggressive limits on discovery enumeration and reports.

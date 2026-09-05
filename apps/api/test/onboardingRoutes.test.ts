@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { OnboardingProgressPatch } from "@kidan/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { buildApp } from "../src/app.js";
+import { buildApp } from "../src/appFactory.js";
 import { SessionService } from "../src/auth/sessionService.js";
 import { OnboardingService } from "../src/onboarding/onboardingService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
@@ -71,5 +71,122 @@ describe("onboarding routes", () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.json().error.code).toBe("INVALID_CSRF");
+  });
+
+  it("accepts a partial public section save and deep-merges with later sections", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const issued = await sessions.issueForTelegramUser(404n, new Date());
+    app = await buildApp({
+      sessionService: sessions,
+      onboardingService: new OnboardingService(repository, cipher, false),
+    });
+
+    const partial = await app.inject({
+      method: "PUT",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}`, "x-csrf-token": issued.csrfToken },
+      payload: {
+        schemaVersion: "2026-08-12.v1",
+        expectedVersion: 0,
+        currentStep: "public_profile",
+        patch: { publicProfile: { city: "Addis Ababa" } },
+      } satisfies OnboardingProgressPatch,
+    });
+    expect(partial.statusCode).toBe(200);
+
+    const faith = await app.inject({
+      method: "PUT",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}`, "x-csrf-token": issued.csrfToken },
+      payload: {
+        schemaVersion: "2026-08-12.v1",
+        expectedVersion: 1,
+        currentStep: "faith_and_family",
+        patch: {
+          faithAndFamily: {
+            faithTradition: "ethiopian_orthodox_tewahedo",
+            marriageIntention: "teklil",
+            wantsChildren: "yes",
+            values: ["active_faith", "honesty", "family_oriented"],
+            bio: "A faithful and intentional life partner.",
+          },
+        },
+      } satisfies OnboardingProgressPatch,
+    });
+    expect(faith.statusCode).toBe(200);
+
+    const draft = await app.inject({
+      method: "GET",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}` },
+    });
+    const payload = draft.json().data.payload as Record<string, Record<string, unknown>>;
+    expect(payload.publicProfile?.city).toBe("Addis Ababa");
+    expect(payload.faithAndFamily?.values).toEqual(["active_faith", "honesty", "family_oriented"]);
+  });
+
+  it("fails closed with the API error envelope when persisted draft JSON violates the contract", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const issued = await sessions.issueForTelegramUser(505n, new Date());
+    const session = await sessions.authenticate(issued.sessionToken);
+    await repository.saveDraft({
+      userId: session!.user.id,
+      schemaVersion: progress.schemaVersion,
+      currentStep: "public_profile",
+      publicPayload: { publicProfile: { gender: "unsupported" } },
+      expectedVersion: 0,
+      now: new Date(),
+    });
+    app = await buildApp({
+      sessionService: sessions,
+      onboardingService: new OnboardingService(repository, cipher, false),
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}` },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.json().error).toMatchObject({ code: "INTERNAL_ERROR" });
+  });
+
+  it("never persists an out-of-scope (identity) key sent in the draft patch", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const issued = await sessions.issueForTelegramUser(505n, new Date());
+    app = await buildApp({
+      sessionService: sessions,
+      onboardingService: new OnboardingService(repository, cipher, false),
+    });
+    const response = await app.inject({
+      method: "PUT",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}`, "x-csrf-token": issued.csrfToken },
+      payload: {
+        schemaVersion: "2026-08-12.v1",
+        expectedVersion: 0,
+        currentStep: "public_profile",
+        patch: { publicProfile: { city: "Addis Ababa" }, privateIdentity: { fullName: "Jane Doe" } },
+      } as unknown as OnboardingProgressPatch,
+    });
+    expect(response.statusCode).toBe(200);
+    const session = await sessions.authenticate(issued.sessionToken);
+    const persisted = await repository.getDraft(session!.user.id);
+    expect(persisted?.publicPayload.privateIdentity).toBeUndefined();
+
+    const draft = await app.inject({
+      method: "GET",
+      url: "/v1/onboarding/draft",
+      headers: { cookie: `kidan_session=${issued.sessionToken}` },
+    });
+    const payload = draft.json().data.payload as Record<string, unknown>;
+    expect(payload.privateIdentity).toBeUndefined();
+    expect(payload.publicProfile).toBeDefined();
   });
 });

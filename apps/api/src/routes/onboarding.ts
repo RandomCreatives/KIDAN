@@ -1,9 +1,16 @@
-import { onboardingProgressPatchSchema, onboardingSubmitRequestSchema } from "@kidan/contracts";
+import {
+  draftResponseSchema,
+  draftSaveResponseSchema,
+  INITIAL_ONBOARDING_STEP,
+  ONBOARDING_SCHEMA_VERSION,
+  onboardingProgressPatchSchema,
+  onboardingSubmitRequestSchema,
+} from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
 import type { SessionService } from "../auth/sessionService.js";
 import type { OnboardingService } from "../onboarding/onboardingService.js";
-import type { SessionRecord } from "../persistence/types.js";
+import type { DraftRecord, SessionRecord } from "../persistence/types.js";
 import { SubmissionStateError, VersionConflictError } from "../persistence/types.js";
 
 interface OnboardingRouteOptions {
@@ -60,29 +67,43 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
   app.get("/v1/onboarding/draft", async (request, reply) => {
     const session = await requireSession(request, reply);
     if (!session) return;
-    const [draft, identityComplete] = await Promise.all([
-      options.onboardingService.getDraft(session.user.id),
-      options.onboardingService.hasCompletePrivateIdentity(session.user.id),
-    ]);
-    return reply.send({
-      data: draft
-        ? {
-            schemaVersion: draft.schemaVersion,
-            currentStep: draft.currentStep,
-            payload: draft.publicPayload,
-            version: draft.version,
-            submitted: Boolean(draft.submittedAt),
-            identityComplete,
-          }
-        : {
-            schemaVersion: "2026-08-12.v1",
-            currentStep: "eligibility",
-            payload: {},
-            version: 0,
-            submitted: false,
-            identityComplete,
-          },
-    });
+    let draft: DraftRecord | null;
+    let identityComplete: boolean;
+    try {
+      [draft, identityComplete] = await Promise.all([
+        options.onboardingService.getDraft(session.user.id),
+        options.onboardingService.hasCompletePrivateIdentity(session.user.id),
+      ]);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        request.log.error({ msg: "persisted draft failed contract validation", error: error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      throw error;
+    }
+    const responseData = draft
+      ? {
+          schemaVersion: draft.schemaVersion,
+          currentStep: draft.currentStep,
+          payload: draft.publicPayload,
+          version: draft.version,
+          submitted: Boolean(draft.submittedAt),
+          identityComplete,
+        }
+      : {
+          schemaVersion: ONBOARDING_SCHEMA_VERSION,
+          currentStep: INITIAL_ONBOARDING_STEP,
+          payload: {},
+          version: 0,
+          submitted: false,
+          identityComplete,
+        };
+    const validated = draftResponseSchema.safeParse(responseData);
+    if (!validated.success) {
+      request.log.error({ msg: "draft response failed contract validation", error: validated.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: validated.data });
   });
 
   app.put("/v1/onboarding/draft", async (request, reply) => {
@@ -91,7 +112,13 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     try {
       const progress = onboardingProgressPatchSchema.parse(request.body);
       const saved = await options.onboardingService.saveProgress(session.user.id, progress);
-      return reply.send({ data: { version: saved.version, currentStep: saved.currentStep } });
+      const responseData = { version: saved.version, currentStep: saved.currentStep };
+      const validated = draftSaveResponseSchema.safeParse(responseData);
+      if (!validated.success) {
+        request.log.error({ msg: "draft save response failed contract validation", error: validated.error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      return reply.send({ data: validated.data });
     } catch (error) {
       return sendDomainError(error, request, reply);
     }

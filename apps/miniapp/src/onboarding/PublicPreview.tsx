@@ -14,17 +14,25 @@ function ageFromDate(date: string): number | null {
   return age;
 }
 
-export function PublicPreview({ draft }: { draft: OnboardingFormState }) {
-  const age = ageFromDate(draft.privateIdentity.dateOfBirth) ?? "—";
+export function PublicPreview({ draft, mode }: { draft: OnboardingFormState; mode: "demo" | "real" }) {
+  const isDemo = mode === "demo";
+  const age = ageFromDate(draft.privateIdentity.dateOfBirth);
+  const ageLabel = age != null ? age : "—";
+  const headerText = isDemo
+    ? "This is exactly what discovery could show (synthetic sample)"
+    : "Public draft preview — unsubmitted and unpublished";
+  const badge = isDemo ? "Sample" : "Draft · not submitted";
+  const code = isDemo ? "KD-6V8T3R" : "Unassigned";
+
   return (
     <div className="preview-stage">
-      <div className="preview-visibility"><EyeIcon size={15} /> This is exactly what discovery will show</div>
+      <div className="preview-visibility"><EyeIcon size={15} /> {headerText}</div>
       <article className="onboarding-preview-card">
         <div className="preview-art">
           <div className="preview-rings" />
-          <div className="preview-medallion"><span>{age}</span><small>values first</small></div>
-          <span className="preview-verified"><ShieldCheckIcon size={14} /> Admin verified</span>
-          <div className="preview-title"><h2>{age} <i>•</i> {draft.publicProfile.city || "Your city"}</h2><p>KD-6V8T3R</p></div>
+          <div className="preview-medallion"><span>{ageLabel}</span><small>values first</small></div>
+          <span className="preview-verified">{badge}</span>
+          <div className="preview-title"><h2>{ageLabel} <i>•</i> {draft.publicProfile.city || "Your city"}</h2><p>{code}</p></div>
         </div>
         <div className="preview-body">
           <span>{draft.publicProfile.occupationCategory || "Occupation"} · {labelFor(draft.publicProfile.educationLevel)}</span>

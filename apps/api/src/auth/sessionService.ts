@@ -34,7 +34,7 @@ export class SessionService {
     });
     if (user.status === "suspended" || user.status === "deleted") throw new SessionAccessError();
     const sessionToken = randomBytes(32).toString("base64url");
-    const csrfToken = randomBytes(32).toString("base64url");
+    const csrfToken = this.computeCsrf(sessionToken);
     const expiresAt = new Date(now.getTime() + this.ttlSeconds * 1000);
 
     await this.repository.createSession({
@@ -63,6 +63,26 @@ export class SessionService {
 
   verifyCsrf(session: SessionRecord, csrfToken: string | undefined): boolean {
     return Boolean(csrfToken && csrfToken.length <= 128 && this.sessionHasher.matches(`csrf:${csrfToken}`, session.csrfTokenHash));
+  }
+
+  deriveCsrfToken(sessionToken: string | undefined): string | null {
+    if (!sessionToken || sessionToken.length > 128) return null;
+    return this.computeCsrf(sessionToken);
+  }
+
+  private computeCsrf(sessionToken: string): string {
+    return this.sessionHasher.hash(`csrf:${sessionToken}`).toString("base64url");
+  }
+
+  async restoreSession(
+    sessionToken: string | undefined,
+    now = new Date(),
+  ): Promise<{ csrfToken: string; profileStatus: SessionRecord["user"]["status"]; expiresAt: Date } | null> {
+    const session = await this.authenticate(sessionToken, now);
+    if (!session) return null;
+    const csrfToken = this.deriveCsrfToken(sessionToken);
+    if (!csrfToken) return null;
+    return { csrfToken, profileStatus: session.user.status, expiresAt: session.expiresAt };
   }
 
   async revoke(sessionToken: string, now = new Date()): Promise<void> {

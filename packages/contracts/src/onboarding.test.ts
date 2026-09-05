@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  INITIAL_ONBOARDING_STEP,
+  ONBOARDING_SCHEMA_VERSION,
   onboardingDraftSchema,
   onboardingFieldVisibility,
+  onboardingStepSchema,
+  partialPublicOnboardingPayloadSchema,
   partnerPreferencesDraftSchema,
 } from "./onboarding.js";
 
 const validDraft = {
-  schemaVersion: "2026-08-12.v1",
+  schemaVersion: ONBOARDING_SCHEMA_VERSION,
   eligibility: {
     adultConfirmed: true,
     eotcConfirmed: true,
@@ -59,6 +63,13 @@ const validDraft = {
   },
 } as const;
 
+describe("shared onboarding defaults", () => {
+  it("keeps the exported version and initial step accepted by their schemas", () => {
+    expect(onboardingDraftSchema.shape.schemaVersion.parse(ONBOARDING_SCHEMA_VERSION)).toBe(ONBOARDING_SCHEMA_VERSION);
+    expect(onboardingStepSchema.parse(INITIAL_ONBOARDING_STEP)).toBe(INITIAL_ONBOARDING_STEP);
+  });
+});
+
 describe("onboardingDraftSchema", () => {
   it("accepts a normalized complete draft", () => {
     expect(onboardingDraftSchema.safeParse(validDraft).success).toBe(true);
@@ -81,6 +92,16 @@ describe("partnerPreferencesDraftSchema", () => {
       ageMax: 30,
     });
     expect(result.success).toBe(false);
+  });
+
+  it("rejects inverted age bounds when both are present in a partial patch", () => {
+    const result = partialPublicOnboardingPayloadSchema.safeParse({
+      partnerPreferences: { ageMin: 40, ageMax: 30 },
+    });
+    expect(result.success).toBe(false);
+    expect(partialPublicOnboardingPayloadSchema.safeParse({
+      partnerPreferences: { ageMin: 30 },
+    }).success).toBe(true);
   });
 });
 

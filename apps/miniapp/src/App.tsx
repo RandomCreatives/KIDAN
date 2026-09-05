@@ -3,25 +3,43 @@ import { ConnectionsScreen } from "./components/ConnectionsScreen";
 import { DiscoverScreen } from "./components/DiscoverScreen";
 import { MyProfileScreen } from "./components/MyProfileScreen";
 import { CompassIcon, ConnectionIcon, UserIcon } from "./components/Icons";
+import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
+import { PilotDisabledScreen } from "./PilotDisabledScreen";
 
 type Tab = "discover" | "connections" | "profile";
 
 export function App() {
+  const { isDemo } = useAuth();
   const [tab, setTab] = useState<Tab>("discover");
   const [showOnboarding, setShowOnboarding] = useState(true);
+  const [draftSaved, setDraftSaved] = useState(false);
 
   if (showOnboarding) {
     return (
       <div className="app-shell">
         <div className="app-viewport onboarding-viewport">
           <OnboardingFlow
-            onExit={() => setShowOnboarding(false)}
-            onComplete={() => {
+            mode={isDemo ? "demo" : "real"}
+            onExit={(saved) => {
+              if (saved) setDraftSaved(true);
               setShowOnboarding(false);
-              setTab("profile");
+            }}
+            onComplete={(saved) => {
+              if (saved) setDraftSaved(true);
+              setShowOnboarding(false);
             }}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isDemo) {
+    return (
+      <div className="app-shell">
+        <div className="app-viewport">
+          <PilotDisabledScreen onReopen={() => setShowOnboarding(true)} saved={draftSaved} />
         </div>
       </div>
     );

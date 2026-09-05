@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { genderSchema, marriageIntentionSchema, valueTagSchema } from "./profile.js";
 
+export const ONBOARDING_SCHEMA_VERSION = "2026-08-12.v1" as const;
+export const INITIAL_ONBOARDING_STEP = "eligibility" as const;
+
 export const fieldVisibilitySchema = z.enum([
   "admin_only",
   "discovery",
@@ -9,7 +12,7 @@ export const fieldVisibilitySchema = z.enum([
 ]);
 
 export const onboardingStepSchema = z.enum([
-  "eligibility",
+  INITIAL_ONBOARDING_STEP,
   "private_identity",
   "public_profile",
   "faith_and_family",
@@ -79,22 +82,25 @@ export const faithAndFamilyDraftSchema = z.object({
   bio: z.string().trim().min(20).max(280),
 });
 
-export const partnerPreferencesDraftSchema = z
-  .object({
-    ageMin: z.number().int().min(18).max(90),
-    ageMax: z.number().int().min(18).max(90),
-    preferredCities: z.array(z.string().trim().min(2).max(80)).max(12),
-    openToAbroad: z.boolean(),
-    acceptedMaritalStatuses: z.array(maritalStatusSchema).min(1),
-    acceptsPartnerWithChildren: z.boolean(),
-    desiredValues: z.array(valueTagSchema).min(1).max(6),
-    acceptedMarriageIntentions: z.array(marriageIntentionSchema).min(1),
-    additionalPreferences: z.string().trim().max(400),
-  })
-  .refine((value) => value.ageMin <= value.ageMax, {
+const partnerPreferencesObjectSchema = z.object({
+  ageMin: z.number().int().min(18).max(90),
+  ageMax: z.number().int().min(18).max(90),
+  preferredCities: z.array(z.string().trim().min(2).max(80)).max(12),
+  openToAbroad: z.boolean(),
+  acceptedMaritalStatuses: z.array(maritalStatusSchema).min(1),
+  acceptsPartnerWithChildren: z.boolean(),
+  desiredValues: z.array(valueTagSchema).min(1).max(6),
+  acceptedMarriageIntentions: z.array(marriageIntentionSchema).min(1),
+  additionalPreferences: z.string().trim().max(400),
+});
+
+export const partnerPreferencesDraftSchema = partnerPreferencesObjectSchema.refine(
+  (value) => value.ageMin <= value.ageMax,
+  {
     message: "Minimum age must not exceed maximum age",
     path: ["ageMin"],
-  });
+  },
+);
 
 export const consentDraftSchema = z.object({
   informationAccurate: z.literal(true),
@@ -107,7 +113,7 @@ export const consentDraftSchema = z.object({
 });
 
 export const onboardingDraftSchema = z.object({
-  schemaVersion: z.literal("2026-08-12.v1"),
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   eligibility: eligibilitySchema,
   privateIdentity: privateIdentityDraftSchema,
   publicProfile: publicProfileDraftSchema,
@@ -123,11 +129,30 @@ export const publicOnboardingPayloadSchema = z.object({
   partnerPreferences: partnerPreferencesDraftSchema,
 });
 
+const partialPartnerPreferencesDraftSchema = partnerPreferencesObjectSchema.partial().superRefine((value, context) => {
+  if (value.ageMin !== undefined && value.ageMax !== undefined && value.ageMin > value.ageMax) {
+    context.addIssue({
+      code: "custom",
+      message: "Minimum age must not exceed maximum age",
+      path: ["ageMin"],
+    });
+  }
+});
+
+export const partialPublicOnboardingPayloadSchema = z
+  .object({
+    eligibility: eligibilitySchema.partial(),
+    publicProfile: publicProfileDraftSchema.partial(),
+    faithAndFamily: faithAndFamilyDraftSchema.partial(),
+    partnerPreferences: partialPartnerPreferencesDraftSchema,
+  })
+  .partial();
+
 export const onboardingProgressPatchSchema = z.object({
-  schemaVersion: z.literal("2026-08-12.v1"),
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   expectedVersion: z.number().int().min(0),
   currentStep: onboardingStepSchema.exclude(["private_identity", "consent", "submitted"]),
-  patch: publicOnboardingPayloadSchema.partial(),
+  patch: partialPublicOnboardingPayloadSchema,
 });
 
 export const privateIdentitySaveRequestSchema = z.object({
@@ -140,6 +165,24 @@ export const onboardingSubmitRequestSchema = z.object({
   expectedVersion: z.number().int().positive(),
   consent: consentDraftSchema,
 });
+
+export const draftResponseSchema = z.object({
+  schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
+  currentStep: onboardingStepSchema,
+  payload: partialPublicOnboardingPayloadSchema,
+  version: z.number().int().min(0),
+  submitted: z.boolean(),
+  identityComplete: z.boolean(),
+});
+
+export const draftSaveResponseSchema = z.object({
+  version: z.number().int().min(1),
+  currentStep: onboardingStepSchema,
+});
+
+export type DraftResponse = z.infer<typeof draftResponseSchema>;
+export type DraftSaveResponse = z.infer<typeof draftSaveResponseSchema>;
+export type PartialPublicOnboardingPayload = z.infer<typeof partialPublicOnboardingPayloadSchema>;
 
 export const onboardingFieldVisibility = {
   "privateIdentity.fullName": "admin_only",
