@@ -71,7 +71,16 @@ export async function buildApp(
     const errorCode = typeof error === "object" && error !== null && "code" in error
       ? String(error.code)
       : undefined;
-    request.log.error({ errorName, errorCode }, "Request failed");
+    // Log the message and first stack frame so 500s are diagnosable, while
+    // stripping connection-string credentials that could appear in the message
+    // (the logger's redact config already covers headers/cookies/body).
+    const sanitize = (value: string): string =>
+      value.replace(/(postgres(?:ql)?:\/\/)[^/\s]*@/gi, "$1<redacted>@");
+    const errorMessage = sanitize(error instanceof Error ? error.message : "unknown error");
+    const stackTop = error instanceof Error && error.stack
+      ? error.stack.split("\n").slice(1, 3).map((line) => line.trim()).join(" | ")
+      : undefined;
+    request.log.error({ errorName, errorCode, errorMessage, stackTop }, "Request failed");
     return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) =>
