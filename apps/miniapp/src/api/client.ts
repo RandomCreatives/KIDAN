@@ -57,7 +57,10 @@ export class KidanApiClient {
       if (typeof fetch === "undefined") {
         throw new Error("fetch is not available in this environment");
       }
-      this.fetchImpl = fetch;
+      // Native fetch must be invoked with the global object as its receiver;
+      // calling it later as `this.fetchImpl(...)` detaches it and throws
+      // "Illegal invocation" (observed in the Telegram WebView). Bind it.
+      this.fetchImpl = fetch.bind(globalThis);
     } else {
       this.fetchImpl = injected;
     }

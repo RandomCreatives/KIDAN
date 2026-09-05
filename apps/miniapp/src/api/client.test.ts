@@ -16,6 +16,27 @@ const okSession = {
 } as const;
 
 describe("KidanApiClient", () => {
+  it("binds the global fetch so the method-style call does not throw Illegal invocation", async () => {
+    const original = globalThis.fetch;
+    let receiverWasGlobal = false;
+    // Emulate the native fetch requirement that its receiver is the global object.
+    globalThis.fetch = function (this: unknown, ..._args: unknown[]): Promise<Response> {
+      if (this !== globalThis) {
+        return Promise.reject(new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation"));
+      }
+      receiverWasGlobal = true;
+      return Promise.resolve(jsonResponse({ data: okSession }, 200));
+    } as typeof fetch;
+    try {
+      const client = new KidanApiClient({ baseUrl: "/api" });
+      const session = await client.getSession();
+      expect(session.authenticated).toBe(true);
+      expect(receiverWasGlobal).toBe(true);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("reads the data envelope on success", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: okSession }, 200));
     const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
