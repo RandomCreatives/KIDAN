@@ -70,6 +70,12 @@ export async function buildRuntimeApp(
     const identityCipher = new IdentityCipher(encryptionKey, lookupKey);
     const sessionService = new SessionService(repository, identityCipher, new SecretHasher(sessionKey));
     options.botToken = environment.TELEGRAM_BOT_TOKEN as string;
+    // Log the public bot id (numeric user id, before ':') at startup so a
+    // token-vs-bot mismatch can be confirmed without a login attempt.
+    const configuredBotId = (environment.TELEGRAM_BOT_TOKEN as string).includes(":")
+      ? (environment.TELEGRAM_BOT_TOKEN as string).split(":")[0]
+      : "malformed-token";
+    console.info(`[kidan-api] configured Telegram bot id: ${configuredBotId}`);
     options.sessionService = sessionService;
     options.onboardingService = new OnboardingService(
       repository,

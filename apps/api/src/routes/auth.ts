@@ -43,9 +43,14 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
       return reply.code(200).send({ data: response.data });
     } catch (error) {
       if (error instanceof TelegramValidationError) {
-        // Log the rejection reason (code only — initData/body are redacted by
-        // the logger config) so a token/clock/format mismatch is diagnosable.
-        request.log.warn({ reason: error.code }, "telegram init data rejected");
+        // Log the rejection reason plus the configured bot's numeric id (the
+        // digits before ':' in the token — a public bot user id, never the
+        // secret). initData/body are redacted by the logger config.
+        const configuredBotId = options.botToken.includes(":") ? options.botToken.split(":")[0] : "malformed-token";
+        request.log.warn(
+          { reason: error.code, configuredBotId, tokenFormatOk: /^\d+:/.test(options.botToken) },
+          "telegram init data rejected",
+        );
         return reply.code(401).send({ error: { code: error.code, requestId: request.id } });
       }
       if (error instanceof SessionAccessError) {
