@@ -11,3 +11,9 @@ The initial schema demonstrates trust-boundary separation; it is not yet wired t
 5. Finalize retention/deletion rules and audit-log minimization.
 
 Never use `public_code` as a database primary key or credential.
+
+`maintenance/` holds operator-run, non-automated maintenance scripts (never
+applied by the migration runner). `maintenance/pre_pilot_test_data_reset.sql`
+is a one-time, pre-pilot reset that deletes **all** candidate/user test data
+while preserving `schema_migration` and `admin_account`. Run it only while the
+database contains no real candidates.
