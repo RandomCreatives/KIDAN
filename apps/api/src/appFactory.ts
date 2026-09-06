@@ -17,6 +17,11 @@ export interface BuildAppOptions {
   logger?: boolean;
   onClose?: () => Promise<void>;
   readinessCheck?: () => Promise<void>;
+  // Whether initData-rejection responses include the non-secret diagnostics
+  // (configured bot id + live token probe). Always logged server-side; only
+  // exposed to the client in non-production runtimes. Defaults to false so a
+  // deployment never leaks internals unless it explicitly opts in.
+  exposeAuthDiagnostics?: boolean;
 }
 
 export type FastifyFactory = typeof Fastify;
@@ -100,6 +105,7 @@ export async function buildApp(
       sessionService: options.sessionService,
       cookieName,
       secureCookies: options.secureCookies ?? false,
+      exposeDiagnostics: options.exposeAuthDiagnostics ?? false,
     });
   } else {
     // Persistence is not configured (or not ready). Answer the auth endpoints

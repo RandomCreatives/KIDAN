@@ -53,7 +53,9 @@ export const apiErrorCodeSchema = z.enum([
 export const apiErrorSchema = z.object({
   code: apiErrorCodeSchema,
   requestId: z.string().max(64),
-  // Non-secret diagnostics, included only on initData rejection.
+  // Non-secret diagnostics, present only on initData rejection AND only when
+  // the API exposes diagnostics (non-production runtimes). Always logged
+  // server-side; never sent in production regardless of client debug mode.
   configuredBotId: z.string().max(32).optional(),
   tokenProbe: z.object({
     ok: z.boolean(),

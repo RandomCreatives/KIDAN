@@ -47,6 +47,9 @@ export async function buildRuntimeApp(
     logger: true,
     secureCookies: production,
     cookieName: production ? "__Host-kidan_session" : "kidan_session",
+    // Non-secret auth diagnostics (configured bot id + token probe) are
+    // returned to the client only outside production; they are always logged.
+    exposeAuthDiagnostics: !production,
     ...(environment.APP_ORIGIN ? { allowedOrigin: environment.APP_ORIGIN } : {}),
   };
 

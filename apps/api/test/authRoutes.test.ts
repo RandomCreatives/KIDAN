@@ -24,7 +24,7 @@ function signedInitData(telegramId: string, authDate = new Date()): string {
 }
 
 async function buildTestApp(
-  options: Pick<BuildAppOptions, "allowedOrigin" | "secureCookies"> = {},
+  options: Pick<BuildAppOptions, "allowedOrigin" | "secureCookies" | "exposeAuthDiagnostics"> = {},
 ): Promise<FastifyInstance> {
   const repository = new MemoryPersistenceRepository();
   return buildApp({
@@ -72,6 +72,42 @@ describe("authentication routes", () => {
     });
     expect(response.statusCode).toBe(401);
     expect(response.json().error.code).toBe("STALE_INIT_DATA");
+  });
+
+  it("omits non-secret auth diagnostics from a rejection body by default (production profile)", async () => {
+    // buildApp defaults exposeAuthDiagnostics to false: even on rejection the
+    // client receives only the error code and request id — never the
+    // configured bot id or token probe.
+    app = await buildTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("123", new Date(Date.now() - 301_000)) },
+    });
+    expect(response.statusCode).toBe(401);
+    const error = response.json().error;
+    expect(error.code).toBe("STALE_INIT_DATA");
+    expect(typeof error.requestId).toBe("string");
+    expect(error).not.toHaveProperty("configuredBotId");
+    expect(error).not.toHaveProperty("tokenProbe");
+    expect(response.body).not.toContain("ROUTE_TEST_TOKEN");
+  });
+
+  it("includes non-secret auth diagnostics on rejection when explicitly enabled (non-production)", async () => {
+    app = await buildTestApp({ exposeAuthDiagnostics: true });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("123", new Date(Date.now() - 301_000)) },
+    });
+    expect(response.statusCode).toBe(401);
+    const error = response.json().error;
+    expect(error.code).toBe("STALE_INIT_DATA");
+    // The numeric bot id prefix is public; the secret token suffix must never
+    // appear even when diagnostics are exposed.
+    expect(error.configuredBotId).toBe("123456");
+    expect(error).toHaveProperty("tokenProbe");
+    expect(response.body).not.toContain("ROUTE_TEST_TOKEN");
   });
 
   it("restores a session with a stable CSRF token that verifies", async () => {

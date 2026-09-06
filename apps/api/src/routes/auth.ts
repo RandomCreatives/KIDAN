@@ -9,6 +9,9 @@ export interface AuthRouteOptions {
   sessionService: SessionService;
   cookieName: string;
   secureCookies: boolean;
+  // When false (production default), the non-secret diagnostics below are
+  // still recorded in server logs but are never sent to the client.
+  exposeDiagnostics: boolean;
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
@@ -48,8 +51,11 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         // digits before ':' in the token — a public bot user id, never the
         // secret). initData/body are redacted by the logger config.
         const configuredBotId = options.botToken.includes(":") ? options.botToken.split(":")[0] : "malformed-token";
-        // Live-verify the token against Telegram (cached) and include the
-        // non-secret result so the cause is visible without logs.
+        // Live-verify the token against Telegram (cached) so the cause is
+        // visible in server logs. The result is non-secret but, together with
+        // the configured bot id, is only returned to the client when
+        // diagnostics are exposed (non-production). Production/staging
+        // deployments log these server-side and send only the error code.
         const tokenProbe = await probeBotToken(options.botToken);
         request.log.warn(
           { reason: error.code, configuredBotId, tokenProbe },
@@ -59,8 +65,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
           error: {
             code: error.code,
             requestId: request.id,
-            configuredBotId,
-            tokenProbe,
+            ...(options.exposeDiagnostics ? { configuredBotId, tokenProbe } : {}),
           },
         });
       }
