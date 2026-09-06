@@ -21,8 +21,13 @@ export function describeAuthError(error: unknown): { status: AuthStatus; detail:
     let detail: string;
     if (error.code === "NETWORK") {
       detail = `NETWORK (HTTP 0)${error.networkCause ? ` — ${error.networkCause}` : ""}`;
-    } else if (error.configuredBotId) {
-      detail = `${error.code} (HTTP ${error.status}) · server bot id: ${error.configuredBotId}`;
+    } else if (error.configuredBotId || error.tokenProbe) {
+      const probe = error.tokenProbe
+        ? (error.tokenProbe.ok
+            ? ` · Telegram says token VALID for @${error.tokenProbe.username} (id ${error.tokenProbe.id})`
+            : ` · Telegram REJECTS token: ${error.tokenProbe.reason ?? "rejected"}`)
+        : "";
+      detail = `${error.code} (HTTP ${error.status}) · server bot id: ${error.configuredBotId ?? "?"}${probe}`;
     } else {
       detail = `${error.code} (HTTP ${error.status})`;
     }

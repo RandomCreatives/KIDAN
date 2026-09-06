@@ -30,8 +30,9 @@ export class ApiError extends Error {
   readonly requestId: string | undefined;
   readonly networkCause: string | undefined;
   readonly configuredBotId: string | undefined;
+  readonly tokenProbe: { ok: boolean; id?: number; username?: string; reason?: string } | undefined;
 
-  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string, configuredBotId?: string) {
+  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string, configuredBotId?: string, tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string }) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
@@ -39,6 +40,7 @@ export class ApiError extends Error {
     this.requestId = requestId;
     this.networkCause = networkCause;
     this.configuredBotId = configuredBotId;
+    this.tokenProbe = tokenProbe;
   }
 }
 
@@ -161,7 +163,9 @@ export class KidanApiClient {
       const envelope = apiErrorEnvelopeSchema.safeParse(parsed);
       if (!envelope.success) throw new ApiError("INVALID_RESPONSE", response.status);
       const code = apiErrorCodeSchema.safeParse(envelope.data.error.code).data ?? "INVALID_RESPONSE";
-      throw new ApiError(code, response.status, envelope.data.error.requestId, undefined, (envelope.data.error as { configuredBotId?: string }).configuredBotId);
+      throw new ApiError(code, response.status, envelope.data.error.requestId, undefined,
+        (envelope.data.error as { configuredBotId?: string }).configuredBotId,
+        (envelope.data.error as { tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string } }).tokenProbe);
     }
 
     if (expectStatus !== undefined && response.status !== expectStatus) {

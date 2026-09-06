@@ -2,6 +2,7 @@ import { sessionStatusSchema, telegramAuthRequestSchema, telegramAuthResponseSch
 import type { FastifyPluginAsync } from "fastify";
 import { SessionAccessError, type SessionService } from "../auth/sessionService.js";
 import { TelegramValidationError, validateTelegramInitData } from "../auth/telegramInitData.js";
+import { probeBotToken } from "../auth/botTokenProbe.js";
 
 export interface AuthRouteOptions {
   botToken: string;
@@ -47,11 +48,21 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         // digits before ':' in the token — a public bot user id, never the
         // secret). initData/body are redacted by the logger config.
         const configuredBotId = options.botToken.includes(":") ? options.botToken.split(":")[0] : "malformed-token";
+        // Live-verify the token against Telegram (cached) and include the
+        // non-secret result so the cause is visible without logs.
+        const tokenProbe = await probeBotToken(options.botToken);
         request.log.warn(
-          { reason: error.code, configuredBotId, tokenFormatOk: /^\d+:/.test(options.botToken) },
+          { reason: error.code, configuredBotId, tokenProbe },
           "telegram init data rejected",
         );
-        return reply.code(401).send({ error: { code: error.code, requestId: request.id, configuredBotId } });
+        return reply.code(401).send({
+          error: {
+            code: error.code,
+            requestId: request.id,
+            configuredBotId,
+            tokenProbe,
+          },
+        });
       }
       if (error instanceof SessionAccessError) {
         return reply.code(403).send({ error: { code: "ACCOUNT_UNAVAILABLE", requestId: request.id } });
