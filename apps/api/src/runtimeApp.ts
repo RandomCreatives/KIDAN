@@ -82,16 +82,22 @@ export async function buildRuntimeApp(
       : "malformed-token";
     console.info(`[kidan-api] configured Telegram bot id: ${configuredBotId}`);
     options.sessionService = sessionService;
-    options.onboardingService = new OnboardingService(
+    const onboardingService = new OnboardingService(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
+    options.onboardingService = onboardingService;
     // Readiness proves a live connection AND that the schema migrations have
     // been applied (the auth/onboarding tables exist). A provisioned but
     // unmigrated database now reports 503 instead of failing logins with 500.
     options.readinessCheck = createSchemaReadinessCheck(pool);
     options.onClose = () => pool.end();
+    const retentionSecret = environment.RETENTION_CRON_SECRET;
+    if (retentionSecret) {
+      options.retentionSecret = retentionSecret;
+      options.retentionPurge = () => onboardingService.purgeExpiredVerificationPhotos();
+    }
   }
 
   const app = fastifyFactory

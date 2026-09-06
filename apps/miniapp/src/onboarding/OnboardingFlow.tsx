@@ -28,6 +28,7 @@ import { haptic } from "../lib/telegram";
 import { ChoiceChips, Field, SegmentedChoice, StepHeading, ToggleCard, VisibilityPill } from "./FormControls";
 import { PublicPreview } from "./PublicPreview";
 import { cityOptions, marriageOptions, maritalOptions, valueOptions } from "./options";
+import { fileToVerificationPhotoDataUrl } from "./photoCapture";
 import { initialOnboardingState, syntheticOnboardingState, type OnboardingFormState } from "./types";
 import { useOnboardingDraft } from "./useOnboardingDraft";
 
@@ -84,11 +85,15 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     reloadError,
     submitting,
     submitError,
+    photoComplete,
+    uploadingPhoto,
+    photoError,
     resumedStep,
     reloadRevision,
     retryLoad,
     saveProgress,
     savePrivateIdentity,
+    uploadVerificationPhoto,
     submitDraft,
     reloadLatest,
   } = useOnboardingDraft(draft, setDraft);
@@ -128,6 +133,30 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     setDraft((current) => ({ ...current, [section]: { ...current[section], ...value } }));
   };
 
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const handlePhotoSelected = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+      setError(null);
+      try {
+        const { dataUrl } = await fileToVerificationPhotoDataUrl(file);
+        const result = await uploadVerificationPhoto(dataUrl);
+        if (!result.success) {
+          setError(result.message ?? "We couldn’t upload your photo. Retry.");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        } else {
+          haptic("success");
+        }
+      } catch {
+        setError("Choose a clear JPEG, PNG, or WebP photo.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    },
+    [uploadVerificationPhoto],
+  );
+
   const validationMessage = (): string | null => {
     if (currentIndex === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
       return "Confirm all three eligibility requirements to continue.";
@@ -139,6 +168,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         verificationPhotoStatus: "not_available_in_prototype",
       });
       if (!result.success) return "Complete your full name, date of birth, and phone number.";
+      if (canSubmitForReview && !photoComplete) return "Upload your private verification photo to continue.";
     }
     if (currentIndex === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
       return "Complete the required public-profile fields before continuing.";
@@ -436,8 +466,34 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             </div>
             <section className="photo-verification-card">
               <div className="photo-icon"><CameraIcon /></div>
-              <div><span className="field-label-row"><strong>Candidate verification photo</strong><VisibilityPill visibility="admin" /></span><p>Used only to verify identity. It is never shown in discovery and is deleted 30 days after approval.</p></div>
-              <button type="button" disabled>Secure photo upload is being prepared</button>
+              <div>
+                <span className="field-label-row"><strong>Candidate verification photo</strong><VisibilityPill visibility="admin" /></span>
+                <p>Used only to verify identity. It is never shown in discovery and is deleted 30&nbsp;days after approval.</p>
+              </div>
+              {canSubmitForReview ? (
+                <>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="user"
+                    className="photo-file-input"
+                    onChange={(event) => void handlePhotoSelected(event)}
+                    aria-label="Upload your private verification photo"
+                  />
+                  <button
+                    type="button"
+                    className={photoComplete ? "photo-upload-button is-complete" : "photo-upload-button"}
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={uploadingPhoto || controlsBusy}
+                  >
+                    {uploadingPhoto ? "Encrypting & uploading…" : photoComplete ? "✓ Photo uploaded — tap to replace" : "Upload verification photo"}
+                  </button>
+                  {photoError && <p className="field-error" role="alert">{photoError}</p>}
+                </>
+              ) : (
+                <button type="button" disabled>Secure photo upload is being prepared</button>
+              )}
             </section>
           </>
         )}

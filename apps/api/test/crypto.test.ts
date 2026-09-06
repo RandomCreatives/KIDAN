@@ -19,6 +19,17 @@ describe("IdentityCipher", () => {
     expect(() => cipher.decrypt(encrypted, "user-1:legal-name")).toThrow();
   });
 
+  it("encrypts and decrypts binary buffers (verification photo) with context binding", () => {
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const photo = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+    const encrypted = cipher.encryptBuffer(photo, "user-1:verification-photo");
+    expect(encrypted.includes(photo)).toBe(false);
+    const decrypted = cipher.decryptBuffer(encrypted, "user-1:verification-photo");
+    expect(decrypted.equals(photo)).toBe(true);
+    // Wrong context must fail authentication.
+    expect(() => cipher.decryptBuffer(encrypted, "user-2:verification-photo")).toThrow();
+  });
+
   it("creates stable keyed lookup hashes without exposing the input", () => {
     const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
     expect(cipher.lookupHash("123").equals(cipher.lookupHash("123"))).toBe(true);

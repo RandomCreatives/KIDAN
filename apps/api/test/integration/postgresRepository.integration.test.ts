@@ -92,6 +92,7 @@ async function completeSubmission(user: UserRecord, want: "yes" | "no" | "open_t
   await services.onboarding.savePrivateIdentity(user.id, {
     fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: uniquePhone(),
   });
+  await services.onboarding.saveVerificationPhoto(user.id, { dataUrl: `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xd9]).toString("base64")}` });
   await services.onboarding.submit(user.id, { expectedVersion: draft.version, consent: consentAll });
 }
 
@@ -424,5 +425,36 @@ describe("PostgreSQL repository integration", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data.status).toBe("ready");
     await appReady.close();
+  });
+
+  it("stores the verification photo as ciphertext and purges it after the retention window", async () => {
+    const user = await newUser(services);
+    const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x4a, 0x46, 0xff, 0xd9]).toString("base64")}`;
+    await services.onboarding.saveVerificationPhoto(user.id, { dataUrl: dataUrl });
+
+    // Database holds only ciphertext.
+    const raw = await harness.pool.query<{ photo_ciphertext: Buffer }>(
+      "SELECT photo_ciphertext FROM verification_photo WHERE user_id = $1",
+      [user.id],
+    );
+    expect(raw.rowCount).toBe(1);
+    expect(raw.rows[0]!.photo_ciphertext.includes(Buffer.from([0xff, 0xd8, 0xff]))).toBe(false);
+
+    // Admin retrieval round-trips the original bytes.
+    const admin = await services.onboarding.getVerificationPhotoForAdmin(user.id);
+    expect(admin?.mediaType).toBe("image/jpeg");
+    expect(admin?.bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+
+    // Not due before approval.
+    expect(await services.onboarding.purgeExpiredVerificationPhotos(new Date("2030-01-01T00:00:00Z"))).toHaveLength(0);
+
+    // Mark approved 31 days ago, then purge.
+    await harness.pool.query("UPDATE verification_photo SET approved_at = $2 WHERE user_id = $1", [
+      user.id,
+      new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+    ]);
+    const purged = await services.onboarding.purgeExpiredVerificationPhotos(new Date());
+    expect(purged).toContain(user.id);
+    expect(await services.onboarding.hasVerificationPhoto(user.id)).toBe(false);
   });
 });

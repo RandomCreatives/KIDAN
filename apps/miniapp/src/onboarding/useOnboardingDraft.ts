@@ -35,6 +35,11 @@ export interface IdentityResult {
   message?: string;
 }
 
+export interface PhotoResult {
+  success: boolean;
+  message?: string;
+}
+
 export interface OnboardingDraftController {
   hydrated: boolean;
   persisted: boolean;
@@ -47,11 +52,15 @@ export interface OnboardingDraftController {
   reloadError: boolean;
   submitting: boolean;
   submitError: string | null;
+  photoComplete: boolean;
+  uploadingPhoto: boolean;
+  photoError: string | null;
   resumedStep: number | null;
   reloadRevision: number;
   retryLoad: () => Promise<DraftLoadResult>;
   saveProgress: (stepIndex: number, currentDraft: OnboardingFormState) => Promise<SaveResult>;
   savePrivateIdentity: (currentDraft: OnboardingFormState) => Promise<IdentityResult>;
+  uploadVerificationPhoto: (dataUrl: string) => Promise<PhotoResult>;
   submitDraft: (currentDraft: OnboardingFormState) => Promise<SubmitResult>;
   reloadLatest: () => Promise<DraftLoadResult>;
 }
@@ -73,6 +82,9 @@ export function useOnboardingDraft(
   const [reloadError, setReloadError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [photoComplete, setPhotoComplete] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [resumedStep, setResumedStep] = useState<number | null>(isDemo ? 0 : null);
   const [reloadRevision, setReloadRevision] = useState(0);
   const expectedVersionRef = useRef(0);
@@ -128,6 +140,7 @@ export function useOnboardingDraft(
         expectedVersionRef.current = res.version;
         setPersisted(res.version > 0);
         setSubmitted(res.submitted);
+        setPhotoComplete(res.photoComplete === true);
         setResumedStep(nextStep);
         setReloadRevision((revision) => revision + 1);
         hydratedRef.current = true;
@@ -238,6 +251,42 @@ export function useOnboardingDraft(
     [csrfToken, hydrated, invalidate, isDemo, persisted, retry],
   );
 
+  const uploadVerificationPhoto = useCallback(
+    async (dataUrl: string): Promise<PhotoResult> => {
+      if (isDemo || !realSubmissionsEnabled) return { success: true };
+      if (!csrfToken) {
+        return { success: false, message: "Your session is not ready. Reconnect and retry." };
+      }
+      setUploadingPhoto(true);
+      setPhotoError(null);
+      try {
+        await clientRef.current.uploadVerificationPhoto(dataUrl, csrfToken);
+        setPhotoComplete(true);
+        return { success: true };
+      } catch (error: unknown) {
+        let message = "Could not upload your photo. Retry.";
+        if (error instanceof ApiError) {
+          if (error.code === "VERIFICATION_PHOTO_INVALID") {
+            message = "Choose a clear JPEG, PNG, or WebP photo under 5&nbsp;MB.";
+          } else if (error.code === "UNAUTHENTICATED") {
+            message = "Your session expired. Reconnect and retry.";
+            await invalidate();
+          } else if (error.code === "INVALID_CSRF") {
+            message = "Your session changed. Reconnecting before you continue.";
+            await retry();
+          } else if (error.code === "NETWORK") {
+            message = "Network error while uploading. Retry.";
+          }
+        }
+        setPhotoError(message);
+        return { success: false, message };
+      } finally {
+        setUploadingPhoto(false);
+      }
+    },
+    [csrfToken, invalidate, isDemo, realSubmissionsEnabled, retry],
+  );
+
   const savePrivateIdentity = useCallback(
     async (currentDraft: OnboardingFormState): Promise<IdentityResult> => {
       if (isDemo || !realSubmissionsEnabled) return { success: true };
@@ -300,6 +349,9 @@ export function useOnboardingDraft(
       if (!consentCheck.success) {
         return { success: false, message: "Confirm the required statements before submitting." };
       }
+      if (!photoComplete) {
+        return { success: false, message: "Add your private verification photo before submitting." };
+      }
 
       const run = saveChainRef.current.then(async (): Promise<SubmitResult> => {
         setSubmitting(true);
@@ -350,7 +402,7 @@ export function useOnboardingDraft(
       saveChainRef.current = run.catch(() => undefined);
       return tracked;
     },
-    [csrfToken, invalidate, isDemo, realSubmissionsEnabled, retry, submitted],
+    [csrfToken, invalidate, isDemo, photoComplete, realSubmissionsEnabled, retry, submitted],
   );
 
   const reloadLatest = useCallback((): Promise<DraftLoadResult> => {
@@ -375,6 +427,7 @@ export function useOnboardingDraft(
         setReloadError(false);
         setPersisted(res.version > 0);
         setSubmitted(res.submitted);
+        setPhotoComplete(res.photoComplete === true);
         setResumedStep(nextStep);
         setReloadRevision((revision) => revision + 1);
         return { success: true, persisted: res.version > 0, step: nextStep };
@@ -407,11 +460,15 @@ export function useOnboardingDraft(
     reloadError,
     submitting,
     submitError,
+    photoComplete,
+    uploadingPhoto,
+    photoError,
     resumedStep,
     reloadRevision,
     retryLoad: loadDraft,
     saveProgress,
     savePrivateIdentity,
+    uploadVerificationPhoto,
     submitDraft,
     reloadLatest,
   };

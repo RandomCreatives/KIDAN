@@ -17,6 +17,11 @@ export interface BuildAppOptions {
   logger?: boolean;
   onClose?: () => Promise<void>;
   readinessCheck?: () => Promise<void>;
+  // When set, enables the internal scheduled maintenance endpoint
+  // (POST /internal/retention) guarded by a bearer secret. Used for the
+  // 30-day verification-photo purge.
+  retentionPurge?: () => Promise<string[]>;
+  retentionSecret?: string;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
@@ -97,6 +102,22 @@ export async function buildApp(
   await app.register(healthRoutes, {
     ...(options.readinessCheck ? { readinessCheck: options.readinessCheck } : {}),
   });
+
+  // Internal scheduled maintenance: purges expired verification photos.
+  // Authenticated by a bearer secret (Vercel CRON_SECRET); not reachable by
+  // candidate sessions.
+  if (options.retentionPurge && options.retentionSecret) {
+    app.post("/internal/retention", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${options.retentionSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
+      }
+      const purged = await options.retentionPurge!();
+      request.log.info({ purgedCount: purged.length }, "verification photo retention purge");
+      return reply.code(200).send({ data: { purged: purged.length } });
+    });
+  }
 
   const cookieName = options.cookieName ?? "kidan_session";
   if (options.botToken && options.sessionService) {

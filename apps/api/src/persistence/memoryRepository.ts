@@ -1,5 +1,15 @@
 import { randomUUID } from "node:crypto";
-import type { PersistenceRepository, DraftRecord, IdentityUpdate, SessionRecord, SubmissionConsent, SubmissionRecord, UserRecord } from "./types.js";
+import type {
+  PersistenceRepository,
+  DraftRecord,
+  IdentityUpdate,
+  SessionRecord,
+  SubmissionConsent,
+  SubmissionRecord,
+  UserRecord,
+  VerificationPhotoInput,
+  VerificationPhotoRecord,
+} from "./types.js";
 import { SubmissionStateError, VersionConflictError } from "./types.js";
 
 export class MemoryPersistenceRepository implements PersistenceRepository {
@@ -8,6 +18,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly drafts = new Map<string, DraftRecord>();
   private readonly completeIdentities = new Set<string>();
+  private readonly verificationPhotos = new Map<string, VerificationPhotoRecord>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -126,5 +137,46 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     draft.updatedAt = new Date(input.now);
     this.users.get(input.userId)!.status = "profile_pending";
     return { draft: structuredClone(draft), consents: structuredClone(input.consents) };
+  }
+
+  async saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void> {
+    if (!this.users.has(userId)) throw new Error("USER_NOT_FOUND");
+    this.verificationPhotos.set(userId, {
+      userId,
+      photoCiphertext: input.photoCiphertext,
+      mediaType: input.mediaType,
+      uploadedAt: new Date(input.now),
+      approvedAt: null,
+      deletedAt: null,
+    });
+  }
+
+  async hasVerificationPhoto(userId: string): Promise<boolean> {
+    const photo = this.verificationPhotos.get(userId);
+    return Boolean(photo && photo.deletedAt === null);
+  }
+
+  async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
+    const photo = this.verificationPhotos.get(userId);
+    return photo ? structuredClone(photo) : null;
+  }
+
+  async findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]> {
+    const due: string[] = [];
+    for (const [userId, photo] of this.verificationPhotos) {
+      if (photo.deletedAt !== null || photo.approvedAt === null) continue;
+      const deadline = new Date(photo.approvedAt.getTime() + retentionDays * 24 * 60 * 60 * 1000);
+      if (now >= deadline) due.push(userId);
+    }
+    return due;
+  }
+
+  async deleteVerificationPhoto(userId: string, now: Date): Promise<boolean> {
+    const photo = this.verificationPhotos.get(userId);
+    if (!photo || photo.deletedAt !== null) return false;
+    // Wipe the ciphertext in place; the row remains as a tombstone/audit marker.
+    photo.photoCiphertext = Buffer.alloc(0);
+    photo.deletedAt = new Date(now);
+    return true;
   }
 }

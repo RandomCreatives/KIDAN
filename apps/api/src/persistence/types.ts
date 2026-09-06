@@ -42,6 +42,22 @@ export interface SubmissionRecord {
   consents: SubmissionConsent[];
 }
 
+export interface VerificationPhotoInput {
+  photoCiphertext: Buffer;
+  mediaType: string;
+  sha256: Buffer;
+  now: Date;
+}
+
+export interface VerificationPhotoRecord {
+  userId: string;
+  photoCiphertext: Buffer;
+  mediaType: string;
+  uploadedAt: Date;
+  approvedAt: Date | null;
+  deletedAt: Date | null;
+}
+
 export interface PersistenceRepository {
   findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -75,6 +91,12 @@ export interface PersistenceRepository {
     consents: SubmissionConsent[];
     now: Date;
   }): Promise<SubmissionRecord>;
+  saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void>;
+  hasVerificationPhoto(userId: string): Promise<boolean>;
+  getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null>;
+  /** Returns users with approved photos whose 30-day retention window has elapsed. */
+  findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]>;
+  deleteVerificationPhoto(userId: string, now: Date): Promise<boolean>;
 }
 
 export class VersionConflictError extends Error {

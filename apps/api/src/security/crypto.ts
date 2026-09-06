@@ -30,16 +30,29 @@ export class IdentityCipher {
   }
 
   encrypt(value: string, context: string): Buffer {
+    return this.encryptBuffer(Buffer.from(value, "utf8"), context);
+  }
+
+  /**
+   * Encrypts arbitrary bytes (e.g. a verification photo) with the same
+   * AES-256-GCM envelope as string fields. The binary payload never touches
+   * discovery and is decrypted only for private administrator verification.
+   */
+  encryptBuffer(value: Buffer, context: string): Buffer {
     if (!context) throw new Error("Identity encryption context is required");
     const iv = randomBytes(IV_BYTES);
     const cipher = createCipheriv("aes-256-gcm", this.encryptionKey, iv);
     cipher.setAAD(Buffer.from(context, "utf8"));
-    const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+    const ciphertext = Buffer.concat([cipher.update(value), cipher.final()]);
     const tag = cipher.getAuthTag();
     return Buffer.concat([Buffer.from([ENVELOPE_VERSION]), iv, tag, ciphertext]);
   }
 
   decrypt(envelope: Buffer, context: string): string {
+    return this.decryptBuffer(envelope, context).toString("utf8");
+  }
+
+  decryptBuffer(envelope: Buffer, context: string): Buffer {
     if (!context) throw new Error("Identity encryption context is required");
     if (envelope.length < 1 + IV_BYTES + TAG_BYTES || envelope[0] !== ENVELOPE_VERSION) {
       throw new Error("Invalid identity ciphertext envelope");
@@ -50,7 +63,7 @@ export class IdentityCipher {
     const decipher = createDecipheriv("aes-256-gcm", this.encryptionKey, iv);
     decipher.setAAD(Buffer.from(context, "utf8"));
     decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   }
 
   lookupHash(value: string): Buffer {

@@ -19,6 +19,7 @@ const environmentSchema = z.object({
   IDENTITY_ENCRYPTION_KEY: optionalNonEmpty,
   IDENTITY_LOOKUP_KEY: optionalNonEmpty,
   ENABLE_REAL_SUBMISSIONS: z.enum(["true", "false"]).default("false"),
+  RETENTION_CRON_SECRET: optionalNonEmpty,
 }).superRefine((environment, context) => {
   const persistenceKeys = [
     "DATABASE_URL",

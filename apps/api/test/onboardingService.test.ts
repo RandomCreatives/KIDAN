@@ -30,6 +30,13 @@ const completePatch: OnboardingProgressPatch = {
   },
 };
 
+// A minimal valid-base64 JPEG data URL (content bytes are synthetic; only the
+// envelope/round-trip matters for service-level testing).
+function tinyJpegDataUrl(): string {
+  const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]);
+  return `data:image/jpeg;base64,${bytes.toString("base64")}`;
+}
+
 async function fixture(realSubmissionsEnabled = true) {
   const repository = new MemoryPersistenceRepository();
   const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
@@ -136,6 +143,16 @@ describe("OnboardingService", () => {
         discoveryPublication: true, verificationPhotoRetention: true, communityRules: true,
         botNotifications: false,
       },
+    })).rejects.toThrow("VERIFICATION_PHOTO_REQUIRED");
+
+    await service.saveVerificationPhoto(userId, { dataUrl: tinyJpegDataUrl() });
+    await expect(service.submit(userId, {
+      expectedVersion: saved.version,
+      consent: {
+        informationAccurate: true, identityProcessing: true, faithDataProcessing: true,
+        discoveryPublication: true, verificationPhotoRetention: true, communityRules: true,
+        botNotifications: false,
+      },
     })).resolves.toBeUndefined();
 
     const submitted = await service.getDraft(userId);
@@ -144,5 +161,45 @@ describe("OnboardingService", () => {
       ...completePatch,
       expectedVersion: submitted!.version,
     })).rejects.toThrow("DRAFT_ALREADY_SUBMITTED");
+  });
+
+  it("stores the verification photo encrypted and decrypts it only for admin retrieval", async () => {
+    const { repository, service, userId } = await fixture();
+    await service.saveVerificationPhoto(userId, { dataUrl: tinyJpegDataUrl() });
+    expect(await service.hasVerificationPhoto(userId)).toBe(true);
+
+    // Stored bytes must be ciphertext, not the raw JPEG.
+    const stored = await repository.getVerificationPhoto(userId);
+    expect(stored).not.toBeNull();
+    expect(stored!.photoCiphertext.includes(Buffer.from([0xff, 0xd8, 0xff]))).toBe(false);
+
+    // Admin retrieval returns the original bytes.
+    const admin = await service.getVerificationPhotoForAdmin(userId);
+    expect(admin?.mediaType).toBe("image/jpeg");
+    expect(admin?.bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+  });
+
+  it("rejects a malformed or non-image photo upload", async () => {
+    const { service, userId } = await fixture();
+    await expect(service.saveVerificationPhoto(userId, { dataUrl: "data:text/plain;base64,SGk=" }))
+      .rejects.toThrow("VERIFICATION_PHOTO_INVALID");
+    await expect(service.saveVerificationPhoto(userId, { dataUrl: "not-a-data-url" }))
+      .rejects.toThrow("VERIFICATION_PHOTO_INVALID");
+    expect(await service.hasVerificationPhoto(userId)).toBe(false);
+  });
+
+  it("refuses photo upload when real submissions are disabled", async () => {
+    const { service, userId } = await fixture(false);
+    await expect(service.saveVerificationPhoto(userId, { dataUrl: tinyJpegDataUrl() }))
+      .rejects.toThrow("REAL_SUBMISSIONS_DISABLED");
+  });
+
+  it("does not purge unapproved photos regardless of age (retention starts at approval)", async () => {
+    const { repository, service, userId } = await fixture();
+    await service.saveVerificationPhoto(userId, { dataUrl: tinyJpegDataUrl() });
+    // No approval timestamp yet → nothing due even far in the future.
+    expect(await repository.findVerificationPhotosDueForDeletion(new Date("2030-01-01T00:00:00Z"), 30)).toHaveLength(0);
+    expect(await service.purgeExpiredVerificationPhotos(new Date("2030-01-01T00:00:00Z"))).toHaveLength(0);
+    expect(await service.hasVerificationPhoto(userId)).toBe(true);
   });
 });

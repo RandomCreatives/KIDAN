@@ -11,6 +11,7 @@ import {
   onboardingProgressPatchSchema,
   onboardingSubmitRequestSchema,
   onboardingSubmitResponseSchema,
+  verificationPhotoUploadSchema,
   type OnboardingSubmitRequest,
   sessionStatusSchema,
   type SessionStatus,
@@ -112,6 +113,12 @@ export class KidanApiClient {
     csrfToken: string,
   ): Promise<void> {
     await this.request("PUT", "/v1/onboarding/private-identity", identity, csrfToken, 204);
+  }
+
+  async uploadVerificationPhoto(dataUrl: string, csrfToken: string): Promise<void> {
+    const validated = verificationPhotoUploadSchema.safeParse({ dataUrl });
+    if (!validated.success) throw new ApiError("INVALID_REQUEST", 400);
+    await this.request("PUT", "/v1/onboarding/verification-photo", validated.data, csrfToken, 204);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

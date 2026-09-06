@@ -57,6 +57,8 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
         "DRAFT_ALREADY_SUBMITTED",
         "IDENTITY_INCOMPLETE",
         "ADULT_ELIGIBILITY_REQUIRED",
+        "VERIFICATION_PHOTO_REQUIRED",
+        "VERIFICATION_PHOTO_INVALID",
       ]);
       const code = allowedCodes.has(error.message) ? error.message : "INVALID_ONBOARDING_STATE";
       const status = code === "REAL_SUBMISSIONS_DISABLED" ? 503 : 409;
@@ -70,10 +72,12 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     if (!session) return;
     let draft: DraftRecord | null;
     let identityComplete: boolean;
+    let photoComplete: boolean;
     try {
-      [draft, identityComplete] = await Promise.all([
+      [draft, identityComplete, photoComplete] = await Promise.all([
         options.onboardingService.getDraft(session.user.id),
         options.onboardingService.hasCompletePrivateIdentity(session.user.id),
+        options.onboardingService.hasVerificationPhoto(session.user.id),
       ]);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -90,6 +94,7 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
           version: draft.version,
           submitted: Boolean(draft.submittedAt),
           identityComplete,
+          photoComplete,
         }
       : {
           schemaVersion: ONBOARDING_SCHEMA_VERSION,
@@ -98,6 +103,7 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
           version: 0,
           submitted: false,
           identityComplete,
+          photoComplete,
         };
     const validated = draftResponseSchema.safeParse(responseData);
     if (!validated.success) {
@@ -135,6 +141,21 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
       return sendDomainError(error, request, reply);
     }
   });
+
+  app.put(
+    "/v1/onboarding/verification-photo",
+    { config: { bodyLimit: 6 * 1024 * 1024 } },
+    async (request, reply) => {
+      const session = await requireSession(request, reply);
+      if (!session || !(await requireCsrf(request, reply, session))) return;
+      try {
+        await options.onboardingService.saveVerificationPhoto(session.user.id, request.body);
+        return reply.code(204).send();
+      } catch (error) {
+        return sendDomainError(error, request, reply);
+      }
+    },
+  );
 
   app.post("/v1/onboarding/submit", async (request, reply) => {
     const session = await requireSession(request, reply);

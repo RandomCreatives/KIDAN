@@ -161,6 +161,19 @@ export const privateIdentitySaveRequestSchema = z.object({
   phoneNumber: privateIdentityDraftSchema.shape.phoneNumber,
 });
 
+// Private administrator verification photo. Sent as a base64 data URL, stored
+// encrypted (app-layer AES-256-GCM), never projected to discovery, and purged
+// 30 days after approval. Cap is generous for a JPEG data URL but bounded.
+export const verificationPhotoUploadSchema = z.object({
+  dataUrl: z
+    .string()
+    .startsWith("data:image/")
+    .max(5_000_000, "Photo too large")
+    .refine((value) => /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=\s]+$/.test(value), {
+      message: "Photo must be a JPEG, PNG, or WebP data URL",
+    }),
+});
+
 export const onboardingSubmitRequestSchema = z.object({
   expectedVersion: z.number().int().positive(),
   consent: consentDraftSchema,
@@ -177,6 +190,7 @@ export const draftResponseSchema = z.object({
   version: z.number().int().min(0),
   submitted: z.boolean(),
   identityComplete: z.boolean(),
+  photoComplete: z.boolean().optional(),
 });
 
 export const draftSaveResponseSchema = z.object({

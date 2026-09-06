@@ -9,6 +9,8 @@ import type {
   SubmissionConsent,
   SubmissionRecord,
   UserRecord,
+  VerificationPhotoInput,
+  VerificationPhotoRecord,
 } from "./types.js";
 import { SubmissionStateError, VersionConflictError } from "./types.js";
 
@@ -320,5 +322,69 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
 
       return { draft: mapDraft(updatedDraft.rows[0]!), consents: input.consents };
     });
+  }
+
+  async saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO verification_photo (user_id, photo_ciphertext, media_type, sha256, uploaded_at)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (user_id) DO UPDATE SET
+        photo_ciphertext = EXCLUDED.photo_ciphertext,
+        media_type = EXCLUDED.media_type,
+        sha256 = EXCLUDED.sha256,
+        uploaded_at = EXCLUDED.uploaded_at,
+        approved_at = NULL,
+        deleted_at = NULL
+    `, [userId, input.photoCiphertext, input.mediaType, input.sha256, input.now]);
+  }
+
+  async hasVerificationPhoto(userId: string): Promise<boolean> {
+    const result = await this.pool.query<{ present: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM verification_photo WHERE user_id = $1 AND deleted_at IS NULL) AS present",
+      [userId],
+    );
+    return result.rows[0]?.present === true;
+  }
+
+  async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
+    const result = await this.pool.query<{
+      user_id: string;
+      photo_ciphertext: Buffer;
+      media_type: string;
+      uploaded_at: Date;
+      approved_at: Date | null;
+      deleted_at: Date | null;
+    }>(`
+      SELECT user_id, photo_ciphertext, media_type, uploaded_at, approved_at, deleted_at
+      FROM verification_photo WHERE user_id = $1 AND deleted_at IS NULL
+    `, [userId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      photoCiphertext: row.photo_ciphertext,
+      mediaType: row.media_type,
+      uploadedAt: row.uploaded_at,
+      approvedAt: row.approved_at,
+      deletedAt: row.deleted_at,
+    };
+  }
+
+  async findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]> {
+    const result = await this.pool.query<{ user_id: string }>(`
+      SELECT user_id FROM verification_photo
+      WHERE deleted_at IS NULL
+        AND approved_at IS NOT NULL
+        AND approved_at <= ($1::timestamptz - ($2 || ' days')::interval)
+    `, [now.toISOString(), String(retentionDays)]);
+    return result.rows.map((r) => r.user_id);
+  }
+
+  async deleteVerificationPhoto(userId: string, now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      "UPDATE verification_photo SET photo_ciphertext = ''::bytea, deleted_at = $2 WHERE user_id = $1 AND deleted_at IS NULL",
+      [userId, now],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 }

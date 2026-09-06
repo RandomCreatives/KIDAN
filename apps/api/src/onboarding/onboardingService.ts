@@ -1,19 +1,27 @@
+import { createHash } from "node:crypto";
 import {
   consentDraftSchema,
   partialPublicOnboardingPayloadSchema,
   privateIdentitySaveRequestSchema,
   publicOnboardingPayloadSchema,
+  verificationPhotoUploadSchema,
   type OnboardingProgressPatch,
   type OnboardingSubmitRequest,
   type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
-import type { PersistenceRepository, DraftRecord, SubmissionConsent } from "../persistence/types.js";
+import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
 import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
 
 const POLICY_VERSION = "2026-08-12.v1";
-const forbiddenDraftKeys = new Set(["privateIdentity", "fullName", "phoneNumber", "dateOfBirth", "telegramUserId"]);
+const VERIFICATION_PHOTO_RETENTION_DAYS = 30;
+const ALLOWED_PHOTO_MEDIA = new Map<string, string>([
+  ["jpeg", "image/jpeg"],
+  ["png", "image/png"],
+  ["webp", "image/webp"],
+]);
+const forbiddenDraftKeys = new Set(["privateIdentity", "fullName", "phoneNumber", "dateOfBirth", "telegramUserId", "photo", "verificationPhoto"]);
 
 function assertNoIdentityKeys(value: unknown): void {
   if (!value || typeof value !== "object") return;
@@ -48,6 +56,59 @@ export class OnboardingService {
 
   async hasCompletePrivateIdentity(userId: string): Promise<boolean> {
     return this.repository.hasCompletePrivateIdentity(userId);
+  }
+
+  async hasVerificationPhoto(userId: string): Promise<boolean> {
+    return this.repository.hasVerificationPhoto(userId);
+  }
+
+  /**
+   * Stores the candidate's private verification photo. The bytes are
+   * encrypted at the application layer before persistence; only an admin-only
+   * path ever decrypts them. The photo never enters the public draft payload.
+   */
+  async saveVerificationPhoto(userId: string, input: unknown, now = new Date()): Promise<void> {
+    if (!this.realSubmissionsEnabledFlag) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
+    const current = await this.repository.getDraft(userId);
+    if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
+    const parsed = verificationPhotoUploadSchema.safeParse(input);
+    if (!parsed.success) throw new SubmissionStateError("VERIFICATION_PHOTO_INVALID");
+
+    const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=\s]+)$/.exec(parsed.data.dataUrl);
+    if (!match || match[1] === undefined || match[2] === undefined) {
+      throw new SubmissionStateError("VERIFICATION_PHOTO_INVALID");
+    }
+    const mediaType = ALLOWED_PHOTO_MEDIA.get(match[1]);
+    if (!mediaType) throw new SubmissionStateError("VERIFICATION_PHOTO_INVALID");
+
+    const bytes = Buffer.from(match[2].replace(/\s/g, ""), "base64");
+    if (bytes.length === 0) throw new SubmissionStateError("VERIFICATION_PHOTO_INVALID");
+    const ciphertext = this.identityCipher.encryptBuffer(bytes, `${userId}:verification-photo`);
+    const sha256 = createHash("sha256").update(bytes).digest();
+    await this.repository.saveVerificationPhoto(userId, {
+      photoCiphertext: ciphertext,
+      mediaType,
+      sha256,
+      now,
+    });
+  }
+
+  /** Admin-only: decrypt the stored photo bytes for private verification. */
+  async getVerificationPhotoForAdmin(userId: string): Promise<{ mediaType: string; bytes: Buffer } | null> {
+    const record: VerificationPhotoRecord | null = await this.repository.getVerificationPhoto(userId);
+    if (!record) return null;
+    const bytes = this.identityCipher.decryptBuffer(record.photoCiphertext, `${userId}:verification-photo`);
+    return { mediaType: record.mediaType, bytes };
+  }
+
+  /** Retention: wipe photos whose 30-day post-approval window has elapsed. */
+  async purgeExpiredVerificationPhotos(now = new Date()): Promise<string[]> {
+    const due = await this.repository.findVerificationPhotosDueForDeletion(now, VERIFICATION_PHOTO_RETENTION_DAYS);
+    const purged: string[] = [];
+    for (const userId of due) {
+      if (await this.repository.deleteVerificationPhoto(userId, now)) purged.push(userId);
+    }
+    return purged;
   }
 
   async saveProgress(userId: string, progress: OnboardingProgressPatch, now = new Date()): Promise<DraftRecord> {
@@ -102,6 +163,9 @@ export class OnboardingService {
     publicOnboardingPayloadSchema.parse(draft.publicPayload);
     if (!(await this.repository.hasCompletePrivateIdentity(userId))) {
       throw new SubmissionStateError("IDENTITY_INCOMPLETE");
+    }
+    if (!(await this.repository.hasVerificationPhoto(userId))) {
+      throw new SubmissionStateError("VERIFICATION_PHOTO_REQUIRED");
     }
     const consent = consentDraftSchema.parse(request.consent);
     const receipts: SubmissionConsent[] = Object.entries(consent).map(([purpose, granted]) => ({
