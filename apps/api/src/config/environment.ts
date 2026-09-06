@@ -20,6 +20,11 @@ const environmentSchema = z.object({
   IDENTITY_LOOKUP_KEY: optionalNonEmpty,
   ENABLE_REAL_SUBMISSIONS: z.enum(["true", "false"]).default("false"),
   RETENTION_CRON_SECRET: optionalNonEmpty,
+  // B3 admin review console. When set, the separate operator console and its
+  // /v1/admin/* endpoints are enabled. SESSION_SECRET is reused to sign the
+  // stateless admin session cookie (a distinct domain prefix and the separate
+  // cookie name keep it isolated from candidate sessions).
+  ADMIN_CONSOLE_PASSWORD: optionalNonEmpty,
 }).superRefine((environment, context) => {
   const persistenceKeys = [
     "DATABASE_URL",

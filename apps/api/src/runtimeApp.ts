@@ -1,10 +1,12 @@
 import { dirname, join } from "node:path";
 import { buildApp, type BuildAppOptions, type FastifyFactory } from "./appFactory.js";
 import { SessionService } from "./auth/sessionService.js";
+import { AdminSessionService } from "./auth/adminSessionService.js";
 import { parseEnvironment, type RuntimeEnvironment } from "./config/environment.js";
 import { createDatabasePool } from "./database/pool.js";
 import { createSchemaReadinessCheck } from "./database/readiness.js";
 import { OnboardingService } from "./onboarding/onboardingService.js";
+import { AdminService } from "./admin/adminService.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
 
@@ -97,6 +99,17 @@ export async function buildRuntimeApp(
     if (retentionSecret) {
       options.retentionSecret = retentionSecret;
       options.retentionPurge = () => onboardingService.purgeExpiredVerificationPhotos();
+    }
+
+    // B3: operator admin review console. Enabled only when an operator
+    // password is provisioned. The stateless admin session is signed with the
+    // existing SESSION_SECRET but uses its own cookie/domain separation.
+    if (environment.ADMIN_CONSOLE_PASSWORD) {
+      const adminSession = new AdminSessionService(sessionKey, environment.ADMIN_CONSOLE_PASSWORD.trim());
+      const adminService = new AdminService(repository, identityCipher);
+      options.adminSessionService = adminSession;
+      options.adminService = adminService;
+      console.info("[kidan-api] admin review console enabled");
     }
   }
 

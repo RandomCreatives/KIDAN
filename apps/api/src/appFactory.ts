@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import cookie from "@fastify/cookie";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import type { SessionService } from "./auth/sessionService.js";
+import type { AdminSessionService } from "./auth/adminSessionService.js";
 import type { OnboardingService } from "./onboarding/onboardingService.js";
+import type { AdminService } from "./admin/adminService.js";
 import { authRoutes } from "./routes/auth.js";
+import { adminRoutes } from "./routes/admin.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 
@@ -22,6 +25,10 @@ export interface BuildAppOptions {
   // 30-day verification-photo purge.
   retentionPurge?: () => Promise<string[]>;
   retentionSecret?: string;
+  // B3: separate operator admin console. Enabled only when both are supplied;
+  // its routes share the API origin but use a distinct cookie and password.
+  adminSessionService?: AdminSessionService;
+  adminService?: AdminService;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
@@ -153,6 +160,15 @@ export async function buildApp(
     };
     app.get("/v1/onboarding/draft", draftNotReady);
     app.put("/v1/onboarding/draft", draftNotReady);
+  }
+
+  if (options.adminSessionService && options.adminService) {
+    await app.register(adminRoutes, {
+      adminSession: options.adminSessionService,
+      adminService: options.adminService,
+      cookieName: "kidan_admin_session",
+      secureCookies: options.secureCookies ?? false,
+    });
   }
 
   return app;

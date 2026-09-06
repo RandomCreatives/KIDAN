@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type {
+  AdminDecisionInput,
+  AdminQueueRow,
+  AdminReviewAuditRow,
+  AdminSubmissionRow,
   PersistenceRepository,
   DraftRecord,
   IdentityUpdate,
@@ -12,13 +16,23 @@ import type {
 } from "./types.js";
 import { SubmissionStateError, VersionConflictError } from "./types.js";
 
+interface MemoryIdentity {
+  legalNameCiphertext: Buffer;
+  phoneCiphertext: Buffer;
+  phoneLookupHash: Buffer;
+  dateOfBirthCiphertext: Buffer;
+}
+
 export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly users = new Map<string, UserRecord>();
   private readonly telegramUsers = new Map<string, string>();
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly drafts = new Map<string, DraftRecord>();
   private readonly completeIdentities = new Set<string>();
+  private readonly identities = new Map<string, MemoryIdentity>();
   private readonly verificationPhotos = new Map<string, VerificationPhotoRecord>();
+  private readonly reviewStatus = new Map<string, string>();
+  private readonly reviewHistory = new Map<string, AdminReviewAuditRow[]>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -109,9 +123,15 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return structuredClone(next);
   }
 
-  async savePrivateIdentity(userId: string, _identity: IdentityUpdate, _now: Date): Promise<void> {
+  async savePrivateIdentity(userId: string, identity: IdentityUpdate, _now: Date): Promise<void> {
     if (!this.users.has(userId)) throw new Error("USER_NOT_FOUND");
     this.completeIdentities.add(userId);
+    this.identities.set(userId, {
+      legalNameCiphertext: identity.legalNameCiphertext,
+      phoneCiphertext: identity.phoneCiphertext,
+      phoneLookupHash: identity.phoneLookupHash,
+      dateOfBirthCiphertext: identity.dateOfBirthCiphertext,
+    });
     this.users.get(userId)!.status = "identity_pending";
   }
 
@@ -135,6 +155,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     draft.currentStep = "submitted";
     draft.version += 1;
     draft.updatedAt = new Date(input.now);
+    this.reviewStatus.set(input.userId, "pending");
     this.users.get(input.userId)!.status = "profile_pending";
     return { draft: structuredClone(draft), consents: structuredClone(input.consents) };
   }
@@ -178,5 +199,89 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     photo.photoCiphertext = Buffer.alloc(0);
     photo.deletedAt = new Date(now);
     return true;
+  }
+
+  async listPendingSubmissions(): Promise<AdminQueueRow[]> {
+    const rows: AdminQueueRow[] = [];
+    for (const [userId, draft] of this.drafts) {
+      if (!draft.submittedAt) continue;
+      if (this.reviewStatus.get(userId) !== "pending") continue;
+      const user = this.users.get(userId);
+      const identity = this.identities.get(userId);
+      const payload = draft.publicPayload as { publicProfile?: { gender?: string; city?: string } };
+      const photo = this.verificationPhotos.get(userId);
+      rows.push({
+        userId,
+        publicCode: user?.publicCode ?? "KD-UNKNOWN",
+        gender: payload.publicProfile?.gender ?? "female",
+        city: payload.publicProfile?.city ?? "",
+        dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+        submittedAt: new Date(draft.submittedAt),
+        reviewStatus: "pending",
+        hasPhoto: Boolean(photo && photo.deletedAt === null),
+      });
+    }
+    return rows.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+  }
+
+  async findUserIdByPublicCode(publicCode: string): Promise<string | null> {
+    for (const [id, user] of this.users) {
+      if (user.publicCode === publicCode) return id;
+    }
+    return null;
+  }
+
+  async getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null> {
+    const draft = this.drafts.get(userId);
+    const user = this.users.get(userId);
+    const identity = this.identities.get(userId);
+    if (!draft?.submittedAt || !user) return null;
+    const photo = this.verificationPhotos.get(userId);
+    return {
+      userId,
+      publicCode: user.publicCode,
+      status: user.status,
+      submittedAt: new Date(draft.submittedAt),
+      publicPayload: structuredClone(draft.publicPayload),
+      legalNameCiphertext: identity?.legalNameCiphertext ?? null,
+      phoneCiphertext: identity?.phoneCiphertext ?? null,
+      dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? null,
+      hasPhoto: Boolean(photo && photo.deletedAt === null),
+      reviewStatus: this.reviewStatus.get(userId) ?? "pending",
+      history: structuredClone(this.reviewHistory.get(userId) ?? []),
+    };
+  }
+
+  async recordAdminDecision(input: AdminDecisionInput): Promise<void> {
+    const user = this.users.get(input.userId);
+    const draft = this.drafts.get(input.userId);
+    if (!user || !draft) throw new SubmissionStateError("SUBMISSION_NOT_FOUND");
+
+    const audit: AdminReviewAuditRow = {
+      decision: input.decision,
+      reasonCode: input.reasonCode,
+      noteCiphertext: input.noteCiphertext,
+      decidedAt: new Date(input.now),
+    };
+    const history = this.reviewHistory.get(input.userId) ?? [];
+    history.unshift(audit);
+    this.reviewHistory.set(input.userId, history);
+    this.reviewStatus.set(input.userId, input.decision);
+
+    const photo = this.verificationPhotos.get(input.userId);
+    if (input.decision === "approved") {
+      user.status = "active";
+      if (photo && photo.approvedAt === null && photo.deletedAt === null) {
+        photo.approvedAt = new Date(input.now);
+      }
+    } else if (input.decision === "rejected") {
+      user.status = "suspended";
+    } else {
+      // changes_requested: reopen the draft for editing and resubmission.
+      draft.submittedAt = null;
+      draft.currentStep = "public_preview";
+      draft.updatedAt = new Date(input.now);
+      user.status = "identity_pending";
+    }
   }
 }

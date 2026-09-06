@@ -58,6 +58,50 @@ export interface VerificationPhotoRecord {
   deletedAt: Date | null;
 }
 
+/** Public/non-identity data for the admin review queue (decryption happens in the service). */
+export interface AdminQueueRow {
+  userId: string;
+  publicCode: string;
+  gender: string;
+  city: string;
+  dateOfBirthCiphertext: Buffer;
+  submittedAt: Date;
+  reviewStatus: string;
+  hasPhoto: boolean;
+}
+
+/** A single past review decision (note still encrypted in the repository). */
+export interface AdminReviewAuditRow {
+  decision: string;
+  reasonCode: string | null;
+  noteCiphertext: Buffer | null;
+  decidedAt: Date;
+}
+
+/** Everything needed to render the admin detail view (identity still ciphertext). */
+export interface AdminSubmissionRow {
+  userId: string;
+  publicCode: string;
+  status: UserRecord["status"];
+  submittedAt: Date;
+  publicPayload: Record<string, unknown>;
+  legalNameCiphertext: Buffer | null;
+  phoneCiphertext: Buffer | null;
+  dateOfBirthCiphertext: Buffer | null;
+  hasPhoto: boolean;
+  reviewStatus: string;
+  history: AdminReviewAuditRow[];
+}
+
+export interface AdminDecisionInput {
+  userId: string;
+  adminId: string;
+  decision: "approved" | "rejected" | "changes_requested";
+  reasonCode: string | null;
+  noteCiphertext: Buffer | null;
+  now: Date;
+}
+
 export interface PersistenceRepository {
   findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -97,6 +141,23 @@ export interface PersistenceRepository {
   /** Returns users with approved photos whose 30-day retention window has elapsed. */
   findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]>;
   deleteVerificationPhoto(userId: string, now: Date): Promise<boolean>;
+  // --- B3 admin review console ---
+  /** Submitted profiles awaiting review (most recently submitted first). */
+  listPendingSubmissions(): Promise<AdminQueueRow[]>;
+  /** Full submission for the detail view, or null when the user has not submitted. */
+  getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null>;
+  /** Look up a submitted user by their public code (KD-XXXXXX); null if none. */
+  findUserIdByPublicCode(publicCode: string): Promise<string | null>;
+  /**
+   * Records an admin decision: stamps profile_review (latest), appends an
+   * admin_review audit row, and applies the lifecycle side effect:
+   * approved -> discovery_profile.review_status='approved' + verification
+   *   photo approved_at set (starts the 30-day retention clock) + user 'active';
+   * rejected -> discovery_profile.review_status='rejected';
+   * changes_requested -> discovery_profile.review_status='changes_requested'
+   *   + draft reopened (submitted_at cleared) so the candidate can revise.
+   */
+  recordAdminDecision(input: AdminDecisionInput): Promise<void>;
 }
 
 export class VersionConflictError extends Error {

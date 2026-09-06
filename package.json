@@ -22,9 +22,9 @@
     "db:down": "docker compose down",
     "db:migrate": "npm run db:migrate -w @kidan/api",
     "db:test": "npm run test:integration -w @kidan/api",
-    "build": "npm run build -w @kidan/contracts && npm run build -w @kidan/miniapp && npm run build -w @kidan/api && npm run build -w @kidan/bot",
-    "typecheck": "npm run build -w @kidan/contracts && npm run typecheck -w @kidan/contracts && npm run typecheck -w @kidan/miniapp && npm run typecheck -w @kidan/api && npm run typecheck -w @kidan/bot",
-    "test": "npm run build -w @kidan/contracts && npm run test -w @kidan/contracts && npm run test -w @kidan/miniapp && npm run test -w @kidan/api && npm run test -w @kidan/bot",
+    "build": "npm run build -w @kidan/contracts && npm run build -w @kidan/miniapp && npm run build -w @kidan/admin && npm run build -w @kidan/api && npm run build -w @kidan/bot",
+    "typecheck": "npm run build -w @kidan/contracts && npm run typecheck -w @kidan/contracts && npm run typecheck -w @kidan/miniapp && npm run typecheck -w @kidan/admin && npm run typecheck -w @kidan/api && npm run typecheck -w @kidan/bot",
+    "test": "npm run build -w @kidan/contracts && npm run test -w @kidan/contracts && npm run test -w @kidan/miniapp && npm run test -w @kidan/admin && npm run test -w @kidan/api && npm run test -w @kidan/bot",
     "check": "npm run typecheck && npm run test && npm run build"
   }
 }

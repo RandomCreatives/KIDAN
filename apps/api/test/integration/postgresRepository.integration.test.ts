@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { OnboardingProgressPatch } from "@kidan/contracts";
 import { buildApp } from "../../src/appFactory.js";
+import { AdminService, PILOT_ADMIN_ID } from "../../src/admin/adminService.js";
 import { SessionAccessError, SessionService } from "../../src/auth/sessionService.js";
 import { OnboardingService } from "../../src/onboarding/onboardingService.js";
 import { PostgresPersistenceRepository } from "../../src/persistence/postgresRepository.js";
@@ -456,5 +457,117 @@ describe("PostgreSQL repository integration", () => {
     const purged = await services.onboarding.purgeExpiredVerificationPhotos(new Date());
     expect(purged).toContain(user.id);
     expect(await services.onboarding.hasVerificationPhoto(user.id)).toBe(false);
+  });
+
+  describe("admin review console (B3)", () => {
+    function admin(): AdminService {
+      return new AdminService(services.repository, services.cipher);
+    }
+
+    it("queues a submitted candidate and decrypts the full detail + photo", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+
+      const queue = await console_.listQueue();
+      const mine = queue.find((item) => item.publicCode === user.publicCode);
+      expect(mine).toBeDefined();
+      expect(mine!.hasPhoto).toBe(true);
+      expect(mine!.reviewStatus).toBe("pending");
+      // Queue never carries identity.
+      expect(JSON.stringify(mine)).not.toContain("Demo Candidate");
+
+      const detail = await console_.getSubmission(user.publicCode);
+      expect(detail).not.toBeNull();
+      expect(detail!.identity.fullName).toBe("Demo Candidate");
+      expect(detail!.identity.dateOfBirth).toBe("1996-01-01");
+      expect(detail!.reviewStatus).toBe("pending");
+
+      const photo = await console_.getPhoto(user.publicCode);
+      expect(photo?.mediaType).toBe("image/jpeg");
+      expect(photo!.bytes.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    });
+
+    it("approve activates the user, starts the photo clock, and leaves the queue", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+
+      const decision = await console_.decide(user.publicCode, { decision: "approved" }, new Date("2026-09-01T09:00:00Z"));
+      expect(decision).toBe("approved");
+
+      const queue = await console_.listQueue();
+      expect(queue.find((i) => i.publicCode === user.publicCode)).toBeUndefined();
+
+      // User active; profile approved; photo approved_at stamped.
+      const status = await harness.pool.query<{ status: string; review_status: string }>(`
+        SELECT u.status, p.review_status::text AS review_status
+        FROM app_user u JOIN discovery_profile p ON p.user_id = u.id WHERE u.id = $1
+      `, [user.id]);
+      expect(status.rows[0]!.status).toBe("active");
+      expect(status.rows[0]!.review_status).toBe("approved");
+
+      const approvedAt = await harness.pool.query<{ approved_at: Date | null }>(
+        "SELECT approved_at FROM verification_photo WHERE user_id = $1", [user.id]);
+      expect(approvedAt.rows[0]!.approved_at).not.toBeNull();
+
+      // Audit row references the seeded pilot admin.
+      const audit = await harness.pool.query<{ admin_id: string; decision: string }>(
+        "SELECT admin_id, decision::text AS decision FROM admin_review WHERE subject_type='profile' AND subject_id=$1",
+        [user.id]);
+      expect(audit.rows[0]!.admin_id).toBe(PILOT_ADMIN_ID);
+      expect(audit.rows[0]!.decision).toBe("approved");
+    });
+
+    it("rejects without feedback, then rejects with feedback and suspends", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+
+      await expect(console_.decide(user.publicCode, { decision: "rejected" })).rejects.toThrow("FEEDBACK_REQUIRED");
+
+      await console_.decide(user.publicCode, {
+        decision: "rejected", reasonCode: "ineligible", note: "Does not meet pilot eligibility.",
+      });
+      const detail = await console_.getSubmission(user.publicCode);
+      expect(detail!.status).toBe("suspended");
+      expect(detail!.reviewStatus).toBe("rejected");
+      expect(detail!.history[0]!.note).toBe("Does not meet pilot eligibility.");
+
+      // Note is ciphertext at rest.
+      const raw = await harness.pool.query<{ note_ciphertext: Buffer | null }>(
+        "SELECT note_ciphertext FROM admin_review WHERE subject_type='profile' AND subject_id=$1 ORDER BY created_at DESC LIMIT 1",
+        [user.id]);
+      expect(raw.rows[0]!.note_ciphertext).not.toBeNull();
+      expect(raw.rows[0]!.note_ciphertext!.includes(Buffer.from("eligibility"))).toBe(false);
+    });
+
+    it("changes_requested reopens the draft; resubmission returns to queue with history", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+
+      await console_.decide(user.publicCode, { decision: "changes_requested", note: "Please fix your bio." });
+
+      const reopened = await harness.pool.query<{ submitted_at: Date | null; current_step: string }>(
+        "SELECT submitted_at, current_step FROM onboarding_draft WHERE user_id = $1", [user.id]);
+      expect(reopened.rows[0]!.submitted_at).toBeNull();
+      expect(reopened.rows[0]!.current_step).toBe("public_preview");
+      // While reopened, the detail view is not available (draft not submitted).
+      expect(await console_.getSubmission(user.publicCode)).toBeNull();
+
+      // Candidate resubmits.
+      const draft = await services.repository.getDraft(user.id);
+      await services.repository.submitOnboarding({
+        userId: user.id, expectedVersion: draft!.version,
+        consents: [], now: new Date("2026-09-02T09:00:00Z"),
+      });
+      const detail = await console_.getSubmission(user.publicCode);
+      expect(detail).not.toBeNull();
+      expect(detail!.reviewStatus).toBe("pending");
+      expect(detail!.history[0]!.note).toBe("Please fix your bio.");
+      const queue = await console_.listQueue();
+      expect(queue.find((i) => i.publicCode === user.publicCode)).toBeDefined();
+    });
   });
 });
