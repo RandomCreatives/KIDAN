@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { useAuth } from "./useAuth.js";
+import { isDebugMode } from "./debugMode.js";
 
 interface AuthGateProps {
   children: ReactNode;
@@ -49,6 +50,7 @@ function GateScreen({ title, message, action, actionLabel, busy, detail }: {
 
 export function AuthGate({ children }: AuthGateProps) {
   const { status, isDemo, retry, lastError } = useAuth();
+  const detail = isDebugMode() ? lastError : null;
 
   if (isDemo) return <>{children}</>;
 
@@ -72,7 +74,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="Your private session ended. Reconnect to continue."
           action={retry}
           actionLabel="Reconnect"
-          detail={lastError}
+          detail={detail}
         />
       );
     case "unavailable":
@@ -89,7 +91,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="Our service is finishing setup on our side. Your connection is fine — please try again in a few minutes."
           action={retry}
           actionLabel="Retry"
-          detail={lastError}
+          detail={detail}
         />
       );
     case "fatal":
@@ -99,7 +101,7 @@ export function AuthGate({ children }: AuthGateProps) {
           message="We could not reach Kidan. Check your connection and try again."
           action={retry}
           actionLabel="Retry"
-          detail={lastError}
+          detail={detail}
         />
       );
     default:
