@@ -5,6 +5,7 @@ import type {
   AdminReviewAuditRow,
   AdminSubmissionRow,
   CandidateReviewState,
+  DiscoveryCandidateRow,
   PersistenceRepository,
   DraftRecord,
   IdentityUpdate,
@@ -37,6 +38,8 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly reviewStatus = new Map<string, string>();
   private readonly reviewHistory = new Map<string, AdminReviewAuditRow[]>();
   private readonly consentReceipts = new Map<string, SubmissionConsent[]>();
+  /** Discovery decision set: "actorId:targetId" -> decision. */
+  private readonly decisions = new Set<string>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -362,5 +365,73 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
       if (session.user.id === userId) this.sessions.delete(tokenHash);
     }
     return true;
+  }
+
+  async listDiscoveryCandidates(input: {
+    actorUserId: string;
+    limit: number;
+    offset: number;
+  }): Promise<DiscoveryCandidateRow[]> {
+    const actorDraft = this.drafts.get(input.actorUserId);
+    const actorPayload = actorDraft?.publicPayload as
+      | { publicProfile?: { gender?: string } }
+      | undefined;
+    const actorGender = actorPayload?.publicProfile?.gender;
+    // Candidates the actor is looking for are the opposite gender.
+    const wantedGender = actorGender === "male" ? "female" : "male";
+
+    const rows: DiscoveryCandidateRow[] = [];
+    for (const [userId, draft] of this.drafts) {
+      if (userId === input.actorUserId) continue;
+      if (!draft.submittedAt) continue;
+      const user = this.users.get(userId);
+      if (!user || user.status !== "active") continue;
+      const reviewStatus = this.reviewStatus.get(userId);
+      if (reviewStatus !== "approved") continue;
+      if (this.decisions.has(`${input.actorUserId}:${userId}`)) continue;
+      const payload = draft.publicPayload as {
+        publicProfile?: {
+          gender?: string; city?: string; educationLevel?: string;
+          occupationCategory?: string; heightCm?: number | null;
+        };
+        faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+      };
+      const gender = payload.publicProfile?.gender;
+      if (gender !== wantedGender) continue;
+      const identity = this.identities.get(userId);
+      rows.push({
+        userId,
+        publicCode: user.publicCode,
+        gender: gender ?? "female",
+        city: payload.publicProfile?.city ?? "",
+        educationLevel: payload.publicProfile?.educationLevel ?? null,
+        occupationCategory: payload.publicProfile?.occupationCategory ?? null,
+        heightCm: payload.publicProfile?.heightCm ?? null,
+        marriageIntention: payload.faithAndFamily?.marriageIntention ?? null,
+        values: payload.faithAndFamily?.values ?? [],
+        bio: payload.faithAndFamily?.bio ?? null,
+        dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+      });
+    }
+    return rows.slice(input.offset, input.offset + input.limit);
+  }
+
+  async saveDiscoveryDecision(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<boolean> {
+    void input.idempotencyKey;
+    void input.now;
+    const key = `${input.actorUserId}:${input.targetUserId}`;
+    if (this.decisions.has(key)) return false;
+    this.decisions.add(key);
+    return true;
+  }
+
+  async hasDiscoveryDecision(actorUserId: string, targetUserId: string): Promise<boolean> {
+    return this.decisions.has(`${actorUserId}:${targetUserId}`);
   }
 }

@@ -6,6 +6,7 @@ import { buildApp } from "../../src/appFactory.js";
 import { AdminService, PILOT_ADMIN_ID } from "../../src/admin/adminService.js";
 import { SessionAccessError, SessionService } from "../../src/auth/sessionService.js";
 import { OnboardingService } from "../../src/onboarding/onboardingService.js";
+import { DiscoveryService } from "../../src/discovery/discoveryService.js";
 import { PostgresPersistenceRepository } from "../../src/persistence/postgresRepository.js";
 import type { UserRecord } from "../../src/persistence/types.js";
 import { IdentityCipher, SecretHasher } from "../../src/security/crypto.js";
@@ -28,7 +29,10 @@ const consentAll: ConsentAll = {
   botNotifications: false,
 };
 
-function makePatch(wantsChildren: "yes" | "no" | "open_to_discussion" = "yes"): OnboardingProgressPatch {
+function makePatch(
+  wantsChildren: "yes" | "no" | "open_to_discussion" = "yes",
+  gender: "female" | "male" = "female",
+): OnboardingProgressPatch {
   return {
     schemaVersion: "2026-08-12.v1",
     expectedVersion: 0,
@@ -36,7 +40,7 @@ function makePatch(wantsChildren: "yes" | "no" | "open_to_discussion" = "yes"): 
     patch: {
       eligibility: { adultConfirmed: true, eotcConfirmed: true, marriageIntentConfirmed: true },
       publicProfile: {
-        gender: "female", countryCode: "ET", city: "Addis Ababa", educationLevel: "bachelors",
+        gender, countryCode: "ET", city: "Addis Ababa", educationLevel: "bachelors",
         fieldOfStudy: "Public health", employmentStatus: "employed", occupationCategory: "Healthcare",
         maritalStatus: "never_married", hasChildren: false, heightCm: 165,
       },
@@ -88,8 +92,12 @@ async function newUser(servicesToUse: Services): Promise<UserRecord> {
   return session.user;
 }
 
-async function completeSubmission(user: UserRecord, want: "yes" | "no" | "open_to_discussion" = "yes"): Promise<void> {
-  const draft = await services.onboarding.saveProgress(user.id, makePatch(want));
+async function completeSubmission(
+  user: UserRecord,
+  want: "yes" | "no" | "open_to_discussion" = "yes",
+  gender: "female" | "male" = "female",
+): Promise<void> {
+  const draft = await services.onboarding.saveProgress(user.id, makePatch(want, gender));
   await services.onboarding.savePrivateIdentity(user.id, {
     fullName: "Demo Candidate", dateOfBirth: "1996-01-01", phoneNumber: uniquePhone(),
   });
@@ -631,6 +639,75 @@ describe("PostgreSQL repository integration", () => {
       expect(detail!.history[0]!.note).toBe("Please fix your bio.");
       const queue = await console_.listQueue();
       expect(queue.find((i) => i.publicCode === user.publicCode)).toBeDefined();
+    });
+  });
+
+  describe("values-only discovery (Track C)", () => {
+    function discovery(): DiscoveryService {
+      return new DiscoveryService(services.repository, services.cipher, true);
+    }
+    function adminConsole(): AdminService {
+      return new AdminService(services.repository, services.cipher);
+    }
+
+    it("lists only approved opposite-gender candidates and hides decided ones", async () => {
+      const feed = discovery();
+      // Male actor (approved), an approved woman, an approved man, a pending woman.
+      const male = await newUser(services);
+      const console_ = adminConsole();
+      await completeSubmission(male, "yes", "male");
+      await console_.decide(male.publicCode, { decision: "approved" });
+
+      const woman = await newUser(services);
+      await completeSubmission(woman, "yes", "female");
+      await console_.decide(woman.publicCode, { decision: "approved" });
+
+      const otherMan = await newUser(services);
+      await completeSubmission(otherMan, "yes", "male");
+      await console_.decide(otherMan.publicCode, { decision: "approved" });
+
+      const pendingWoman = await newUser(services);
+      await completeSubmission(pendingWoman, "yes", "female");
+      // not approved
+
+      const cards = (await feed.getFeed(male.id)).cards;
+      const codes = cards.map((c) => c.publicCode);
+      expect(codes).toContain(woman.publicCode);
+      expect(codes).not.toContain(otherMan.publicCode);
+      expect(codes).not.toContain(pendingWoman.publicCode);
+      expect(codes).not.toContain(male.publicCode);
+      // Values-only: no photo/identity fields.
+      const womanCard = cards.find((c) => c.publicCode === woman.publicCode)!;
+      expect(womanCard.photoMode).toBe("values_only");
+      expect(JSON.stringify(womanCard)).not.toContain("Demo Candidate");
+
+      // After the actor passes on the woman, she leaves the feed.
+      await feed.recordDecision(male.id, {
+        targetPublicCode: woman.publicCode, decision: "pass", idempotencyKey: crypto.randomUUID(),
+      });
+      const after = (await feed.getFeed(male.id)).cards;
+      expect(after.map((c) => c.publicCode)).not.toContain(woman.publicCode);
+      expect(await services.repository.hasDiscoveryDecision(male.id, woman.id)).toBe(true);
+    });
+
+    it("persists discovery decisions in the discovery_decision table", async () => {
+      const console_ = adminConsole();
+      const actor = await newUser(services);
+      await completeSubmission(actor, "yes", "male");
+      await console_.decide(actor.publicCode, { decision: "approved" });
+      const target = await newUser(services);
+      await completeSubmission(target, "yes", "female");
+      await console_.decide(target.publicCode, { decision: "approved" });
+
+      await discovery().recordDecision(actor.id, {
+        targetPublicCode: target.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const rows = await harness.pool.query<{ decision: string }>(
+        "SELECT decision FROM discovery_decision WHERE actor_user_id = $1 AND target_user_id = $2",
+        [actor.id, target.id],
+      );
+      expect(rows.rowCount).toBe(1);
+      expect(rows.rows[0]!.decision).toBe("interested");
     });
   });
 });

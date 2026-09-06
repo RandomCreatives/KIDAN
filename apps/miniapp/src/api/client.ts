@@ -5,6 +5,10 @@ import {
   type CandidateReviewStatus,
   dataExportResponseSchema,
   type DataExportResponse,
+  discoveryDecisionRequestSchema,
+  discoveryFeedResponseSchema,
+  type DiscoveryFeedResponse,
+  type DiscoveryDecisionRequest,
   draftResponseSchema,
   draftSaveResponseSchema,
   type ApiErrorCode,
@@ -140,6 +144,18 @@ export class KidanApiClient {
   /** Permanently deletes the caller's account and all personal data (B6). */
   async deleteAccount(csrfToken: string): Promise<void> {
     await this.request("POST", "/v1/onboarding/delete-account", { confirm: true }, csrfToken, 200);
+  }
+
+  /** Values-only discovery feed (Track C). Returns [] when submissions are disabled. */
+  async getDiscoveryFeed(): Promise<DiscoveryFeedResponse> {
+    const data = await this.request("GET", "/v1/discovery/feed");
+    return this.parse(discoveryFeedResponseSchema, data);
+  }
+
+  /** Records a pass/interested discovery decision (idempotent per target). */
+  async recordDiscoveryDecision(decision: DiscoveryDecisionRequest, csrfToken: string): Promise<void> {
+    const validated = discoveryDecisionRequestSchema.parse(decision);
+    await this.request("POST", "/v1/discovery/decision", validated, csrfToken);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

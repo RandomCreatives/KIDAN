@@ -194,6 +194,42 @@ export interface PersistenceRepository {
    * Returns false when the user does not exist.
    */
   deleteAccount(userId: string, now: Date): Promise<boolean>;
+  // --- Track C: values-only discovery ---
+  /**
+   * Approved, discovery-eligible candidates the actor has not yet decided on,
+   * excluding themselves and respecting their partner gender preference. Returns
+   * the values-only projection inputs (no identity/photo).
+   */
+  listDiscoveryCandidates(input: {
+    actorUserId: string;
+    limit: number;
+    offset: number;
+  }): Promise<DiscoveryCandidateRow[]>;
+  /** Records a pass/interested decision (idempotent on actor+target). */
+  saveDiscoveryDecision(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<boolean>;
+  /** True when the actor already has a decision for the target. */
+  hasDiscoveryDecision(actorUserId: string, targetUserId: string): Promise<boolean>;
+}
+
+/** Values-only data needed to build a discovery card (no identity/photo). */
+export interface DiscoveryCandidateRow {
+  userId: string;
+  publicCode: string;
+  gender: string;
+  city: string;
+  educationLevel: string | null;
+  occupationCategory: string | null;
+  heightCm: number | null;
+  marriageIntention: string | null;
+  values: string[];
+  bio: string | null;
+  dateOfBirthCiphertext: Buffer;
 }
 
 export class VersionConflictError extends Error {

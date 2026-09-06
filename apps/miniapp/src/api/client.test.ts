@@ -395,6 +395,42 @@ describe("KidanApiClient", () => {
     expect(fetchImpl).toHaveBeenCalledWith("/api/v1/onboarding/export", expect.objectContaining({ method: "GET" }));
   });
 
+  it("fetches the values-only discovery feed", async () => {
+    const feed = {
+      cards: [
+        {
+          id: "KD-2A3B4C", publicCode: "KD-2A3B4C", age: 28, gender: "female", city: "Addis Ababa",
+          occupationCategory: "Healthcare", educationLevel: "bachelors", heightCm: 163,
+          faithTradition: "ethiopian_orthodox_tewahedo", marriageIntention: "teklil",
+          values: ["active_faith", "honesty"], bio: "A values-only card bio.", verified: true,
+          photoMode: "values_only",
+        },
+      ],
+      hasMore: false,
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: feed }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await client.getDiscoveryFeed();
+    expect(result.cards).toHaveLength(1);
+    expect(result.cards[0]!.photoMode).toBe("values_only");
+    expect(fetchImpl).toHaveBeenCalledWith("/api/v1/discovery/feed", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("records a discovery decision with CSRF and an idempotency key", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { recorded: true } }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    await client.recordDiscoveryDecision(
+      { targetPublicCode: "KD-2A3B4C", decision: "interested", idempotencyKey: "123e4567-e89b-12d3-a456-426614174000" },
+      "csrf-token",
+    );
+    const [, init] = fetchImpl.mock.calls[0]!;
+    expect((init as RequestInit).method).toBe("POST");
+    expect((init as RequestInit).headers).toMatchObject({ "x-csrf-token": "csrf-token" });
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.decision).toBe("interested");
+    expect(body.idempotencyKey).toBe("123e4567-e89b-12d3-a456-426614174000");
+  });
+
   it("deletes the account as a CSRF-guarded POST", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { deleted: true } }, 200));
     const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });

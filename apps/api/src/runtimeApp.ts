@@ -7,6 +7,7 @@ import { createDatabasePool } from "./database/pool.js";
 import { createSchemaReadinessCheck } from "./database/readiness.js";
 import { OnboardingService } from "./onboarding/onboardingService.js";
 import { AdminService } from "./admin/adminService.js";
+import { DiscoveryService } from "./discovery/discoveryService.js";
 import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
@@ -91,6 +92,13 @@ export async function buildRuntimeApp(
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
     options.onboardingService = onboardingService;
+    // Track C: values-only discovery (only serves real cards when submissions
+    // are enabled; otherwise returns an empty feed).
+    options.discoveryService = new DiscoveryService(
+      repository,
+      identityCipher,
+      environment.ENABLE_REAL_SUBMISSIONS === "true",
+    );
     // Readiness proves a live connection AND that the schema migrations have
     // been applied (the auth/onboarding tables exist). A provisioned but
     // unmigrated database now reports 503 instead of failing logins with 500.

@@ -7,6 +7,7 @@ import type {
   AdminReviewAuditRow,
   AdminSubmissionRow,
   CandidateReviewState,
+  DiscoveryCandidateRow,
   DraftRecord,
   IdentityUpdate,
   PersistenceRepository,
@@ -653,5 +654,83 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       void now;
       return (result.rowCount ?? 0) > 0;
     });
+  }
+
+  async listDiscoveryCandidates(input: {
+    actorUserId: string;
+    limit: number;
+    offset: number;
+  }): Promise<DiscoveryCandidateRow[]> {
+    const result = await this.pool.query<{
+      user_id: string;
+      public_code: string;
+      gender: string;
+      city_code: string;
+      education_level: string | null;
+      occupation_category: string | null;
+      height_cm: number | null;
+      marriage_intention: string | null;
+      values_json: string[];
+      bio: string | null;
+      date_of_birth_ciphertext: Buffer;
+    }>(`
+      SELECT u.id AS user_id, u.public_code, p.gender, p.city_code,
+             p.education_level, p.occupation_category, p.height_cm,
+             p.marriage_intention, p.values_json, p.bio,
+             v.date_of_birth_ciphertext
+      FROM discovery_profile p
+      JOIN app_user u ON u.id = p.user_id
+      JOIN identity_vault v ON v.user_id = u.id
+      WHERE p.review_status = 'approved'
+        AND u.status = 'active'
+        AND u.id <> $1
+        AND NOT EXISTS (
+          SELECT 1 FROM discovery_decision d
+          WHERE d.actor_user_id = $1 AND d.target_user_id = u.id
+        )
+        -- Respect the actor's partner-gender preference.
+        AND p.gender = (
+          SELECT CASE WHEN ap.gender = 'male' THEN 'female' ELSE 'male' END
+          FROM discovery_profile ap WHERE ap.user_id = $1
+        )
+      ORDER BY p.reviewed_at DESC NULLS LAST, u.created_at DESC
+      LIMIT $2 OFFSET $3
+    `, [input.actorUserId, input.limit, input.offset]);
+    return result.rows.map((row) => ({
+      userId: row.user_id,
+      publicCode: row.public_code,
+      gender: row.gender,
+      city: row.city_code,
+      educationLevel: row.education_level,
+      occupationCategory: row.occupation_category,
+      heightCm: row.height_cm,
+      marriageIntention: row.marriage_intention,
+      values: Array.isArray(row.values_json) ? row.values_json : [],
+      bio: row.bio,
+      dateOfBirthCiphertext: row.date_of_birth_ciphertext,
+    }));
+  }
+
+  async saveDiscoveryDecision(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<boolean> {
+    const result = await this.pool.query(`
+      INSERT INTO discovery_decision (actor_user_id, target_user_id, decision, idempotency_key)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (actor_user_id, target_user_id) DO NOTHING
+    `, [input.actorUserId, input.targetUserId, input.decision, input.idempotencyKey]);
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async hasDiscoveryDecision(actorUserId: string, targetUserId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "SELECT 1 FROM discovery_decision WHERE actor_user_id = $1 AND target_user_id = $2 LIMIT 1",
+      [actorUserId, targetUserId],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 }

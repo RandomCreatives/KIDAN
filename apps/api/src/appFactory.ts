@@ -5,8 +5,10 @@ import type { SessionService } from "./auth/sessionService.js";
 import type { AdminSessionService } from "./auth/adminSessionService.js";
 import type { OnboardingService } from "./onboarding/onboardingService.js";
 import type { AdminService } from "./admin/adminService.js";
+import type { DiscoveryService } from "./discovery/discoveryService.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
+import { discoveryRoutes } from "./routes/discovery.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 
@@ -29,6 +31,8 @@ export interface BuildAppOptions {
   // its routes share the API origin but use a distinct cookie and password.
   adminSessionService?: AdminSessionService;
   adminService?: AdminService;
+  // Track C: values-only discovery feed + decisions.
+  discoveryService?: DiscoveryService;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
@@ -163,6 +167,20 @@ export async function buildApp(
     app.get("/v1/onboarding/review-status", draftNotReady);
     app.get("/v1/onboarding/export", draftNotReady);
     app.post("/v1/onboarding/delete-account", draftNotReady);
+  }
+
+  if (options.sessionService && options.discoveryService) {
+    await app.register(discoveryRoutes, {
+      sessionService: options.sessionService,
+      discoveryService: options.discoveryService,
+      cookieName,
+    });
+  } else {
+    const discoveryNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.get("/v1/discovery/feed", discoveryNotReady);
+    app.post("/v1/discovery/decision", discoveryNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {
