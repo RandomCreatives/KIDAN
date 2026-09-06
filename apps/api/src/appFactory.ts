@@ -160,6 +160,7 @@ export async function buildApp(
     };
     app.get("/v1/onboarding/draft", draftNotReady);
     app.put("/v1/onboarding/draft", draftNotReady);
+    app.get("/v1/onboarding/review-status", draftNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {

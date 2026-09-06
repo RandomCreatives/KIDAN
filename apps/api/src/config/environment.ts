@@ -25,6 +25,8 @@ const environmentSchema = z.object({
   // stateless admin session cookie (a distinct domain prefix and the separate
   // cookie name keep it isolated from candidate sessions).
   ADMIN_CONSOLE_PASSWORD: optionalNonEmpty,
+  // B4: Mini App URL used to deep-link privacy-safe Telegram notifications.
+  MINI_APP_URL: optionalNonEmpty,
 }).superRefine((environment, context) => {
   const persistenceKeys = [
     "DATABASE_URL",

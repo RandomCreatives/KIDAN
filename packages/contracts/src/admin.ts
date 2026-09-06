@@ -87,3 +87,17 @@ export const adminPhotoResponseSchema = z.object({
   mediaType: z.enum(["image/jpeg", "image/png", "image/webp"]),
   dataUrl: z.string().startsWith("data:image/"),
 });
+
+/**
+ * Candidate-facing review status (B4). Returned only for the caller's OWN
+ * session, so it never exposes another candidate. The feedback note is the
+ * administrator's message written for this candidate; no other identity is
+ * included.
+ */
+export const candidateReviewStatusSchema = z.object({
+  status: z.enum(["pending", "approved", "changes_requested", "rejected"]),
+  /** Decrypted feedback note for the candidate; null until an admin writes one. */
+  feedbackNote: z.string().max(2000).nullable(),
+  decidedAt: z.string().datetime().nullable(),
+});
+export type CandidateReviewStatus = z.infer<typeof candidateReviewStatusSchema>;

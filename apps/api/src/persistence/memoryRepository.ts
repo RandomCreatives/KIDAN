@@ -4,6 +4,7 @@ import type {
   AdminQueueRow,
   AdminReviewAuditRow,
   AdminSubmissionRow,
+  CandidateReviewState,
   PersistenceRepository,
   DraftRecord,
   IdentityUpdate,
@@ -30,6 +31,8 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly drafts = new Map<string, DraftRecord>();
   private readonly completeIdentities = new Set<string>();
   private readonly identities = new Map<string, MemoryIdentity>();
+  private readonly telegramCiphertextByUser = new Map<string, Buffer>();
+  private readonly latestNoteCiphertext = new Map<string, Buffer | null>();
   private readonly verificationPhotos = new Map<string, VerificationPhotoRecord>();
   private readonly reviewStatus = new Map<string, string>();
   private readonly reviewHistory = new Map<string, AdminReviewAuditRow[]>();
@@ -39,7 +42,6 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     telegramCiphertext: Buffer;
     createPublicCode: () => string;
   }): Promise<UserRecord> {
-    void input.telegramCiphertext;
     const lookup = input.telegramLookupHash.toString("hex");
     const existingId = this.telegramUsers.get(lookup);
     if (existingId) return structuredClone(this.users.get(existingId)!);
@@ -51,6 +53,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     };
     this.users.set(user.id, user);
     this.telegramUsers.set(lookup, user.id);
+    this.telegramCiphertextByUser.set(user.id, Buffer.from(input.telegramCiphertext));
     return structuredClone(user);
   }
 
@@ -267,6 +270,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     history.unshift(audit);
     this.reviewHistory.set(input.userId, history);
     this.reviewStatus.set(input.userId, input.decision);
+    this.latestNoteCiphertext.set(input.userId, input.noteCiphertext ? Buffer.from(input.noteCiphertext) : null);
 
     const photo = this.verificationPhotos.get(input.userId);
     if (input.decision === "approved") {
@@ -283,5 +287,28 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
       draft.updatedAt = new Date(input.now);
       user.status = "identity_pending";
     }
+  }
+
+  async getCandidateReviewState(userId: string): Promise<CandidateReviewState | null> {
+    const draft = this.drafts.get(userId);
+    if (!draft) return null;
+    const status = this.reviewStatus.get(userId);
+    const hasProfile = status !== undefined;
+    if (!hasProfile) {
+      return { exists: false, reviewStatus: null, submitted: Boolean(draft.submittedAt), noteCiphertext: null, decidedAt: null };
+    }
+    const history = this.reviewHistory.get(userId);
+    const latest = history?.[0];
+    return {
+      exists: true,
+      reviewStatus: status as CandidateReviewState["reviewStatus"],
+      submitted: Boolean(draft.submittedAt),
+      noteCiphertext: this.latestNoteCiphertext.get(userId) ?? null,
+      decidedAt: latest ? new Date(latest.decidedAt) : null,
+    };
+  }
+
+  async getCandidateTelegramIdCiphertext(userId: string): Promise<Buffer | null> {
+    return this.telegramCiphertextByUser.get(userId) ?? null;
   }
 }

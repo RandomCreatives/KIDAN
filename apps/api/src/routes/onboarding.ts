@@ -1,4 +1,5 @@
 import {
+  candidateReviewStatusSchema,
   draftResponseSchema,
   draftSaveResponseSchema,
   INITIAL_ONBOARDING_STEP,
@@ -108,6 +109,20 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     const validated = draftResponseSchema.safeParse(responseData);
     if (!validated.success) {
       request.log.error({ msg: "draft response failed contract validation", error: validated.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: validated.data });
+  });
+
+  // B4: the candidate's OWN review status + private feedback note. Scoped to
+  // the authenticated session; never another candidate.
+  app.get("/v1/onboarding/review-status", async (request, reply) => {
+    const session = await requireSession(request, reply);
+    if (!session) return;
+    const status = await options.onboardingService.getCandidateReviewStatus(session.user.id);
+    const validated = candidateReviewStatusSchema.safeParse(status);
+    if (!validated.success) {
+      request.log.error({ msg: "review status response failed contract validation", error: validated.error.flatten() });
       return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
     }
     return reply.send({ data: validated.data });

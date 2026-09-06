@@ -189,4 +189,26 @@ describe("onboarding routes", () => {
     expect(payload.privateIdentity).toBeUndefined();
     expect(payload.publicProfile).toBeDefined();
   });
+
+  it("serves review-status for the session owner and 401 without a session", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const onboarding = new OnboardingService(repository, cipher, false);
+    app = await buildApp({ sessionService: sessions, onboardingService: onboarding });
+
+    // No session -> 401.
+    const unauthenticated = await app.inject({ method: "GET", url: "/v1/onboarding/review-status" });
+    expect(unauthenticated.statusCode).toBe(401);
+
+    const issued = await sessions.issueForTelegramUser(777n, new Date());
+    const owner = await app.inject({
+      method: "GET",
+      url: "/v1/onboarding/review-status",
+      headers: { cookie: `kidan_session=${issued.sessionToken}` },
+    });
+    expect(owner.statusCode).toBe(200);
+    // A candidate who has never submitted sees a neutral pending default.
+    expect(owner.json().data).toEqual({ status: "pending", feedbackNote: null, decidedAt: null });
+  });
 });

@@ -372,3 +372,33 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   color: inherit;
   opacity: 0.85;
 }
+
+/* B4 candidate review status card (live, shown when real submissions enabled) */
+.review-status-card.review-tone-pending,
+.review-status-card.review-tone-approved,
+.review-status-card.review-tone-action,
+.review-status-card.review-tone-rejected {
+  display: block;
+  margin: 14px 0;
+  padding: 15px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  text-align: left;
+}
+.review-tone-pending { background: #f7f3e8; border-color: rgba(134,102,47,.25); }
+.review-tone-approved { background: #ecf4ee; border-color: rgba(31,75,60,.22); }
+.review-tone-action { background: #fdf3e3; border-color: rgba(154,106,18,.28); }
+.review-tone-rejected { background: #f9eceb; border-color: rgba(164,50,44,.22); }
+.review-status-head { display: flex; align-items: center; gap: 8px; }
+.review-status-head strong { font-size: 13px; }
+.review-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.review-dot-pending { background: #b98a2f; }
+.review-dot-approved { background: #1e7a46; }
+.review-dot-action { background: #c27a1b; }
+.review-dot-rejected { background: #a4322c; }
+.review-status-body { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: #4b5550; }
+.review-note { margin-top: 11px; padding: 11px 12px; border-radius: 12px; background: rgba(255,255,255,.65); border: 1px solid var(--line); }
+.review-note-label { display: block; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #858b87; margin-bottom: 4px; }
+.review-note p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--ink, #1c2b25); }
+.review-hint { margin: 10px 0 0; font-size: 11px; font-weight: 600; color: #c27a1b; }

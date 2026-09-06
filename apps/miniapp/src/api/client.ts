@@ -1,6 +1,8 @@
 import {
   apiErrorCodeSchema,
   apiErrorEnvelopeSchema,
+  candidateReviewStatusSchema,
+  type CandidateReviewStatus,
   draftResponseSchema,
   draftSaveResponseSchema,
   type ApiErrorCode,
@@ -119,6 +121,12 @@ export class KidanApiClient {
     const validated = verificationPhotoUploadSchema.safeParse({ dataUrl });
     if (!validated.success) throw new ApiError("INVALID_REQUEST", 400);
     await this.request("PUT", "/v1/onboarding/verification-photo", validated.data, csrfToken, 204);
+  }
+
+  /** The caller's own profile-review status (B4). Session-scoped. */
+  async getReviewStatus(): Promise<CandidateReviewStatus> {
+    const data = await this.request("GET", "/v1/onboarding/review-status");
+    return this.parse(candidateReviewStatusSchema, data);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

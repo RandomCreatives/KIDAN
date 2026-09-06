@@ -102,6 +102,19 @@ export interface AdminDecisionInput {
   now: Date;
 }
 
+/** The calling candidate's own review state (never another candidate's). */
+export interface CandidateReviewState {
+  /** Whether a discovery profile exists (i.e. the candidate has submitted at least once). */
+  exists: boolean;
+  /** Current discovery_profile review status, or null when no profile exists. */
+  reviewStatus: "pending" | "approved" | "rejected" | "changes_requested" | null;
+  /** Whether the onboarding draft is currently submitted (false while revising). */
+  submitted: boolean;
+  /** Latest admin feedback note, still encrypted (decrypted by the service). */
+  noteCiphertext: Buffer | null;
+  decidedAt: Date | null;
+}
+
 export interface PersistenceRepository {
   findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -158,6 +171,10 @@ export interface PersistenceRepository {
    *   + draft reopened (submitted_at cleared) so the candidate can revise.
    */
   recordAdminDecision(input: AdminDecisionInput): Promise<void>;
+  /** The calling candidate's own review state (own session only). */
+  getCandidateReviewState(userId: string): Promise<CandidateReviewState | null>;
+  /** Encrypted Telegram id ciphertext for notification delivery; service decrypts. */
+  getCandidateTelegramIdCiphertext(userId: string): Promise<Buffer | null>;
 }
 
 export class VersionConflictError extends Error {

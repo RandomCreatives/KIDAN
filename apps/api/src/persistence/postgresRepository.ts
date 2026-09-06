@@ -6,6 +6,7 @@ import type {
   AdminQueueRow,
   AdminReviewAuditRow,
   AdminSubmissionRow,
+  CandidateReviewState,
   DraftRecord,
   IdentityUpdate,
   PersistenceRepository,
@@ -549,5 +550,46 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         );
       }
     });
+  }
+
+  async getCandidateReviewState(userId: string): Promise<CandidateReviewState | null> {
+    const result = await this.pool.query<{
+      has_profile: boolean;
+      review_status: string | null;
+      submitted: boolean;
+      note_ciphertext: Buffer | null;
+      decided_at: Date | null;
+    }>(`
+      SELECT
+        (p.user_id IS NOT NULL) AS has_profile,
+        p.review_status::text AS review_status,
+        (d.submitted_at IS NOT NULL) AS submitted,
+        pr.note_ciphertext,
+        pr.decided_at
+      FROM onboarding_draft d
+      LEFT JOIN discovery_profile p ON p.user_id = d.user_id
+      LEFT JOIN profile_review pr ON pr.user_id = d.user_id
+      WHERE d.user_id = $1
+    `, [userId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    if (!row.has_profile) {
+      return { exists: false, reviewStatus: null, submitted: row.submitted, noteCiphertext: null, decidedAt: null };
+    }
+    return {
+      exists: true,
+      reviewStatus: (row.review_status as CandidateReviewState["reviewStatus"]) ?? "pending",
+      submitted: row.submitted,
+      noteCiphertext: row.note_ciphertext ?? null,
+      decidedAt: row.decided_at ?? null,
+    };
+  }
+
+  async getCandidateTelegramIdCiphertext(userId: string): Promise<Buffer | null> {
+    const result = await this.pool.query<{ telegram_id_ciphertext: Buffer }>(
+      "SELECT telegram_id_ciphertext FROM identity_vault WHERE user_id = $1",
+      [userId],
+    );
+    return result.rows[0]?.telegram_id_ciphertext ?? null;
   }
 }

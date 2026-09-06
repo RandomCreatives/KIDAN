@@ -542,6 +542,30 @@ describe("PostgreSQL repository integration", () => {
       expect(raw.rows[0]!.note_ciphertext!.includes(Buffer.from("eligibility"))).toBe(false);
     });
 
+    it("exposes the candidate's own review status (B4) and Telegram id for notifications", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+
+      // Before a decision: pending, no note.
+      const before = await services.onboarding.getCandidateReviewStatus(user.id);
+      expect(before.status).toBe("pending");
+      expect(before.feedbackNote).toBeNull();
+
+      // Request changes; the candidate sees the note.
+      await console_.decide(user.publicCode, { decision: "changes_requested", note: "Please expand your bio." });
+      const waiting = await services.onboarding.getCandidateReviewStatus(user.id);
+      expect(waiting.status).toBe("changes_requested");
+      expect(waiting.feedbackNote).toBe("Please expand your bio.");
+
+      // The Telegram id decrypts back to the candidate (for the safe notification).
+      const ciphertext = await services.repository.getCandidateTelegramIdCiphertext(user.id);
+      expect(ciphertext).not.toBeNull();
+      // Identity cipher uses context "telegram-id".
+      const telegramId = services.cipher.decrypt(ciphertext!, "telegram-id");
+      expect(/^\d+$/.test(telegramId)).toBe(true);
+    });
+
     it("changes_requested reopens the draft; resubmission returns to queue with history", async () => {
       const user = await newUser(services);
       await completeSubmission(user);

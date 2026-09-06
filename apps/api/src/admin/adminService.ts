@@ -7,6 +7,8 @@ import type {
 import { publicOnboardingPayloadSchema } from "@kidan/contracts";
 import type { PersistenceRepository } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
+import type { CandidateNotificationKind, CandidateNotifier } from "../notifications/candidateNotifier.js";
+import { NoopCandidateNotifier } from "../notifications/telegramNotifier.js";
 
 /** Fixed pilot super-admin id (seeded in migration 0005). */
 export const PILOT_ADMIN_ID = "00000000-0000-4000-8000-0000000000a0";
@@ -24,11 +26,16 @@ export class AdminDecisionError extends Error {
  * route layer. Nothing here is ever exposed to candidate sessions or discovery.
  */
 export class AdminService {
+  private readonly notifier: CandidateNotifier;
+
   constructor(
     private readonly repository: PersistenceRepository,
     private readonly identityCipher: IdentityCipher,
+    notifier?: CandidateNotifier,
     private readonly adminId: string = PILOT_ADMIN_ID,
-  ) {}
+  ) {
+    this.notifier = notifier ?? new NoopCandidateNotifier();
+  }
 
   async listQueue(now = new Date()): Promise<AdminQueueItem[]> {
     const rows = await this.repository.listPendingSubmissions();
@@ -136,7 +143,29 @@ export class AdminService {
       noteCiphertext,
       now,
     });
+
+    // Privacy-safe Telegram notification (never blocks the decision).
+    await this.notifyCandidate(userId, request.decision);
+
     return request.decision;
+  }
+
+  private async notifyCandidate(userId: string, decision: AdminReviewDecision): Promise<void> {
+    const kind: CandidateNotificationKind =
+      decision === "approved"
+        ? "profile_approved"
+        : decision === "rejected"
+          ? "profile_rejected"
+          : "profile_changes_requested";
+    const ciphertext = await this.repository.getCandidateTelegramIdCiphertext(userId);
+    if (!ciphertext) return;
+    let telegramId: bigint;
+    try {
+      telegramId = BigInt(this.identityCipher.decrypt(ciphertext, "telegram-id"));
+    } catch {
+      return;
+    }
+    await this.notifier.notifyReviewDecision(telegramId, kind);
   }
 
   private decryptDateOfBirth(userId: string, ciphertext: Buffer): string {

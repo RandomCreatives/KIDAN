@@ -7,6 +7,7 @@ import { createDatabasePool } from "./database/pool.js";
 import { createSchemaReadinessCheck } from "./database/readiness.js";
 import { OnboardingService } from "./onboarding/onboardingService.js";
 import { AdminService } from "./admin/adminService.js";
+import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
 
@@ -106,7 +107,12 @@ export async function buildRuntimeApp(
     // existing SESSION_SECRET but uses its own cookie/domain separation.
     if (environment.ADMIN_CONSOLE_PASSWORD) {
       const adminSession = new AdminSessionService(sessionKey, environment.ADMIN_CONSOLE_PASSWORD.trim());
-      const adminService = new AdminService(repository, identityCipher);
+      // B4: privacy-safe Telegram notifications when the bot token and Mini
+      // App URL are configured; otherwise decisions succeed silently.
+      const notifier = environment.MINI_APP_URL && environment.TELEGRAM_BOT_TOKEN
+        ? new TelegramCandidateNotifier(environment.TELEGRAM_BOT_TOKEN.trim(), environment.MINI_APP_URL)
+        : new NoopCandidateNotifier();
+      const adminService = new AdminService(repository, identityCipher, notifier);
       options.adminSessionService = adminSession;
       options.adminService = adminService;
       console.info("[kidan-api] admin review console enabled");

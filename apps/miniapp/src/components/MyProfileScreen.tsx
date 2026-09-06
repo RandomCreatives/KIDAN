@@ -1,5 +1,7 @@
 import { Brand } from "./Brand";
 import { ChevronRightIcon, LockIcon, PauseIcon, ShieldCheckIcon, UserIcon } from "./Icons";
+import { ReviewStatusCard } from "./ReviewStatusCard.js";
+import { useAuth } from "../auth/useAuth.js";
 
 const settings = [
   { label: "Discovery profile", detail: "Age, city, faith & values", icon: <UserIcon size={19} /> },
@@ -9,6 +11,7 @@ const settings = [
 ];
 
 export function MyProfileScreen({ onPreviewOnboarding }: { onPreviewOnboarding: () => void }) {
+  const { realSubmissionsEnabled } = useAuth();
   return (
     <main className="screen standard-screen">
       <header className="topbar"><Brand /><span className="header-label">Your profile</span></header>
@@ -18,6 +21,8 @@ export function MyProfileScreen({ onPreviewOnboarding }: { onPreviewOnboarding: 
         <div><span className="section-kicker">Anonymous in discovery</span><h1>KD-6V8T3R</h1><p>Your private reference code</p></div>
         <span className="active-pill">Active</span>
       </section>
+
+      <ReviewStatusCard enabled={realSubmissionsEnabled} />
 
       <section className="trust-banner profile-trust"><ShieldCheckIcon /><div><strong>Identity verified privately</strong><span>Your legal identity is never part of your discovery card.</span></div></section>
 

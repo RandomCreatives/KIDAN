@@ -10,6 +10,7 @@ import {
   type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
+import type { CandidateReviewStatus } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
 import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
@@ -183,5 +184,39 @@ export class OnboardingService {
 
   parseCompletePayload(draft: DraftRecord): PublicOnboardingPayload {
     return publicOnboardingPayloadSchema.parse(draft.publicPayload);
+  }
+
+  /**
+   * The calling candidate's OWN review status (B4). Scoped to their session,
+   * so it can never expose another candidate. Derives the visible state from the
+   * discovery-profile review status, draft submission flag, and the latest
+   * encrypted feedback note.
+   */
+  async getCandidateReviewStatus(userId: string): Promise<CandidateReviewStatus> {
+    const state = await this.repository.getCandidateReviewState(userId);
+    if (!state || !state.exists || state.reviewStatus === null) {
+      return { status: "pending", feedbackNote: null, decidedAt: null };
+    }
+
+    let status: CandidateReviewStatus["status"] = state.reviewStatus;
+    // A "changes_requested" profile whose draft has been resubmitted is back in
+    // the pending queue; the candidate sees "pending" with their prior note.
+    if (state.reviewStatus === "changes_requested" && state.submitted) {
+      status = "pending";
+    }
+
+    // Only surface the feedback note when it applies to the current state; the
+    // candidate must not see a stale note after approval.
+    const showNote = status === "changes_requested" || status === "rejected";
+    let feedbackNote: string | null = null;
+    if (showNote && state.noteCiphertext) {
+      feedbackNote = this.identityCipher.decrypt(state.noteCiphertext, `${userId}:review-note`);
+    }
+
+    return {
+      status,
+      feedbackNote,
+      decidedAt: state.decidedAt ? new Date(state.decidedAt).toISOString() : null,
+    };
   }
 }
