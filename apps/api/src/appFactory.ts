@@ -106,6 +106,9 @@ export async function buildApp(
       cookieName,
       secureCookies: options.secureCookies ?? false,
       exposeDiagnostics: options.exposeAuthDiagnostics ?? false,
+      ...(options.onboardingService
+        ? { realSubmissionsEnabled: options.onboardingService.isRealSubmissionsEnabled() }
+        : {}),
     });
   } else {
     // Persistence is not configured (or not ready). Answer the auth endpoints

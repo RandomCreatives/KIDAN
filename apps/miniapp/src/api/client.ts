@@ -9,6 +9,9 @@ import {
   type DraftSaveResponse,
   type OnboardingProgressPatch,
   onboardingProgressPatchSchema,
+  onboardingSubmitRequestSchema,
+  onboardingSubmitResponseSchema,
+  type OnboardingSubmitRequest,
   sessionStatusSchema,
   type SessionStatus,
   telegramAuthResponseSchema,
@@ -95,6 +98,20 @@ export class KidanApiClient {
     if (!validated.success) throw new ApiError("INVALID_REQUEST", 400);
     const data = await this.request("PUT", "/v1/onboarding/draft", validated.data, csrfToken);
     return this.parse(draftSaveResponseSchema, data);
+  }
+
+  async submitDraft(submission: OnboardingSubmitRequest, csrfToken: string): Promise<{ status: "profile_pending" }> {
+    const validated = onboardingSubmitRequestSchema.safeParse(submission);
+    if (!validated.success) throw new ApiError("INVALID_REQUEST", 400);
+    const data = await this.request("POST", "/v1/onboarding/submit", validated.data, csrfToken, 202);
+    return this.parse(onboardingSubmitResponseSchema, data);
+  }
+
+  async savePrivateIdentity(
+    identity: { fullName: string; dateOfBirth: string; phoneNumber: string },
+    csrfToken: string,
+  ): Promise<void> {
+    await this.request("PUT", "/v1/onboarding/private-identity", identity, csrfToken, 204);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

@@ -67,6 +67,11 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   const actionLockRef = useRef(false);
   const initialHydrationRef = useRef(true);
 
+  const { realSubmissionsEnabled } = useAuth();
+  // Real submission is available only when the server enables it AND the real
+  // (non-demo) Telegram session is active.
+  const canSubmitForReview = !isDemo && realSubmissionsEnabled;
+
   const {
     hydrated,
     persisted,
@@ -77,16 +82,23 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     conflict,
     reloading,
     reloadError,
+    submitting,
+    submitError,
     resumedStep,
     reloadRevision,
     retryLoad,
     saveProgress,
+    savePrivateIdentity,
+    submitDraft,
     reloadLatest,
   } = useOnboardingDraft(draft, setDraft);
 
+  // In real mode, include the private-identity (1) and consent/submission (6)
+  // steps only when the deployment accepts real submissions; otherwise the
+  // pilot-disabled preview stays on the public-only steps.
   const activeIndices = useMemo(
-    () => (isDemo ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5]),
-    [isDemo],
+    () => (isDemo || canSubmitForReview ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5]),
+    [isDemo, canSubmitForReview],
   );
   const currentIndex = activeIndices[step] ?? 0;
 
@@ -98,7 +110,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
   }, [hydrated, resumedStep]);
 
   const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
-  const controlsBusy = actionBusy || saving || reloading;
+  const controlsBusy = actionBusy || saving || reloading || submitting;
 
   const beginAction = useCallback((): boolean => {
     if (actionLockRef.current) return false;
@@ -164,13 +176,38 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       }
       setError(null);
       haptic("decision");
+      // Private identity (name/dob/phone) is persisted through its own
+      // admin-only endpoint only when real submissions are enabled; it never
+      // enters the public draft payload.
+      if (canSubmitForReview && currentIndex === 1) {
+        const identity = await savePrivateIdentity(draft);
+        if (!identity.success) {
+          setError(identity.message ?? "We couldn’t save your private details. Please retry.");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+      }
       const result = await saveProgress(currentIndex, draft);
       if (!result.success) {
         setError(result.message ?? "We couldn’t save your progress. Please retry.");
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
-      if (step === activeIndices.length - 1) {
+      const onFinalStep = step === activeIndices.length - 1;
+      if (onFinalStep && canSubmitForReview) {
+        // Persist the consent step too, then perform the real submission.
+        const submission = await submitDraft(draft);
+        if (!submission.success) {
+          setError(submission.message ?? "We couldn’t submit your profile. Please retry.");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        setSubmittedPersisted(true);
+        setSubmitted(true);
+        haptic("success");
+        return;
+      }
+      if (onFinalStep) {
         setSubmittedPersisted(result.persisted);
         setSubmitted(true);
         haptic("success");
@@ -282,20 +319,36 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
     return (
       <main className="onboarding-shell success-shell">
         <div className="success-mark"><CheckIcon size={34} /></div>
-        <span className="section-kicker">{isDemo ? "Prototype complete" : "Draft saved"}</span>
-        <h1>{isDemo ? "Your profile would now enter private review." : "Your public draft is saved."}</h1>
+        <span className="section-kicker">
+          {isDemo ? "Prototype complete" : canSubmitForReview ? "Submitted" : "Draft saved"}
+        </span>
+        <h1>
+          {isDemo
+            ? "Your profile would now enter private review."
+            : canSubmitForReview
+              ? "Your profile is in for private review."
+              : "Your public draft is saved."}
+        </h1>
         <p>
           {isDemo
             ? "No information was uploaded or saved. This prototype used in-memory draft data only."
-            : "In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled."}
+            : canSubmitForReview
+              ? "An administrator will privately verify your identity and review your public profile. You will be notified here. Your name, phone, photo, and contact details stay hidden throughout discovery."
+              : "In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled."}
         </p>
         <div className="review-status-card">
           <span><ShieldCheckIcon /></span>
           <div>
-            <strong>{isDemo ? "Profile review" : "Preview only"}</strong>
-            <small>{isDemo ? "Pending administrator verification" : "Submission not enabled in this preview"}</small>
+            <strong>{isDemo ? "Profile review" : canSubmitForReview ? "Private review" : "Preview only"}</strong>
+            <small>
+              {isDemo
+                ? "Pending administrator verification"
+                : canSubmitForReview
+                  ? "Pending administrator verification"
+                  : "Submission not enabled in this preview"}
+            </small>
           </div>
-          <i>{isDemo ? "Demo" : "Preview"}</i>
+          <i>{isDemo ? "Demo" : canSubmitForReview ? "Review" : "Preview"}</i>
         </div>
         <div className="success-promise">
           <LockIcon size={18} />
@@ -334,8 +387,11 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           <button type="button" className="sample-link" onClick={() => void handleReload()} disabled={controlsBusy}>Reload latest</button>
         </div>
       )}
-      {!isDemo && (
+      {!isDemo && !canSubmitForReview && (
         <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
+      )}
+      {!isDemo && canSubmitForReview && (
+        <div className="preview-rule"><LockIcon size={17} /><p>Your private details are used only for administrator verification and never appear in discovery.</p></div>
       )}
 
       <fieldset className="onboarding-content" disabled={controlsBusy || conflict || reloadError} aria-busy={controlsBusy ? "true" : undefined}>
@@ -381,7 +437,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             <section className="photo-verification-card">
               <div className="photo-icon"><CameraIcon /></div>
               <div><span className="field-label-row"><strong>Candidate verification photo</strong><VisibilityPill visibility="admin" /></span><p>Used only to verify identity. It is never shown in discovery and is deleted 30 days after approval.</p></div>
-              <button type="button" disabled>Secure upload added with storage</button>
+              <button type="button" disabled>Secure photo upload is being prepared</button>
             </section>
           </>
         )}
@@ -442,7 +498,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
         {currentIndex === 5 && (
           <>
-            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description="Review the discovery projection. Submission for administrator approval is not enabled in this preview." />
+            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description={canSubmitForReview ? "Review the discovery projection before you submit. Only this values-only view may ever appear in discovery." : "Review the discovery projection. Submission for administrator approval is not enabled in this preview."} />
             <PublicPreview draft={draft} mode={mode} />
             <div className="preview-rule"><LockIcon size={17} /><p>The private verification photo cannot later become a discovery photo without a separate upload and a new consent.</p></div>
           </>
@@ -462,7 +518,11 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             <section className="optional-consent">
               <ToggleCard checked={draft.consent.botNotifications} onChange={(botNotifications) => patch("consent", { botNotifications })} title="Generic bot notifications" description="Optional. Bot messages contain no names, profiles, or contact information." icon={<BellIcon size={19} />} />
             </section>
-            <div className="prototype-submit-note"><SparkIcon size={17} /><p>Prototype mode: submitting will not upload, persist, or transmit any information.</p></div>
+            {canSubmitForReview ? (
+              <div className="prototype-submit-note"><ShieldCheckIcon size={17} /><p>Submitting sends your public profile and consent for private administrator review. Your name, phone, photo, and contact details stay hidden and are never shown in discovery.</p></div>
+            ) : (
+              <div className="prototype-submit-note"><SparkIcon size={17} /><p>Prototype mode: submitting will not upload, persist, or transmit any information.</p></div>
+            )}
           </>
         )}
       </fieldset>
@@ -474,7 +534,9 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           <button className="back-button" type="button" onClick={() => void requestExit(false)} disabled={controlsBusy || conflict || reloadError}>{isDemo ? "Explore demo" : "Exit"}</button>
         )}
         <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={controlsBusy || conflict || reloadError}>
-          {currentIndex === 6 || (!isDemo && step === activeIndices.length - 1) ? (isDemo ? "Submit for review" : "Save draft") : "Continue"}<span>→</span>
+          {step === activeIndices.length - 1
+            ? (isDemo ? "Submit for review" : canSubmitForReview ? (submitting ? "Submitting…" : "Submit for review") : "Save draft")
+            : "Continue"}<span>→</span>
         </button>
       </footer>
     </main>

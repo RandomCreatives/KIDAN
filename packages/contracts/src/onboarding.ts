@@ -166,6 +166,10 @@ export const onboardingSubmitRequestSchema = z.object({
   consent: consentDraftSchema,
 });
 
+export const onboardingSubmitResponseSchema = z.object({
+  status: z.literal("profile_pending"),
+});
+
 export const draftResponseSchema = z.object({
   schemaVersion: z.literal(ONBOARDING_SCHEMA_VERSION),
   currentStep: onboardingStepSchema,

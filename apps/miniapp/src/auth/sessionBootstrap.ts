@@ -11,7 +11,7 @@ export interface BootstrapDeps {
 }
 
 export type BootstrapResult =
-  | { kind: "authenticated"; csrfToken: string; profileStatus: SessionStatus["profileStatus"] }
+  | { kind: "authenticated"; csrfToken: string; profileStatus: SessionStatus["profileStatus"]; realSubmissionsEnabled: boolean }
   | { kind: "unauthenticated" }
   | { kind: "unavailable" }
   | { kind: "error"; status: AuthStatus; detail: string };
@@ -40,7 +40,12 @@ export function describeAuthError(error: unknown): { status: AuthStatus; detail:
 export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResult> {
   try {
     const session = await deps.getSession();
-    return { kind: "authenticated", csrfToken: session.csrfToken, profileStatus: session.profileStatus };
+    return {
+      kind: "authenticated",
+      csrfToken: session.csrfToken,
+      profileStatus: session.profileStatus,
+      realSubmissionsEnabled: session.realSubmissionsEnabled === true,
+    };
   } catch (error) {
     if (error instanceof ApiError && error.code === "UNAUTHENTICATED") {
       const initData = deps.getInitData();
@@ -48,7 +53,12 @@ export async function resolveSession(deps: BootstrapDeps): Promise<BootstrapResu
       deps.onAuthenticating?.();
       try {
         const issued = await deps.authenticateWithTelegram(initData);
-        return { kind: "authenticated", csrfToken: issued.csrfToken, profileStatus: issued.profileStatus };
+        return {
+          kind: "authenticated",
+          csrfToken: issued.csrfToken,
+          profileStatus: issued.profileStatus,
+          realSubmissionsEnabled: issued.realSubmissionsEnabled === true,
+        };
       } catch (authError) {
         if (authError instanceof ApiError && authError.code === "ACCOUNT_UNAVAILABLE") {
           return { kind: "unavailable" };

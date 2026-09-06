@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp, type BuildAppOptions } from "../src/appFactory.js";
 import { SessionService } from "../src/auth/sessionService.js";
+import { OnboardingService } from "../src/onboarding/onboardingService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
 import { IdentityCipher, SecretHasher } from "../src/security/crypto.js";
 
@@ -108,6 +109,38 @@ describe("authentication routes", () => {
     expect(error.configuredBotId).toBe("123456");
     expect(error).toHaveProperty("tokenProbe");
     expect(response.body).not.toContain("ROUTE_TEST_TOKEN");
+  });
+
+  it("surfaces realSubmissionsEnabled in session responses from the onboarding service", async () => {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessions = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const onboarding = new OnboardingService(repository, cipher, true);
+    app = await buildApp({ botToken, sessionService: sessions, onboardingService: onboarding });
+
+    const auth = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("900719925474010") },
+    });
+    expect(auth.statusCode).toBe(200);
+    expect(auth.json().data.realSubmissionsEnabled).toBe(true);
+    const cookie = auth.headers["set-cookie"];
+
+    const session = await app.inject({ method: "GET", url: "/v1/session", headers: { cookie } });
+    expect(session.statusCode).toBe(200);
+    expect(session.json().data.realSubmissionsEnabled).toBe(true);
+  });
+
+  it("omits realSubmissionsEnabled (falsy) when submissions are disabled", async () => {
+    app = await buildTestApp();
+    const auth = await app.inject({
+      method: "POST",
+      url: "/v1/auth/telegram",
+      payload: { initData: signedInitData("900719925474011") },
+    });
+    expect(auth.statusCode).toBe(200);
+    expect(auth.json().data).not.toHaveProperty("realSubmissionsEnabled");
   });
 
   it("restores a session with a stable CSRF token that verifies", async () => {

@@ -327,4 +327,53 @@ describe("KidanApiClient", () => {
     const error = await client.getSession().catch((caught: unknown) => caught);
     expect((error as ApiError).code).toBe("INVALID_RESPONSE");
   });
+
+  const validConsent = {
+    informationAccurate: true,
+    identityProcessing: true,
+    faithDataProcessing: true,
+    discoveryPublication: true,
+    verificationPhotoRetention: true,
+    communityRules: true,
+    botNotifications: false,
+  } as const;
+
+  it("submits the draft and returns profile_pending on 202", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { status: "profile_pending" } }, 202));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await client.submitDraft({ expectedVersion: 3, consent: validConsent }, "csrf");
+    expect(result).toEqual({ status: "profile_pending" });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/api/v1/onboarding/submit",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("rejects a submit payload missing required consents before sending", async () => {
+    const fetchImpl = vi.fn();
+    const client = new KidanApiClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+    const error = await client
+      .submitDraft({ expectedVersion: 3, consent: { ...validConsent, communityRules: false } } as never, "csrf")
+      .catch((caught: unknown) => caught);
+    expect((error as ApiError).code).toBe("INVALID_REQUEST");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("saves private identity as a 204 mutation with the CSRF header", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    await client.savePrivateIdentity(
+      { fullName: "A Candidate", dateOfBirth: "1996-04-12", phoneNumber: "+251900000000" },
+      "csrf-token",
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/api/v1/onboarding/private-identity",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }),
+      }),
+    );
+  });
 });

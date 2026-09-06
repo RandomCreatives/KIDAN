@@ -12,6 +12,9 @@ export interface AuthRouteOptions {
   // When false (production default), the non-secret diagnostics below are
   // still recorded in server logs but are never sent to the client.
   exposeDiagnostics: boolean;
+  // Server-side pilot switch surfaced to the Mini App so it only offers real
+  // submission when the deployment accepts it.
+  realSubmissionsEnabled?: boolean;
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
@@ -39,6 +42,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         csrfToken: issued.csrfToken,
         profileStatus: issued.profileStatus,
         expiresAt: issued.expiresAt.toISOString(),
+        ...(options.realSubmissionsEnabled ? { realSubmissionsEnabled: true } : {}),
       });
       if (!response.success) {
         request.log.error({ msg: "telegram auth response failed contract validation", error: response.error.flatten() });
@@ -85,6 +89,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
       csrfToken: restored.csrfToken,
       profileStatus: restored.profileStatus,
       expiresAt: restored.expiresAt.toISOString(),
+      ...(options.realSubmissionsEnabled ? { realSubmissionsEnabled: true } : {}),
     });
     if (!response.success) {
       request.log.error({ msg: "session status response failed contract validation", error: response.error.flatten() });

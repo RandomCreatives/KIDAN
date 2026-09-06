@@ -11,7 +11,7 @@ import {
   stepToServerStep,
 } from "./draftMapping.js";
 import { initialOnboardingState, type OnboardingFormState } from "./types.js";
-import { ONBOARDING_SCHEMA_VERSION, type PartialPublicOnboardingPayload } from "@kidan/contracts";
+import { consentDraftSchema, ONBOARDING_SCHEMA_VERSION, type PartialPublicOnboardingPayload } from "@kidan/contracts";
 
 export interface SaveResult {
   success: boolean;
@@ -25,6 +25,16 @@ export interface DraftLoadResult {
   step: number | null;
 }
 
+export interface SubmitResult {
+  success: boolean;
+  message?: string;
+}
+
+export interface IdentityResult {
+  success: boolean;
+  message?: string;
+}
+
 export interface OnboardingDraftController {
   hydrated: boolean;
   persisted: boolean;
@@ -35,10 +45,14 @@ export interface OnboardingDraftController {
   conflict: boolean;
   reloading: boolean;
   reloadError: boolean;
+  submitting: boolean;
+  submitError: string | null;
   resumedStep: number | null;
   reloadRevision: number;
   retryLoad: () => Promise<DraftLoadResult>;
   saveProgress: (stepIndex: number, currentDraft: OnboardingFormState) => Promise<SaveResult>;
+  savePrivateIdentity: (currentDraft: OnboardingFormState) => Promise<IdentityResult>;
+  submitDraft: (currentDraft: OnboardingFormState) => Promise<SubmitResult>;
   reloadLatest: () => Promise<DraftLoadResult>;
 }
 
@@ -46,7 +60,7 @@ export function useOnboardingDraft(
   draft: OnboardingFormState,
   setDraft: Dispatch<SetStateAction<OnboardingFormState>>,
 ): OnboardingDraftController {
-  const { csrfToken, isDemo, invalidate, retry } = useAuth();
+  const { csrfToken, isDemo, realSubmissionsEnabled, invalidate, retry } = useAuth();
   const clientRef = useRef(new KidanApiClient());
   const [hydrated, setHydrated] = useState(isDemo);
   const [persisted, setPersisted] = useState(false);
@@ -57,6 +71,8 @@ export function useOnboardingDraft(
   const [conflict, setConflict] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [resumedStep, setResumedStep] = useState<number | null>(isDemo ? 0 : null);
   const [reloadRevision, setReloadRevision] = useState(0);
   const expectedVersionRef = useRef(0);
@@ -222,6 +238,121 @@ export function useOnboardingDraft(
     [csrfToken, hydrated, invalidate, isDemo, persisted, retry],
   );
 
+  const savePrivateIdentity = useCallback(
+    async (currentDraft: OnboardingFormState): Promise<IdentityResult> => {
+      if (isDemo || !realSubmissionsEnabled) return { success: true };
+      if (!csrfToken) {
+        return { success: false, message: "Your session is not ready. Reconnect and retry." };
+      }
+      const identity = {
+        fullName: currentDraft.privateIdentity.fullName.trim(),
+        dateOfBirth: currentDraft.privateIdentity.dateOfBirth,
+        phoneNumber: currentDraft.privateIdentity.phoneNumber.trim(),
+      };
+      try {
+        await clientRef.current.savePrivateIdentity(identity, csrfToken);
+        return { success: true };
+      } catch (error: unknown) {
+        let message = "Could not save your private details. Retry.";
+        if (error instanceof ApiError) {
+          if (error.code === "ADULT_ELIGIBILITY_REQUIRED") {
+            message = "You must be 18 or older to create a profile.";
+          } else if (error.code === "UNAUTHENTICATED") {
+            message = "Your session expired. Reconnect and retry.";
+            await invalidate();
+          } else if (error.code === "INVALID_CSRF") {
+            message = "Your session changed. Reconnecting before you continue.";
+            await retry();
+          } else if (error.code === "NETWORK") {
+            message = "Network error while saving your details. Retry.";
+          }
+        }
+        return { success: false, message };
+      }
+    },
+    [csrfToken, invalidate, isDemo, realSubmissionsEnabled, retry],
+  );
+
+  const submitDraft = useCallback(
+    async (currentDraft: OnboardingFormState): Promise<SubmitResult> => {
+      if (isDemo || !realSubmissionsEnabled) {
+        return { success: false, message: "Submission is not enabled in this preview." };
+      }
+      if (!csrfToken) {
+        return { success: false, message: "Your session is not ready. Reconnect and retry." };
+      }
+      if (conflictRef.current) {
+        return { success: false, message: "Reload the latest draft before submitting." };
+      }
+      if (submitted) {
+        return { success: true };
+      }
+      const consent = currentDraft.consent;
+      const requiredConsents = [
+        consent.informationAccurate,
+        consent.identityProcessing,
+        consent.faithDataProcessing,
+        consent.discoveryPublication,
+        consent.verificationPhotoRetention,
+        consent.communityRules,
+      ];
+      const consentCheck = consentDraftSchema.safeParse(consent);
+      if (!consentCheck.success) {
+        return { success: false, message: "Confirm the required statements before submitting." };
+      }
+
+      const run = saveChainRef.current.then(async (): Promise<SubmitResult> => {
+        setSubmitting(true);
+        setSubmitError(null);
+        try {
+          await clientRef.current.submitDraft(
+            { expectedVersion: expectedVersionRef.current, consent: consentCheck.data },
+            csrfToken,
+          );
+          setSubmitted(true);
+          setPersisted(true);
+          return { success: true };
+        } catch (error: unknown) {
+          let message = "Could not submit your profile. Retry.";
+          if (error instanceof ApiError) {
+            if (error.code === "DRAFT_VERSION_CONFLICT") {
+              conflictRef.current = true;
+              setConflict(true);
+              message = "Your saved progress changed elsewhere. Reload the latest draft.";
+            } else if (error.code === "DRAFT_ALREADY_SUBMITTED") {
+              setSubmitted(true);
+              return { success: true };
+            } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
+              message = "Submission is not enabled in this preview.";
+            } else if (error.code === "IDENTITY_INCOMPLETE") {
+              message = "Complete your private identity verification before submitting.";
+            } else if (error.code === "UNAUTHENTICATED") {
+              message = "Your session expired. Reconnect and retry.";
+              await invalidate();
+            } else if (error.code === "INVALID_CSRF") {
+              message = "Your session changed. Reconnecting before you continue.";
+              await retry();
+            } else if (error.code === "NETWORK") {
+              message = "Network error while submitting. Retry.";
+            }
+          }
+          setSubmitError(message);
+          return { success: false, message };
+        } finally {
+          setSubmitting(false);
+        }
+      });
+
+      const tracked = run.catch((): SubmitResult => ({
+        success: false,
+        message: "Could not submit your profile. Retry.",
+      }));
+      saveChainRef.current = run.catch(() => undefined);
+      return tracked;
+    },
+    [csrfToken, invalidate, isDemo, realSubmissionsEnabled, retry, submitted],
+  );
+
   const reloadLatest = useCallback((): Promise<DraftLoadResult> => {
     if (isDemo || !csrfToken) {
       return Promise.resolve({ success: false, persisted, step: null });
@@ -274,10 +405,14 @@ export function useOnboardingDraft(
     conflict,
     reloading,
     reloadError,
+    submitting,
+    submitError,
     resumedStep,
     reloadRevision,
     retryLoad: loadDraft,
     saveProgress,
+    savePrivateIdentity,
+    submitDraft,
     reloadLatest,
   };
 }

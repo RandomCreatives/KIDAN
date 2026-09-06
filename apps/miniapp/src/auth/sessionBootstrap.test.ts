@@ -18,7 +18,7 @@ describe("resolveSession", () => {
       getInitData: vi.fn().mockReturnValue("init"),
     };
     const result = await resolveSession(deps);
-    expect(result).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new" });
+    expect(result).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new", realSubmissionsEnabled: false });
     expect(deps.authenticateWithTelegram).not.toHaveBeenCalled();
   });
 
@@ -34,7 +34,7 @@ describe("resolveSession", () => {
     };
     const result = await resolveSession(deps);
     expect(authenticated).toBe(true);
-    expect(result).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new" });
+    expect(result).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new", realSubmissionsEnabled: false });
   });
 
   it("reports unauthenticated when there is no session and no init data", async () => {
@@ -92,6 +92,6 @@ describe("resolveSession", () => {
     };
     const [a, b] = await Promise.all([resolveSession(deps), resolveSession(deps)]);
     expect(a).toEqual(b);
-    expect(a).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new" });
+    expect(a).toEqual({ kind: "authenticated", csrfToken: "x".repeat(43), profileStatus: "new", realSubmissionsEnabled: false });
   });
 });

@@ -18,6 +18,9 @@ export const telegramAuthResponseSchema = z.object({
   csrfToken: z.string().min(32),
   profileStatus: sessionProfileStatusSchema,
   expiresAt: z.iso.datetime(),
+  // Server-side pilot switch: when false the Mini App must keep the
+  // save-draft/preview experience and never offer real submission.
+  realSubmissionsEnabled: z.boolean().optional(),
 });
 
 export const sessionStatusSchema = z.object({
@@ -25,6 +28,7 @@ export const sessionStatusSchema = z.object({
   csrfToken: z.string().min(32),
   profileStatus: sessionProfileStatusSchema,
   expiresAt: z.iso.datetime(),
+  realSubmissionsEnabled: z.boolean().optional(),
 });
 
 export const apiErrorCodeSchema = z.enum([

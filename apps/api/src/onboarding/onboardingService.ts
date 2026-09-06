@@ -27,8 +27,13 @@ export class OnboardingService {
   constructor(
     private readonly repository: PersistenceRepository,
     private readonly identityCipher: IdentityCipher,
-    private readonly realSubmissionsEnabled: boolean,
+    private readonly realSubmissionsEnabledFlag: boolean,
   ) {}
+
+  /** Whether the deployment accepts real profile submissions (the pilot switch). */
+  isRealSubmissionsEnabled(): boolean {
+    return this.realSubmissionsEnabledFlag;
+  }
 
   async getDraft(userId: string): Promise<DraftRecord | null> {
     const draft = await this.repository.getDraft(userId);
@@ -70,7 +75,7 @@ export class OnboardingService {
   }
 
   async savePrivateIdentity(userId: string, input: unknown, now = new Date()): Promise<void> {
-    if (!this.realSubmissionsEnabled) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
+    if (!this.realSubmissionsEnabledFlag) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
     const current = await this.repository.getDraft(userId);
     if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
     const identity = privateIdentitySaveRequestSchema.parse(input);
@@ -91,7 +96,7 @@ export class OnboardingService {
   }
 
   async submit(userId: string, request: OnboardingSubmitRequest, now = new Date()): Promise<void> {
-    if (!this.realSubmissionsEnabled) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
+    if (!this.realSubmissionsEnabledFlag) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
     const draft = await this.repository.getDraft(userId);
     if (!draft) throw new SubmissionStateError("DRAFT_NOT_FOUND");
     publicOnboardingPayloadSchema.parse(draft.publicPayload);

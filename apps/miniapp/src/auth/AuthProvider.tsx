@@ -16,6 +16,8 @@ export interface AuthContextValue {
   status: AuthStatus;
   csrfToken: string | null;
   isDemo: boolean;
+  /** Server-side pilot switch: true only when the deployment accepts real submissions. */
+  realSubmissionsEnabled: boolean;
   profileStatus: string | null;
   lastError: string | null;
   logoutError: string | null;
@@ -63,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(initialStatus);
   const statusRef = useRef<AuthStatus>(initialStatus);
   const [csrfToken, setCsrfToken] = useState<string | null>(isTelegram ? null : "demo");
+  const [realSubmissionsEnabled, setRealSubmissionsEnabled] = useState(false);
   const [profileStatus, setProfileStatus] = useState<string | null>(null);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
@@ -87,18 +90,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveCsrf(result.csrfToken);
       setCsrfToken(result.csrfToken);
       setProfileStatus(result.profileStatus);
+      setRealSubmissionsEnabled(result.realSubmissionsEnabled);
       setLastError(null);
       updateStatus("authenticated");
     } else if (result.kind === "unauthenticated") {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setRealSubmissionsEnabled(false);
       setLastError(null);
       updateStatus("unauthenticated");
     } else if (result.kind === "unavailable") {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setRealSubmissionsEnabled(false);
       setLastError(null);
       updateStatus("unavailable");
     } else {
@@ -216,6 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           kind: "authenticated",
           csrfToken: session.csrfToken,
           profileStatus: session.profileStatus,
+          realSubmissionsEnabled: session.realSubmissionsEnabled === true,
         });
 
         try {
@@ -260,6 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       saveCsrf(null);
       setCsrfToken(null);
       setProfileStatus(null);
+      setRealSubmissionsEnabled(false);
       updateStatus("expired");
     });
   }, [runExclusive, updateStatus]);
@@ -270,6 +278,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status,
         csrfToken,
         isDemo: !isTelegram,
+        realSubmissionsEnabled,
         profileStatus,
         lastError,
         logoutError,

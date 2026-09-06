@@ -5,6 +5,7 @@ import {
   ONBOARDING_SCHEMA_VERSION,
   onboardingProgressPatchSchema,
   onboardingSubmitRequestSchema,
+  onboardingSubmitResponseSchema,
 } from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
@@ -141,7 +142,8 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     try {
       const submission = onboardingSubmitRequestSchema.parse(request.body);
       await options.onboardingService.submit(session.user.id, submission);
-      return reply.code(202).send({ data: { status: "profile_pending" } });
+      const response = onboardingSubmitResponseSchema.parse({ status: "profile_pending" });
+      return reply.code(202).send({ data: response });
     } catch (error) {
       return sendDomainError(error, request, reply);
     }
