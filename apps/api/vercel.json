@@ -10,8 +10,5 @@
   },
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
-  ],
-  "crons": [
-    { "path": "/internal/retention", "schedule": "0 2 * * *" }
   ]
 }
