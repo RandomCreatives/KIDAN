@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { OnboardingProgressPatch } from "@kidan/contracts";
+import type { AdminPendingConnection, OnboardingProgressPatch } from "@kidan/contracts";
 import { buildApp } from "../../src/appFactory.js";
 import { AdminService, PILOT_ADMIN_ID } from "../../src/admin/adminService.js";
 import { SessionAccessError, SessionService } from "../../src/auth/sessionService.js";
@@ -733,20 +733,52 @@ describe("PostgreSQL repository integration", () => {
       return { man, woman };
     }
 
+    async function mutualInterest(
+      man: UserRecord,
+      woman: UserRecord,
+    ): Promise<void> {
+      const feed = discovery();
+      await feed.recordDecision(man.id, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await feed.recordDecision(woman.id, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+    }
+
+    // The integration suite shares one disposable database across every test
+    // in this file, so pending rows from earlier tests accumulate. Always look
+    // up THIS pair's connection by their public codes rather than assuming the
+    // pending queue contains only the current pair.
+    async function pendingFor(man: UserRecord, woman: UserRecord): Promise<AdminPendingConnection> {
+      const all = (await connections().listPending()).connections;
+      const match = all.find(
+        (c) =>
+          (c.userA.publicCode === man.publicCode && c.userB.publicCode === woman.publicCode)
+          || (c.userA.publicCode === woman.publicCode && c.userB.publicCode === man.publicCode),
+      );
+      if (!match) throw new Error(`no pending connection for pair ${man.publicCode}/${woman.publicCode}`);
+      return match;
+    }
+
     it("creates a canonical-ordered connection row only on mutual interest", async () => {
       const { man, woman } = await approvedPair();
       const feed = discovery();
       await feed.recordDecision(man.id, {
         targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
       });
-      // One-sided: no connection row yet.
-      const oneSided = await harness.pool.query("SELECT id FROM connection");
+      // One-sided: no connection row for this pair yet.
+      const oneSided = await harness.pool.query(
+        "SELECT id FROM connection WHERE user_a_id IN ($1,$2) AND user_b_id IN ($1,$2)",
+        [man.id, woman.id],
+      );
       expect(oneSided.rowCount).toBe(0);
       await feed.recordDecision(woman.id, {
         targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
       });
       const rows = await harness.pool.query<{ user_a_id: string; user_b_id: string; status: string }>(
-        "SELECT user_a_id, user_b_id, status::text AS status FROM connection",
+        "SELECT user_a_id, user_b_id, status::text AS status FROM connection WHERE user_a_id IN ($1,$2) AND user_b_id IN ($1,$2)",
+        [man.id, woman.id],
       );
       expect(rows.rowCount).toBe(1);
       const row = rows.rows[0]!;
@@ -758,20 +790,12 @@ describe("PostgreSQL repository integration", () => {
 
     it("runs the full admin-gated lifecycle against the database", async () => {
       const { man, woman } = await approvedPair();
-      const feed = discovery();
       const svc = connections();
-      await feed.recordDecision(man.id, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      await feed.recordDecision(woman.id, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const pending = await svc.listPending();
-      expect(pending.connections).toHaveLength(1);
-      const connectionId = pending.connections[0]!.id;
+      await mutualInterest(man, woman);
+      const connectionId = (await pendingFor(man, woman)).id;
 
       // Hidden from participants while pending.
-      expect((await svc.listForUser(man.id)).connections).toEqual([]);
+      expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).not.toContain(connectionId);
 
       // Admin approves.
       expect((await svc.decide(connectionId, true)).status).toBe("admin_approved_pending_confirmation");
@@ -782,9 +806,9 @@ describe("PostgreSQL repository integration", () => {
       // Woman confirms: connected.
       expect((await svc.confirm(woman.id, connectionId, true)).status).toBe("connected");
 
-      const manList = await svc.listForUser(man.id);
-      expect(manList.connections).toHaveLength(1);
-      const item = manList.connections[0]!;
+      const manList = (await svc.listForUser(man.id)).connections.filter((c) => c.id === connectionId);
+      expect(manList).toHaveLength(1);
+      const item = manList[0]!;
       expect(item.status).toBe("connected");
       expect(item.other.publicCode).toBe(woman.publicCode);
       expect(item.other.age).toBeGreaterThanOrEqual(18);
@@ -798,38 +822,27 @@ describe("PostgreSQL repository integration", () => {
 
     it("a participant decline after approval closes the connection as declined", async () => {
       const { man, woman } = await approvedPair();
-      const feed = discovery();
       const svc = connections();
-      await feed.recordDecision(man.id, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      await feed.recordDecision(woman.id, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const connectionId = (await svc.listPending()).connections[0]!.id;
+      await mutualInterest(man, woman);
+      const connectionId = (await pendingFor(man, woman)).id;
       await svc.decide(connectionId, true);
       expect((await svc.confirm(woman.id, connectionId, false)).status).toBe("declined");
-      const db = await harness.pool.query<{ status: string }>(
+      const db = await harness.pool.query<{ status: string; closed_at: Date | null }>(
         "SELECT status::text AS status, closed_at FROM connection WHERE id = $1",
         [connectionId],
       );
       expect(db.rows[0]!.status).toBe("declined");
+      expect(db.rows[0]!.closed_at).not.toBeNull();
     });
 
     it("admin rejection stays hidden from participants", async () => {
       const { man, woman } = await approvedPair();
-      const feed = discovery();
       const svc = connections();
-      await feed.recordDecision(man.id, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      await feed.recordDecision(woman.id, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const connectionId = (await svc.listPending()).connections[0]!.id;
+      await mutualInterest(man, woman);
+      const connectionId = (await pendingFor(man, woman)).id;
       expect((await svc.decide(connectionId, false)).status).toBe("admin_rejected");
-      expect((await svc.listForUser(man.id)).connections).toEqual([]);
-      expect((await svc.listForUser(woman.id)).connections).toEqual([]);
+      expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).not.toContain(connectionId);
+      expect((await svc.listForUser(woman.id)).connections.map((c) => c.id)).not.toContain(connectionId);
     });
   });
 });
