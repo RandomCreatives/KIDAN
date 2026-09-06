@@ -4,8 +4,11 @@ import { withTransaction } from "../database/pool.js";
 import type {
   AdminDecisionInput,
   AdminQueueRow,
+  AdminIntroductionMessageRow,
   AdminPendingConnectionRow,
   AdminReviewAuditRow,
+  IntroductionMessageRow,
+  IntroductionThreadRow,
   AdminSubmissionRow,
   CandidateReviewState,
   DiscoveryCandidateRow,
@@ -907,5 +910,132 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       [input.connectionId, input.approve, input.now],
     );
     return result.rows[0]?.status ?? null;
+  }
+
+  async getIntroductionThread(input: {
+    connectionId: string;
+    viewerId: string;
+    now: Date;
+  }): Promise<IntroductionThreadRow | null> {
+    void input.now;
+    const conn = await this.pool.query<{
+      status: string; user_a_id: string; user_b_id: string;
+      other_id: string; other_code: string; other_dob: Buffer;
+      other_gender: string; other_city: string;
+      other_education: string | null; other_occupation: string | null;
+      other_height: number | null; other_marriage: string | null;
+      other_values: string[]; other_bio: string | null;
+    }>(`
+      SELECT c.status::text AS status, c.user_a_id, c.user_b_id,
+             ou.id AS other_id, ou.public_code AS other_code,
+             ov.date_of_birth_ciphertext AS other_dob,
+             op.gender::text AS other_gender, op.city_code AS other_city,
+             op.education_level AS other_education, op.occupation_category AS other_occupation,
+             op.height_cm AS other_height, op.marriage_intention AS other_marriage,
+             op.values_json AS other_values, op.bio AS other_bio
+      FROM connection c
+      JOIN app_user ou ON ou.id = CASE WHEN c.user_a_id = $2 THEN c.user_b_id ELSE c.user_a_id END
+      JOIN identity_vault ov ON ov.user_id = ou.id
+      JOIN discovery_profile op ON op.user_id = ou.id
+      WHERE c.id = $1
+        AND (c.user_a_id = $2 OR c.user_b_id = $2)
+        AND c.status = 'connected'
+    `, [input.connectionId, input.viewerId]);
+    const row = conn.rows[0];
+    if (!row) return null;
+
+    const messages = await this.pool.query<{
+      id: string; sender_user_id: string; body: string; hidden_by_admin: boolean; created_at: Date;
+    }>(`
+      SELECT id, sender_user_id, body, hidden_by_admin, created_at
+      FROM introduction_message
+      WHERE connection_id = $1
+      ORDER BY created_at ASC, id ASC
+    `, [input.connectionId]);
+
+    return {
+      connectionId: input.connectionId,
+      status: row.status,
+      viewerIsA: row.user_a_id === input.viewerId,
+      other: {
+        userId: row.other_id,
+        publicCode: row.other_code,
+        dateOfBirthCiphertext: row.other_dob,
+        gender: row.other_gender,
+        city: row.other_city,
+        educationLevel: row.other_education,
+        occupationCategory: row.other_occupation,
+        heightCm: row.other_height,
+        marriageIntention: row.other_marriage,
+        values: row.other_values ?? [],
+        bio: row.other_bio,
+      },
+      messages: messages.rows.map((m) => ({
+        id: m.id,
+        senderUserId: m.sender_user_id,
+        body: m.hidden_by_admin ? "" : m.body,
+        hidden: m.hidden_by_admin,
+        createdAt: m.created_at,
+      })),
+    };
+  }
+
+  async addIntroductionMessage(input: {
+    connectionId: string;
+    senderUserId: string;
+    body: string;
+    now: Date;
+  }): Promise<IntroductionMessageRow> {
+    const result = await this.pool.query<{
+      id: string; sender_user_id: string; body: string; hidden_by_admin: boolean; created_at: Date;
+    }>(`
+      INSERT INTO introduction_message (connection_id, sender_user_id, body, created_at)
+      SELECT $1, $2, $3, $4
+      WHERE EXISTS (
+        SELECT 1 FROM connection
+        WHERE id = $1 AND status = 'connected'
+          AND (user_a_id = $2 OR user_b_id = $2)
+      )
+      RETURNING id, sender_user_id, body, hidden_by_admin, created_at
+    `, [input.connectionId, input.senderUserId, input.body, input.now]);
+    const row = result.rows[0];
+    if (!row) throw new SubmissionStateError("INTRODUCTION_NOT_OPEN");
+    return {
+      id: row.id,
+      senderUserId: row.sender_user_id,
+      body: row.body,
+      hidden: row.hidden_by_admin,
+      createdAt: row.created_at,
+    };
+  }
+
+  async listRecentIntroductionMessages(limit: number): Promise<AdminIntroductionMessageRow[]> {
+    const result = await this.pool.query<{
+      id: string; connection_id: string; sender_code: string;
+      body: string; hidden_by_admin: boolean; created_at: Date;
+    }>(`
+      SELECT m.id, m.connection_id, su.public_code AS sender_code,
+             m.body, m.hidden_by_admin, m.created_at
+      FROM introduction_message m
+      JOIN app_user su ON su.id = m.sender_user_id
+      ORDER BY m.created_at DESC
+      LIMIT $1
+    `, [limit]);
+    return result.rows.map((r) => ({
+      id: r.id,
+      connectionId: r.connection_id,
+      senderCode: r.sender_code,
+      body: r.body,
+      hidden: r.hidden_by_admin,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async hideIntroductionMessage(messageId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "UPDATE introduction_message SET hidden_by_admin = true WHERE id = $1 AND hidden_by_admin = false",
+      [messageId],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 }

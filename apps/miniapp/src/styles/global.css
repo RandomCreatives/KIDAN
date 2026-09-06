@@ -431,3 +431,18 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .connection-button { min-height: 42px; width: auto; flex: 1; padding: 0 16px; }
 .waiting-note { font-size: 11px; font-weight: 600; color: #956e32; }
 .quiet-copy { font-size: 12.5px; line-height: 1.6; color: var(--muted, #5c6660); margin: 0; }
+
+/* Track D3: restricted in-app introduction */
+.connection-card.openable { cursor: pointer; }
+.introduction-screen .topbar { gap: 8px; }
+.icon-button { border: 0; background: transparent; color: var(--forest); display: grid; place-items: center; padding: 4px; cursor: pointer; }
+.introduction-profile { margin: 4px 0 12px; opacity: .96; }
+.introduction-thread { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 14px; }
+.intro-bubble { max-width: 82%; padding: 11px 14px; border-radius: 16px; font-size: 13px; line-height: 1.55; }
+.intro-bubble p { margin: 0; }
+.intro-bubble.theirs { align-self: flex-start; background: #f2efe9; color: #25302a; border-bottom-left-radius: 4px; }
+.intro-bubble.mine { align-self: flex-end; background: var(--forest); color: #fff; border-bottom-right-radius: 4px; }
+.intro-hidden { align-self: center; background: #f6f6f6; color: #8a8f8b; font-size: 12px; font-style: italic; }
+.introduction-composer { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; }
+.introduction-composer textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font: inherit; font-size: 13px; resize: vertical; background: #fff; }
+.introduction-composer .primary-button { width: 100%; }

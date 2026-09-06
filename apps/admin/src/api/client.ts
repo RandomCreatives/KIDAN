@@ -1,6 +1,8 @@
 import {
   adminConnectionDecisionResponseSchema,
   adminDecisionRequestSchema,
+  adminIntroductionListSchema,
+  type AdminIntroductionMessage,
   adminDecisionResponseSchema,
   adminPendingConnectionListSchema,
   adminPhotoResponseSchema,
@@ -135,6 +137,22 @@ export class AdminApiClient {
       true,
     );
     return adminConnectionDecisionResponseSchema.parse(data);
+  }
+
+  /** Track D3: recent restricted-introduction messages for moderation. */
+  async listIntroductions(): Promise<AdminIntroductionMessage[]> {
+    const data = await this.request("GET", "/v1/admin/introductions");
+    return adminIntroductionListSchema.parse(data).messages;
+  }
+
+  /** Hides an inappropriate introduction message from both participants. */
+  async hideIntroductionMessage(messageId: string): Promise<void> {
+    await this.request(
+      "POST",
+      `/v1/admin/introductions/${encodeURIComponent(messageId)}/hide`,
+      {},
+      true,
+    );
   }
 
   async logout(): Promise<void> {

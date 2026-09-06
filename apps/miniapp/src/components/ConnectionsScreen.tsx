@@ -4,6 +4,7 @@ import { KidanApiClient } from "../api/client.js";
 import { useAuth } from "../auth/useAuth.js";
 import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
+import { IntroductionScreen } from "./IntroductionScreen";
 import { CheckIcon, ChevronRightIcon, ClockIcon, LockIcon, ShieldCheckIcon, XIcon } from "./Icons";
 
 const STATUS_COPY: Record<string, { title: string; detail: string }> = {
@@ -28,6 +29,11 @@ export function ConnectionsScreen() {
 
   const [connections, setConnections] = useState<ConnectionItem[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [openIntroduction, setOpenIntroduction] = useState<ConnectionItem | null>(null);
+
+  if (openIntroduction) {
+    return <IntroductionScreen connection={openIntroduction} onBack={() => setOpenIntroduction(null)} />;
+  }
 
   const load = useCallback(() => {
     if (!realSubmissionsEnabled) {
@@ -87,8 +93,16 @@ export function ConnectionsScreen() {
         ) : (
           connections.map((connection) => {
             const copy = STATUS_COPY[connection.status] ?? { title: "In progress", detail: "" };
+            const isConnected = connection.status === "connected";
             return (
-              <section key={connection.id} className="status-card pending-card connection-card">
+              <section
+                key={connection.id}
+                className={`status-card pending-card connection-card ${isConnected ? "openable" : ""}`}
+                onClick={isConnected ? () => setOpenIntroduction(connection) : undefined}
+                role={isConnected ? "button" : undefined}
+                tabIndex={isConnected ? 0 : undefined}
+                onKeyDown={isConnected ? (event) => { if (event.key === "Enter" || event.key === " ") setOpenIntroduction(connection); } : undefined}
+              >
                 <div className={`status-icon ${connection.status === "connected" ? "green" : connection.status === "declined" ? "muted" : "amber"}`}>
                   {connection.status === "connected" ? <ShieldCheckIcon /> : <ClockIcon />}
                 </div>

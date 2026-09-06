@@ -228,5 +228,81 @@ describe("connection routes", () => {
     expect(finalList.connections[0].status).toBe("connected");
     expect(finalList.connections[0].iConfirmed).toBe(true);
     expect(finalList.connections[0].theyConfirmed).toBe(true);
+
+    // --- Restricted in-app introduction (D3) ---
+    // The thread 404s for a stranger and requires CSRF to post.
+    const stranger = await approvedCandidate(env, 700000000000099n, "male");
+    const foreign = await env.app.inject({
+      method: "GET",
+      url: `/v1/connections/${connectionId}/introduction`,
+      headers: SESSION_COOKIE(stranger.token),
+    });
+    expect(foreign.statusCode).toBe(404);
+
+    const postNoCsrf = await env.app.inject({
+      method: "POST",
+      url: `/v1/connections/${connectionId}/introduction`,
+      headers: SESSION_COOKIE(man.token),
+      payload: { body: "Selam" },
+    });
+    expect(postNoCsrf.statusCode).toBe(403);
+
+    // A contact-detail message is rejected with 422.
+    const blockedPost = await env.app.inject({
+      method: "POST",
+      url: `/v1/connections/${connectionId}/introduction`,
+      headers: { ...SESSION_COOKIE(man.token), "x-csrf-token": man.csrf },
+      payload: { body: "reach me on t.me/someone or +251911223344" },
+    });
+    expect(blockedPost.statusCode).toBe(422);
+    expect(["CONTACT_NOT_ALLOWED", "LINKS_NOT_ALLOWED"]).toContain(blockedPost.json().error.code);
+
+    // A values-only greeting is accepted; the thread returns values-only data.
+    const greeting = await env.app.inject({
+      method: "POST",
+      url: `/v1/connections/${connectionId}/introduction`,
+      headers: { ...SESSION_COOKIE(man.token), "x-csrf-token": man.csrf },
+      payload: { body: "Selam! Praying your fasts are accepted." },
+    });
+    expect(greeting.statusCode).toBe(200);
+    expect(greeting.json().data.message.fromMe).toBe(true);
+
+    const thread = (
+      await env.app.inject({
+        method: "GET",
+        url: `/v1/connections/${connectionId}/introduction`,
+        headers: SESSION_COOKIE(woman.token),
+      })
+    ).json().data;
+    expect(thread.messages).toHaveLength(1);
+    expect(thread.messages[0].fromMe).toBe(false);
+    expect(thread.other.publicCode).toBe(man.publicCode);
+    expect(thread.other.photoMode).toBe("values_only");
+    expect(JSON.stringify(thread)).not.toContain("Secret Route");
+    expect(JSON.stringify(thread)).not.toMatch(/\+2519/);
+
+    // Admin moderation: the message appears in the admin list and can be hidden.
+    const adminList = await env.app.inject({
+      method: "GET",
+      url: "/v1/admin/introductions",
+      headers: ADMIN_COOKIE(adminToken),
+    });
+    expect(adminList.statusCode).toBe(200);
+    const messageId = adminList.json().data.messages[0].id;
+    const hide = await env.app.inject({
+      method: "POST",
+      url: `/v1/admin/introductions/${messageId}/hide`,
+      headers: { ...ADMIN_COOKIE(adminToken), "x-csrf-token": adminCsrf },
+    });
+    expect(hide.statusCode).toBe(200);
+    const afterHideRes = await env.app.inject({
+      method: "GET",
+      url: `/v1/connections/${connectionId}/introduction`,
+      headers: SESSION_COOKIE(woman.token),
+    });
+    expect(afterHideRes.statusCode).toBe(200);
+    const afterHide = afterHideRes.json().data;
+    expect(afterHide.messages[0].hidden).toBe(true);
+    expect(afterHide.messages[0].body).toBe("");
   });
 });

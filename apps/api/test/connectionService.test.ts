@@ -236,4 +236,100 @@ describe("admin-gated connections (Track D)", () => {
     // Unknown connection id.
     await expect(env.connections.confirm(man.userId, "00000000-0000-4000-8000-000000000099", true)).rejects.toThrow("CONNECTION_NOT_FOUND");
   });
+
+  describe("restricted in-app introduction (D3)", () => {
+    type SetupEnv = Awaited<ReturnType<typeof setup>>;
+    type Candidate = Awaited<ReturnType<typeof createCandidate>>;
+    async function connectPair(manId: bigint, womanId: bigint): Promise<{ env: SetupEnv; man: Candidate; woman: Candidate; connectionId: string }> {
+      const env = await setup();
+      const man = await createCandidate(manId, "male", env);
+      const woman = await createCandidate(womanId, "female", env);
+      await env.discovery.recordDecision(man.userId, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await env.discovery.recordDecision(woman.userId, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const pair = (await env.connections.listPending()).connections[0]!;
+      await env.connections.decide(pair.id, true);
+      await env.connections.confirm(man.userId, pair.id, true);
+      await env.connections.confirm(woman.userId, pair.id, true);
+      return { env, man, woman, connectionId: pair.id };
+    }
+
+    it("refuses the thread before the connection is connected", async () => {
+      const env = await setup();
+      const man = await createCandidate(800000000000071n, "male", env);
+      const woman = await createCandidate(800000000000072n, "female", env);
+      await env.discovery.recordDecision(man.userId, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await env.discovery.recordDecision(woman.userId, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const pair = (await env.connections.listPending()).connections[0]!;
+      await expect(env.connections.getThread(man.userId, pair.id)).rejects.toThrow("INTRODUCTION_NOT_OPEN");
+    });
+
+    it("opens a values-only thread for a connected pair and routes fromMe correctly", async () => {
+      const { env, man, woman, connectionId } = await connectPair(800000000000061n, 800000000000062n);
+      const saved = await env.connections.postMessage(man.userId, connectionId, {
+        body: "Selam, praying your fasts are accepted.",
+      });
+      const manView = await env.connections.getThread(man.userId, connectionId);
+      const womanView = await env.connections.getThread(woman.userId, connectionId);
+      expect(manView.other.publicCode).toBe(woman.publicCode);
+      expect(womanView.other.publicCode).toBe(man.publicCode);
+      expect(manView.messages[0]!.fromMe).toBe(true);
+      expect(womanView.messages[0]!.fromMe).toBe(false);
+      expect(saved.id).toBe(manView.messages[0]!.id);
+    });
+
+    it("rejects messages containing phone numbers, handles, links, or contact details", async () => {
+      const { env, man, woman, connectionId: pair } = await connectPair(800000000000081n, 800000000000082n);
+      const blocked = [
+        "Call me at 0911 22 33 44",
+        "My telegram is @some_handle",
+        "reach me at t.me/someone",
+        "see https://example.com/x",
+        "my number +251911223344 thanks",
+      ];
+      for (const body of blocked) {
+        await expect(
+          env.connections.postMessage(man.userId, pair, { body }),
+        ).rejects.toThrow(/CONTACT_NOT_ALLOWED|LINKS_NOT_ALLOWED/);
+      }
+      // A values-only greeting is accepted and never contains identity.
+      const saved = await env.connections.postMessage(man.userId, pair, {
+        body: "Selam! I was glad to be introduced. May your fasts and prayers be accepted.",
+      });
+      expect(saved.fromMe).toBe(true);
+      expect(saved.hidden).toBe(false);
+
+      const thread = await env.connections.getThread(woman.userId, pair);
+      expect(thread.messages).toHaveLength(1);
+      expect(thread.messages[0]!.fromMe).toBe(false);
+      // The other party's profile stays values-only.
+      expect(thread.other.publicCode).toBe(man.publicCode);
+      expect(thread.other.photoMode).toBe("values_only");
+      const serialized = JSON.stringify(thread);
+      expect(serialized).not.toContain("Secret");
+      expect(serialized).not.toMatch(/\+2519/);
+      expect(serialized).not.toContain("@some_handle");
+    });
+
+    it("lets an administrator hide a message, which blanks it for both users", async () => {
+      const { env, man, woman, connectionId: pair } = await connectPair(800000000000091n, 800000000000092n);
+      const message = await env.connections.postMessage(man.userId, pair, { body: "A borderline message the admin removes." });
+
+      const recent = await env.connections.listRecentMessages();
+      expect(recent.messages.some((m) => m.id === message.id)).toBe(true);
+
+      await env.connections.hideMessage(message.id);
+      const thread = await env.connections.getThread(woman.userId, pair);
+      const shown = thread.messages.find((m) => m.id === message.id)!;
+      expect(shown.hidden).toBe(true);
+      expect(shown.body).toBe("");
+    });
+  });
 });

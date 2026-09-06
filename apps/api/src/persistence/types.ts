@@ -241,6 +241,69 @@ export interface PersistenceRepository {
   listPendingConnections(): Promise<AdminPendingConnectionRow[]>;
   /** Admin: approve or reject a pending connection. Returns false if not pending. */
   decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null>;
+  // --- Track D3: restricted in-app introduction ---
+  /**
+   * Loads a 'connected' connection the user belongs to together with the
+   * other participant's values-only profile and the introduction messages.
+   * Returns null when the connection does not exist, the user is not a
+   * participant, or it is not in the 'connected' state.
+   */
+  getIntroductionThread(input: {
+    connectionId: string;
+    viewerId: string;
+    now: Date;
+  }): Promise<IntroductionThreadRow | null>;
+  /** Appends an introduction message. Caller has validated the gate + body. */
+  addIntroductionMessage(input: {
+    connectionId: string;
+    senderUserId: string;
+    body: string;
+    now: Date;
+  }): Promise<IntroductionMessageRow>;
+  /** Admin: the most recent messages across all connected connections. */
+  listRecentIntroductionMessages(limit: number): Promise<AdminIntroductionMessageRow[]>;
+  /** Admin: hides a single introduction message by id. */
+  hideIntroductionMessage(messageId: string): Promise<boolean>;
+}
+
+/** One introduction message as stored (sender id resolved to fromMe by the service). */
+export interface IntroductionMessageRow {
+  id: string;
+  senderUserId: string;
+  body: string;
+  hidden: boolean;
+  createdAt: Date;
+}
+
+/** A connected connection + the other participant's values-only profile + messages. */
+export interface IntroductionThreadRow {
+  connectionId: string;
+  status: string;
+  viewerIsA: boolean;
+  other: {
+    userId: string;
+    publicCode: string;
+    dateOfBirthCiphertext: Buffer;
+    gender: string;
+    city: string;
+    educationLevel: string | null;
+    occupationCategory: string | null;
+    heightCm: number | null;
+    marriageIntention: string | null;
+    values: string[];
+    bio: string | null;
+  };
+  messages: IntroductionMessageRow[];
+}
+
+/** An introduction message as presented to an administrator (values-only pair). */
+export interface AdminIntroductionMessageRow {
+  id: string;
+  connectionId: string;
+  senderCode: string;
+  body: string;
+  hidden: boolean;
+  createdAt: Date;
 }
 
 /** A connection plus the two participants' values-only fields (ages computed in service). */

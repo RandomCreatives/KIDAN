@@ -2,6 +2,9 @@ import {
   connectionConfirmRequestSchema,
   connectionConfirmResponseSchema,
   connectionListResponseSchema,
+  introductionPostRequestSchema,
+  introductionPostResponseSchema,
+  introductionThreadResponseSchema,
 } from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { ZodError } from "zod";
@@ -71,6 +74,57 @@ export const connectionRoutes: FastifyPluginAsync<ConnectionRouteOptions> = asyn
       }
       if (error instanceof Error && error.message === "REAL_SUBMISSIONS_DISABLED") {
         return reply.code(503).send({ error: { code: "REAL_SUBMISSIONS_DISABLED", requestId: request.id } });
+      }
+      throw error;
+    }
+  });
+
+  // Restricted in-app introduction thread (values-only; connected pairs only).
+  app.get<{ Params: { id: string } }>("/v1/connections/:id/introduction", async (request, reply) => {
+    const session = await requireSession(request, reply);
+    if (!session) return;
+    try {
+      const thread = await options.connectionService.getThread(session.user.id, request.params.id);
+      const validated = introductionThreadResponseSchema.safeParse(thread);
+      if (!validated.success) {
+        request.log.error({ msg: "introduction thread failed validation", error: validated.error.flatten() });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
+      return reply.send({ data: validated.data });
+    } catch (error) {
+      if (error instanceof Error && error.message === "INTRODUCTION_NOT_OPEN") {
+        return reply.code(404).send({ error: { code: "INTRODUCTION_NOT_OPEN", requestId: request.id } });
+      }
+      if (error instanceof Error && error.message === "REAL_SUBMISSIONS_DISABLED") {
+        return reply.code(503).send({ error: { code: "REAL_SUBMISSIONS_DISABLED", requestId: request.id } });
+      }
+      throw error;
+    }
+  });
+
+  // Post a moderated introduction message (contact details are rejected).
+  app.post<{ Params: { id: string } }>("/v1/connections/:id/introduction", async (request, reply) => {
+    const session = await requireSession(request, reply);
+    if (!session || !(await requireCsrf(request, reply, session))) return;
+    try {
+      const parsed = introductionPostRequestSchema.parse(request.body);
+      const message = await options.connectionService.postMessage(session.user.id, request.params.id, parsed);
+      return reply.send({ data: introductionPostResponseSchema.parse({ message }) });
+    } catch (error) {
+      if (error instanceof ZodError) {
+        return reply.code(400).send({ error: { code: "INVALID_REQUEST", requestId: request.id } });
+      }
+      if (error instanceof Error) {
+        const blocked = new Set(["CONTACT_NOT_ALLOWED", "LINKS_NOT_ALLOWED", "INVALID_INTRODUCTION"]);
+        if (blocked.has(error.message)) {
+          return reply.code(422).send({ error: { code: error.message, requestId: request.id } });
+        }
+        if (error.message === "INTRODUCTION_NOT_OPEN") {
+          return reply.code(404).send({ error: { code: "INTRODUCTION_NOT_OPEN", requestId: request.id } });
+        }
+        if (error.message === "REAL_SUBMISSIONS_DISABLED") {
+          return reply.code(503).send({ error: { code: "REAL_SUBMISSIONS_DISABLED", requestId: request.id } });
+        }
       }
       throw error;
     }

@@ -199,6 +199,8 @@ export async function buildApp(
     };
     app.get("/v1/connections", connectionsNotReady);
     app.post("/v1/connections/:id/confirm", connectionsNotReady);
+    app.get("/v1/connections/:id/introduction", connectionsNotReady);
+    app.post("/v1/connections/:id/introduction", connectionsNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {

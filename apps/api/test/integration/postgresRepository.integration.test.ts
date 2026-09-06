@@ -844,5 +844,74 @@ describe("PostgreSQL repository integration", () => {
       expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).not.toContain(connectionId);
       expect((await svc.listForUser(woman.id)).connections.map((c) => c.id)).not.toContain(connectionId);
     });
+
+    async function fullyConnectedPair(): Promise<{ man: UserRecord; woman: UserRecord; connectionId: string }> {
+      const { man, woman } = await approvedPair();
+      const svc = connections();
+      await mutualInterest(man, woman);
+      const connectionId = (await pendingFor(man, woman)).id;
+      await svc.decide(connectionId, true);
+      await svc.confirm(man.id, connectionId, true);
+      await svc.confirm(woman.id, connectionId, true);
+      return { man, woman, connectionId };
+    }
+
+    it("stores introduction messages in introduction_message and enforces the connected gate", async () => {
+      const { man, woman, connectionId } = await fullyConnectedPair();
+      const svc = connections();
+
+      // Before connected there would be no thread; now it opens empty.
+      const empty = await svc.getThread(man.id, connectionId);
+      expect(empty.messages).toEqual([]);
+      expect(empty.other.publicCode).toBe(woman.publicCode);
+
+      // Contact detail is rejected.
+      await expect(
+        svc.postMessage(man.id, connectionId, { body: "call 0911 22 33 44" }),
+      ).rejects.toThrow();
+
+      // A values-only greeting is persisted.
+      const posted = await svc.postMessage(man.id, connectionId, { body: "Selam, may your prayers be accepted." });
+      expect(posted.fromMe).toBe(true);
+
+      const rows = await harness.pool.query<{ sender_user_id: string; body: string; hidden: boolean }>(
+        "SELECT sender_user_id, body, hidden_by_admin AS hidden FROM introduction_message WHERE connection_id = $1",
+        [connectionId],
+      );
+      expect(rows.rowCount).toBe(1);
+      expect(rows.rows[0]!.sender_user_id).toBe(man.id);
+      expect(rows.rows[0]!.body).toBe("Selam, may your prayers be accepted.");
+
+      // The woman sees it as not-from-me; no identity leaks.
+      const womanView = await svc.getThread(woman.id, connectionId);
+      expect(womanView.messages[0]!.fromMe).toBe(false);
+      expect(JSON.stringify(womanView)).not.toContain("Demo Candidate");
+    });
+
+    it("an admin-hidden message is blanked for participants but retained for moderation", async () => {
+      const { man, woman, connectionId } = await fullyConnectedPair();
+      const svc = connections();
+      const message = await svc.postMessage(man.id, connectionId, { body: "A message an administrator removes." });
+
+      // Admin moderation list contains the raw text (values-only sender code).
+      const recent = await svc.listRecentMessages(100);
+      const listed = recent.messages.find((m) => m.id === message.id)!;
+      expect(listed).toBeDefined();
+      expect(listed.senderPublicCode).toMatch(/^KD-/);
+
+      await svc.hideMessage(message.id);
+      const view = await svc.getThread(woman.id, connectionId);
+      const shown = view.messages.find((m) => m.id === message.id)!;
+      expect(shown.hidden).toBe(true);
+      expect(shown.body).toBe("");
+
+      // The row is retained (not deleted) with hidden_by_admin set.
+      const db = await harness.pool.query<{ hidden_by_admin: boolean; body: string }>(
+        "SELECT hidden_by_admin, body FROM introduction_message WHERE id = $1",
+        [message.id],
+      );
+      expect(db.rows[0]!.hidden_by_admin).toBe(true);
+      expect(db.rows[0]!.body).toBe("A message an administrator removes.");
+    });
   });
 });

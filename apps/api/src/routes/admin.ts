@@ -2,6 +2,7 @@ import {
   adminConnectionDecisionRequestSchema,
   adminConnectionDecisionResponseSchema,
   adminDecisionRequestSchema,
+  adminIntroductionListSchema,
   adminDecisionResponseSchema,
   adminLoginRequestSchema,
   adminPendingConnectionListSchema,
@@ -207,6 +208,38 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
     } catch (error) {
       if (error instanceof Error && error.message === "CONNECTION_NOT_PENDING") {
         return reply.code(404).send({ error: { code: "CONNECTION_NOT_PENDING", requestId: request.id } });
+      }
+      throw error;
+    }
+  });
+
+  // Track D3: moderation of the restricted in-app introduction channel.
+  app.get("/v1/admin/introductions", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!options.connectionService) {
+      return reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    }
+    const recent = await options.connectionService.listRecentMessages();
+    const response = adminIntroductionListSchema.safeParse(recent);
+    if (!response.success) {
+      request.log.error({ msg: "admin introductions response failed validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
+  });
+
+  app.post<{ Params: { messageId: string } }>("/v1/admin/introductions/:messageId/hide", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!(await requireCsrf(request, reply))) return;
+    if (!options.connectionService) {
+      return reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    }
+    try {
+      await options.connectionService.hideMessage(request.params.messageId);
+      return reply.send({ data: { hidden: true } });
+    } catch (error) {
+      if (error instanceof Error && error.message === "MESSAGE_NOT_FOUND") {
+        return reply.code(404).send({ error: { code: "MESSAGE_NOT_FOUND", requestId: request.id } });
       }
       throw error;
     }

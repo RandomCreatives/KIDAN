@@ -8,6 +8,11 @@ import {
   connectionConfirmRequestSchema,
   connectionConfirmResponseSchema,
   connectionListResponseSchema,
+  introductionPostRequestSchema,
+  introductionPostResponseSchema,
+  introductionThreadResponseSchema,
+  type IntroductionPostRequest,
+  type IntroductionThread,
   discoveryDecisionRequestSchema,
   discoveryFeedResponseSchema,
   type ConnectionConfirmResponse,
@@ -178,6 +183,24 @@ export class KidanApiClient {
       csrfToken,
     );
     return this.parse(connectionConfirmResponseSchema, data);
+  }
+
+  /** Restricted in-app introduction thread for a connected pair (values-only). */
+  async getIntroduction(connectionId: string): Promise<IntroductionThread> {
+    const data = await this.request("GET", `/v1/connections/${connectionId}/introduction`);
+    return this.parse(introductionThreadResponseSchema, data);
+  }
+
+  /** Posts a moderated introduction message; contact details are rejected. */
+  async postIntroduction(connectionId: string, body: string, csrfToken: string): Promise<IntroductionThread["messages"][number]> {
+    const payload: IntroductionPostRequest = introductionPostRequestSchema.parse({ body });
+    const data = await this.request(
+      "POST",
+      `/v1/connections/${connectionId}/introduction`,
+      payload,
+      csrfToken,
+    );
+    return this.parse(introductionPostResponseSchema, data).message;
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

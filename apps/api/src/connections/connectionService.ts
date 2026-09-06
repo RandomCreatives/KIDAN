@@ -2,8 +2,19 @@ import type {
   AdminPendingConnection,
   ConnectionItem,
   ConnectionListResponse,
+  DiscoveryProfile,
+  IntroductionMessage,
+  IntroductionPostRequest,
+  IntroductionThread,
+  ValueTag,
 } from "@kidan/contracts";
-import type { AdminPendingConnectionRow, PersistenceRepository, UserConnectionRow } from "../persistence/types.js";
+import type {
+  AdminPendingConnectionRow,
+  IntroductionMessageRow,
+  IntroductionThreadRow,
+  PersistenceRepository,
+  UserConnectionRow,
+} from "../persistence/types.js";
 import type { IdentityCipher } from "../security/crypto.js";
 
 export class ConnectionStateError extends Error {
@@ -11,6 +22,39 @@ export class ConnectionStateError extends Error {
     super(message);
     this.name = "ConnectionStateError";
   }
+}
+
+/** An introduction message as presented to an administrator (values-only). */
+interface AdminIntroductionMessageView {
+  id: string;
+  connectionId: string;
+  senderPublicCode: string;
+  body: string;
+  hidden: boolean;
+  createdAt: string;
+}
+
+/**
+ * Contact-detail patterns that must never cross the restricted introduction
+ * channel: Telegram handles/links, generic URLs, and phone-like digit runs.
+ * The pilot keeps the introduction in-app; contact reveal is a separate,
+ * future, explicitly-consented gate.
+ */
+const CONTACT_PATTERNS: ReadonlyArray<{ pattern: RegExp; code: string }> = [
+  { pattern: /(?:https?:\/\/|www\.)\S+/i, code: "LINKS_NOT_ALLOWED" },
+  { pattern: /t(?:elegram)?\.me\//i, code: "CONTACT_NOT_ALLOWED" },
+  { pattern: /@[a-z0-9_]{3,}/i, code: "CONTACT_NOT_ALLOWED" },
+  { pattern: /(?:\+?251|0)\s?9\s?\d[\d\s-]{6,}\d/, code: "CONTACT_NOT_ALLOWED" },
+  { pattern: /\b\d[\d\s-]{8,}\d\b/, code: "CONTACT_NOT_ALLOWED" },
+];
+
+export function screenIntroductionBody(rawBody: string): string {
+  const body = rawBody.trim();
+  if (body.length === 0 || body.length > 600) throw new ConnectionStateError("INVALID_INTRODUCTION");
+  for (const { pattern, code } of CONTACT_PATTERNS) {
+    if (pattern.test(body)) throw new ConnectionStateError(code);
+  }
+  return body;
 }
 
 /**
@@ -91,6 +135,89 @@ export class ConnectionService {
     const status = await this.repository.decideConnection({ connectionId, approve, now });
     if (!status) throw new ConnectionStateError("CONNECTION_NOT_PENDING");
     return { id: connectionId, status };
+  }
+
+  // --- Restricted in-app introduction (D3) ---
+
+  /** Loads the values-only introduction thread for a 'connected' pair. */
+  async getThread(userId: string, connectionId: string, now = new Date()): Promise<IntroductionThread> {
+    if (!this.realSubmissionsEnabled) throw new ConnectionStateError("REAL_SUBMISSIONS_DISABLED");
+    const row = await this.repository.getIntroductionThread({ connectionId, viewerId: userId, now });
+    if (!row) throw new ConnectionStateError("INTRODUCTION_NOT_OPEN");
+    return this.toThread(row, userId, now);
+  }
+
+  /** Posts a moderated introduction message. Contact details are rejected. */
+  async postMessage(
+    userId: string,
+    connectionId: string,
+    request: IntroductionPostRequest,
+    now = new Date(),
+  ): Promise<IntroductionMessage> {
+    if (!this.realSubmissionsEnabled) throw new ConnectionStateError("REAL_SUBMISSIONS_DISABLED");
+    const body = screenIntroductionBody(request.body);
+    const saved = await this.repository.addIntroductionMessage({
+      connectionId,
+      senderUserId: userId,
+      body,
+      now,
+    });
+    return this.toMessage(saved, userId);
+  }
+
+  /** Administrator moderation: recent introduction messages across pairs. */
+  async listRecentMessages(limit = 50): Promise<{ messages: AdminIntroductionMessageView[] }> {
+    const rows = await this.repository.listRecentIntroductionMessages(limit);
+    return {
+      messages: rows.map((row) => ({
+        id: row.id,
+        connectionId: row.connectionId,
+        senderPublicCode: row.senderCode,
+        body: row.body,
+        hidden: row.hidden,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /** Administrator hides an inappropriate message (its body is blanked for both users). */
+  async hideMessage(messageId: string): Promise<void> {
+    const hidden = await this.repository.hideIntroductionMessage(messageId);
+    if (!hidden) throw new ConnectionStateError("MESSAGE_NOT_FOUND");
+  }
+
+  private toThread(row: IntroductionThreadRow, viewerId: string, now: Date): IntroductionThread {
+    const other: DiscoveryProfile = {
+      id: row.other.publicCode,
+      publicCode: row.other.publicCode,
+      age: this.ageFrom(row.other.dateOfBirthCiphertext, row.other.userId, now),
+      gender: row.other.gender as "female" | "male",
+      city: row.other.city,
+      occupationCategory: row.other.occupationCategory,
+      educationLevel: row.other.educationLevel,
+      heightCm: row.other.heightCm,
+      faithTradition: "ethiopian_orthodox_tewahedo",
+      marriageIntention: (row.other.marriageIntention ?? "teklil") as DiscoveryProfile["marriageIntention"],
+      values: row.other.values as ValueTag[],
+      bio: row.other.bio ?? "",
+      verified: true,
+      photoMode: "values_only",
+    };
+    return {
+      connectionId: row.connectionId,
+      other,
+      messages: row.messages.map((message) => this.toMessage(message, viewerId)),
+    };
+  }
+
+  private toMessage(message: IntroductionMessageRow, viewerId: string): IntroductionMessage {
+    return {
+      id: message.id,
+      fromMe: message.senderUserId === viewerId,
+      body: message.hidden ? "" : message.body,
+      createdAt: message.createdAt.toISOString(),
+      hidden: message.hidden,
+    };
   }
 
   private toItem(row: UserConnectionRow, viewerId: string, now: Date): ConnectionItem {

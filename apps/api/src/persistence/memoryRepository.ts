@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AdminDecisionInput,
+  AdminIntroductionMessageRow,
   AdminPendingConnectionRow,
   AdminQueueRow,
   AdminReviewAuditRow,
@@ -10,6 +11,8 @@ import type {
   PersistenceRepository,
   DraftRecord,
   IdentityUpdate,
+  IntroductionMessageRow,
+  IntroductionThreadRow,
   SessionRecord,
   SubmissionConsent,
   SubmissionRecord,
@@ -18,6 +21,8 @@ import type {
   VerificationPhotoInput,
   VerificationPhotoRecord,
 } from "./types.js";
+
+type UserIntroductionThread = IntroductionThreadRow;
 import { SubmissionStateError, VersionConflictError } from "./types.js";
 
 interface MemoryIdentity {
@@ -46,6 +51,8 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly connections = new Map<string, MemoryConnection>();
   /** Confirmation flags keyed by "connectionId:userId". */
   private readonly connectionConfirmations = new Map<string, boolean>();
+  /** Introduction messages keyed by id (Track D3). */
+  private readonly introductionMessages = new Map<string, MemoryIntroductionMessage>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -556,6 +563,105 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     c.updatedAt = new Date(input.now);
     return c.status;
   }
+
+  async getIntroductionThread(input: {
+    connectionId: string;
+    viewerId: string;
+    now: Date;
+  }): Promise<UserIntroductionThread | null> {
+    void input.now;
+    const c = this.connections.get(input.connectionId);
+    if (!c || c.status !== "connected") return null;
+    if (c.userAId !== input.viewerId && c.userBId !== input.viewerId) return null;
+    const viewerIsA = c.userAId === input.viewerId;
+    const otherId = viewerIsA ? c.userBId : c.userAId;
+    const otherUser = this.users.get(otherId);
+    const otherDraft = this.drafts.get(otherId);
+    const otherIdentity = this.identities.get(otherId);
+    const payload = otherDraft?.publicPayload as
+      | {
+          publicProfile?: {
+            gender?: string; city?: string; educationLevel?: string;
+            occupationCategory?: string; heightCm?: number | null;
+          };
+          faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+        }
+      | undefined;
+    const messages = [...this.introductionMessages.values()]
+      .filter((m) => m.connectionId === input.connectionId)
+      .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())
+      .map((m) => ({
+        id: m.id,
+        senderUserId: m.senderUserId,
+        body: m.hidden ? "" : m.body,
+        hidden: m.hidden,
+        createdAt: m.createdAt,
+      }));
+    return {
+      connectionId: input.connectionId,
+      status: c.status,
+      viewerIsA,
+      other: {
+        userId: otherId,
+        publicCode: otherUser?.publicCode ?? "",
+        dateOfBirthCiphertext: otherIdentity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+        gender: payload?.publicProfile?.gender ?? "female",
+        city: payload?.publicProfile?.city ?? "",
+        educationLevel: payload?.publicProfile?.educationLevel ?? null,
+        occupationCategory: payload?.publicProfile?.occupationCategory ?? null,
+        heightCm: payload?.publicProfile?.heightCm ?? null,
+        marriageIntention: payload?.faithAndFamily?.marriageIntention ?? null,
+        values: payload?.faithAndFamily?.values ?? [],
+        bio: payload?.faithAndFamily?.bio ?? null,
+      },
+      messages,
+    };
+  }
+
+  async addIntroductionMessage(input: {
+    connectionId: string;
+    senderUserId: string;
+    body: string;
+    now: Date;
+  }): Promise<{ id: string; senderUserId: string; body: string; hidden: boolean; createdAt: Date }> {
+    const c = this.connections.get(input.connectionId);
+    if (!c || c.status !== "connected") throw new SubmissionStateError("INTRODUCTION_NOT_OPEN");
+    if (c.userAId !== input.senderUserId && c.userBId !== input.senderUserId) {
+      throw new SubmissionStateError("INTRODUCTION_NOT_OPEN");
+    }
+    const id = randomUUID();
+    const message = {
+      id,
+      connectionId: input.connectionId,
+      senderUserId: input.senderUserId,
+      body: input.body,
+      hidden: false,
+      createdAt: new Date(input.now),
+    };
+    this.introductionMessages.set(id, message);
+    return message;
+  }
+
+  async listRecentIntroductionMessages(limit: number): Promise<AdminIntroductionMessageRow[]> {
+    return [...this.introductionMessages.values()]
+      .sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime())
+      .slice(0, limit)
+      .map((m) => ({
+        id: m.id,
+        connectionId: m.connectionId,
+        senderCode: this.users.get(m.senderUserId)?.publicCode ?? "",
+        body: m.body,
+        hidden: m.hidden,
+        createdAt: m.createdAt,
+      }));
+  }
+
+  async hideIntroductionMessage(messageId: string): Promise<boolean> {
+    const message = this.introductionMessages.get(messageId);
+    if (!message || message.hidden) return false;
+    message.hidden = true;
+    return true;
+  }
 }
 
 interface MemoryConnection {
@@ -565,4 +671,13 @@ interface MemoryConnection {
   status: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+interface MemoryIntroductionMessage {
+  id: string;
+  connectionId: string;
+  senderUserId: string;
+  body: string;
+  hidden: boolean;
+  createdAt: Date;
 }
