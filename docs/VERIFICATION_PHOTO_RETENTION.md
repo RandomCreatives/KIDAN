@@ -23,23 +23,20 @@ ciphertext in place. It returns `{ "data": { "purged": <count> } }`.
 
 ## Enabling the daily schedule (Vercel)
 
-1. On the **API** project, set the environment variable
-   `RETENTION_CRON_SECRET` to a long random value.
-2. To use Vercel Cron (which calls the path with `Authorization: Bearer
-   <CRON_SECRET>`), set `CRON_SECRET` to the **same value** and add to
-   `apps/api/vercel.json`:
+The cron entry is already committed in `apps/api/vercel.json`
+(`0 2 * * *` → `/internal/retention`). It is inert until you provision the
+secret: the endpoint returns `404` when `RETENTION_CRON_SECRET` is unset, so
+shipping the cron entry before the secret exists is safe.
 
-   ```json
-   "crons": [
-     { "path": "/internal/retention", "schedule": "0 2 * * *" }
-   ]
-   ```
+To activate:
 
-   (The cron entry is intentionally not committed by default so it cannot
-   interfere with environments that have not provisioned the secret.)
+1. On the **API** project, set `RETENTION_CRON_SECRET` to a long random value.
+2. Vercel Cron invokes the path with `Authorization: Bearer <CRON_SECRET>`, so
+   set `CRON_SECRET` to the **same value**.
 
 Alternatively, trigger the endpoint once a day from any scheduler (cron job,
-GitHub Actions scheduled workflow, uptime monitor) with the bearer header.
+GitHub Actions scheduled workflow, uptime monitor) with
+`Authorization: Bearer <RETENTION_CRON_SECRET>`.
 
 ## When the 30-day clock starts
 
