@@ -37,6 +37,14 @@ describe("validateTelegramInitData", () => {
     );
   });
 
+  it("accepts modern initData that carries the separate Ed25519 signature field", () => {
+    // Modern Telegram clients include a `signature` field (third-party Ed25519).
+    // The bot HMAC is computed over ALL fields except `hash`, so signature
+    // must remain part of the data-check-string.
+    const result = validateTelegramInitData(signedInitData({ signature: "aB3_xEd25519Signature-Value" }), { botToken, now });
+    expect(result.telegramUserId).toBe(900719925474000n);
+  });
+
   it("rejects stale data", () => {
     const oldDate = String(Math.floor(now.getTime() / 1000) - 301);
     expect(() => validateTelegramInitData(signedInitData({ auth_date: oldDate }), { botToken, now })).toThrowError(
