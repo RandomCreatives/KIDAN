@@ -36,6 +36,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly verificationPhotos = new Map<string, VerificationPhotoRecord>();
   private readonly reviewStatus = new Map<string, string>();
   private readonly reviewHistory = new Map<string, AdminReviewAuditRow[]>();
+  private readonly consentReceipts = new Map<string, SubmissionConsent[]>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -90,6 +91,12 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   async revokeSession(tokenHash: Buffer, now: Date): Promise<void> {
     const session = this.sessions.get(tokenHash.toString("hex"));
     if (session) session.revokedAt = new Date(now);
+  }
+
+  async revokeAllSessionsForUser(userId: string, now: Date): Promise<void> {
+    for (const session of this.sessions.values()) {
+      if (session.user.id === userId) session.revokedAt = new Date(now);
+    }
   }
 
   async touchSession(_sessionId: string, _now: Date): Promise<void> {}
@@ -159,6 +166,13 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     draft.version += 1;
     draft.updatedAt = new Date(input.now);
     this.reviewStatus.set(input.userId, "pending");
+    if (input.consents.length > 0) {
+      const stored = this.consentReceipts.get(input.userId) ?? [];
+      for (const consent of input.consents) {
+        stored.push({ ...consent, recordedAt: new Date(input.now) });
+      }
+      this.consentReceipts.set(input.userId, stored);
+    }
     this.users.get(input.userId)!.status = "profile_pending";
     return { draft: structuredClone(draft), consents: structuredClone(input.consents) };
   }
@@ -310,5 +324,43 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
 
   async getCandidateTelegramIdCiphertext(userId: string): Promise<Buffer | null> {
     return this.telegramCiphertextByUser.get(userId) ?? null;
+  }
+
+  async getIdentityCiphertexts(userId: string): Promise<{
+    legalNameCiphertext: Buffer | null;
+    phoneCiphertext: Buffer | null;
+    dateOfBirthCiphertext: Buffer | null;
+  } | null> {
+    const identity = this.identities.get(userId);
+    if (!this.users.has(userId)) return null;
+    return {
+      legalNameCiphertext: identity?.legalNameCiphertext ?? null,
+      phoneCiphertext: identity?.phoneCiphertext ?? null,
+      dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? null,
+    };
+  }
+
+  async listConsentReceipts(userId: string): Promise<SubmissionConsent[]> {
+    return structuredClone(this.consentReceipts.get(userId) ?? []);
+  }
+
+  async deleteAccount(userId: string, _now: Date): Promise<boolean> {
+    if (!this.users.has(userId)) return false;
+    this.users.delete(userId);
+    for (const [lookup, id] of this.telegramUsers) if (id === userId) this.telegramUsers.delete(lookup);
+    this.drafts.delete(userId);
+    this.completeIdentities.delete(userId);
+    this.identities.delete(userId);
+    this.telegramCiphertextByUser.delete(userId);
+    this.verificationPhotos.delete(userId);
+    this.reviewStatus.delete(userId);
+    this.reviewHistory.delete(userId);
+    this.latestNoteCiphertext.delete(userId);
+    this.consentReceipts.delete(userId);
+    // Remove this user's sessions (each session embeds the user id).
+    for (const [tokenHash, session] of this.sessions) {
+      if (session.user.id === userId) this.sessions.delete(tokenHash);
+    }
+    return true;
   }
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ConnectionsScreen } from "./components/ConnectionsScreen";
 import { DiscoverScreen } from "./components/DiscoverScreen";
 import { MyProfileScreen } from "./components/MyProfileScreen";
+import { PrivacyScreen } from "./components/PrivacyScreen";
 import { CompassIcon, ConnectionIcon, UserIcon } from "./components/Icons";
 import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
@@ -14,6 +15,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>("discover");
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
 
   if (showOnboarding) {
     return (
@@ -48,9 +50,20 @@ export function App() {
   return (
     <div className="app-shell">
       <div className="app-viewport">
+        {showPrivacy ? (
+          <PrivacyScreen onClose={() => setShowPrivacy(false)} />
+        ) : (
+          <>
         {tab === "discover" && <DiscoverScreen />}
         {tab === "connections" && <ConnectionsScreen />}
-        {tab === "profile" && <MyProfileScreen onPreviewOnboarding={() => setShowOnboarding(true)} />}
+        {tab === "profile" && (
+          <MyProfileScreen
+            onPreviewOnboarding={() => setShowOnboarding(true)}
+            onPrivacy={() => setShowPrivacy(true)}
+          />
+        )}
+          </>
+        )}
 
         <nav className="bottom-nav" aria-label="Primary navigation">
           <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>

@@ -161,6 +161,8 @@ export async function buildApp(
     app.get("/v1/onboarding/draft", draftNotReady);
     app.put("/v1/onboarding/draft", draftNotReady);
     app.get("/v1/onboarding/review-status", draftNotReady);
+    app.get("/v1/onboarding/export", draftNotReady);
+    app.post("/v1/onboarding/delete-account", draftNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {

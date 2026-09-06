@@ -35,6 +35,8 @@ export interface SubmissionConsent {
   purpose: string;
   policyVersion: string;
   granted: boolean;
+  /** Set when reading stored receipts for export; absent on write. */
+  recordedAt?: Date;
 }
 
 export interface SubmissionRecord {
@@ -130,6 +132,7 @@ export interface PersistenceRepository {
   }): Promise<void>;
   findActiveSession(tokenHash: Buffer, now: Date): Promise<SessionRecord | null>;
   revokeSession(tokenHash: Buffer, now: Date): Promise<void>;
+  revokeAllSessionsForUser(userId: string, now: Date): Promise<void>;
   touchSession(sessionId: string, now: Date): Promise<void>;
   getDraft(userId: string): Promise<DraftRecord | null>;
   saveDraft(input: {
@@ -175,6 +178,22 @@ export interface PersistenceRepository {
   getCandidateReviewState(userId: string): Promise<CandidateReviewState | null>;
   /** Encrypted Telegram id ciphertext for notification delivery; service decrypts. */
   getCandidateTelegramIdCiphertext(userId: string): Promise<Buffer | null>;
+  // --- B6 self-serve data rights ---
+  /** The candidate's own identity ciphertext fields (for export); null when never saved. */
+  getIdentityCiphertexts(userId: string): Promise<{
+    legalNameCiphertext: Buffer | null;
+    phoneCiphertext: Buffer | null;
+    dateOfBirthCiphertext: Buffer | null;
+  } | null>;
+  /** The candidate's own consent receipts (for export). */
+  listConsentReceipts(userId: string): Promise<SubmissionConsent[]>;
+  /**
+   * Hard-deletes the user and all personal data. Cascading FKs remove the
+   * identity vault, profile, draft, sessions, photo, consents, decisions, and
+   * connection rows; the audit rows tied to this subject are removed explicitly.
+   * Returns false when the user does not exist.
+   */
+  deleteAccount(userId: string, now: Date): Promise<boolean>;
 }
 
 export class VersionConflictError extends Error {

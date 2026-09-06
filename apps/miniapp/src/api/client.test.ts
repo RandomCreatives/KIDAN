@@ -376,4 +376,36 @@ describe("KidanApiClient", () => {
       }),
     );
   });
+
+  it("fetches the data export bundle", async () => {
+    const bundle = {
+      exportedAt: "2026-09-06T10:00:00.000Z",
+      publicCode: "KD-AB12CD",
+      submitted: true,
+      publicProfile: {},
+      identity: null,
+      verificationPhoto: null,
+      review: { status: "pending", feedbackNote: null, decidedAt: null },
+      consents: [],
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: bundle }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await client.exportData();
+    expect(result.publicCode).toBe("KD-AB12CD");
+    expect(fetchImpl).toHaveBeenCalledWith("/api/v1/onboarding/export", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("deletes the account as a CSRF-guarded POST", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { deleted: true } }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    await client.deleteAccount("csrf-token");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/api/v1/onboarding/delete-account",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }),
+        body: JSON.stringify({ confirm: true }),
+      }),
+    );
+  });
 });

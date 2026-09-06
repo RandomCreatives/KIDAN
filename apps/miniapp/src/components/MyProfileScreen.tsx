@@ -10,7 +10,13 @@ const settings = [
   { label: "Pause discovery", detail: "Hide without deleting", icon: <PauseIcon size={19} /> },
 ];
 
-export function MyProfileScreen({ onPreviewOnboarding }: { onPreviewOnboarding: () => void }) {
+export function MyProfileScreen({
+  onPreviewOnboarding,
+  onPrivacy,
+}: {
+  onPreviewOnboarding: () => void;
+  onPrivacy: () => void;
+}) {
   const { realSubmissionsEnabled } = useAuth();
   return (
     <main className="screen standard-screen">
@@ -28,7 +34,12 @@ export function MyProfileScreen({ onPreviewOnboarding }: { onPreviewOnboarding: 
 
       <section className="settings-list" aria-label="Profile settings">
         {settings.map((item) => (
-          <button key={item.label} className="settings-row" type="button">
+          <button
+            key={item.label}
+            className="settings-row"
+            type="button"
+            onClick={item.label === "Privacy & consent" ? onPrivacy : onPreviewOnboarding}
+          >
             <span className="settings-icon">{item.icon}</span>
             <span><strong>{item.label}</strong><small>{item.detail}</small></span>
             <ChevronRightIcon size={19} />

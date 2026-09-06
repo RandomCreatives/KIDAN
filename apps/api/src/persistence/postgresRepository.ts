@@ -147,6 +147,13 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     );
   }
 
+  async revokeAllSessionsForUser(userId: string, now: Date): Promise<void> {
+    await this.pool.query(
+      "UPDATE app_session SET revoked_at = COALESCE(revoked_at, $2) WHERE user_id = $1 AND revoked_at IS NULL",
+      [userId, now],
+    );
+  }
+
   async touchSession(sessionId: string, now: Date): Promise<void> {
     await this.pool.query(
       `UPDATE app_session
@@ -591,5 +598,60 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       [userId],
     );
     return result.rows[0]?.telegram_id_ciphertext ?? null;
+  }
+
+  async getIdentityCiphertexts(userId: string): Promise<{
+    legalNameCiphertext: Buffer | null;
+    phoneCiphertext: Buffer | null;
+    dateOfBirthCiphertext: Buffer | null;
+  } | null> {
+    const result = await this.pool.query<{
+      legal_name_ciphertext: Buffer | null;
+      phone_ciphertext: Buffer | null;
+      date_of_birth_ciphertext: Buffer | null;
+    }>(`
+      SELECT legal_name_ciphertext, phone_ciphertext, date_of_birth_ciphertext
+      FROM identity_vault WHERE user_id = $1
+    `, [userId]);
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      legalNameCiphertext: row.legal_name_ciphertext ?? null,
+      phoneCiphertext: row.phone_ciphertext ?? null,
+      dateOfBirthCiphertext: row.date_of_birth_ciphertext ?? null,
+    };
+  }
+
+  async listConsentReceipts(userId: string): Promise<SubmissionConsent[]> {
+    const result = await this.pool.query<{
+      purpose: string;
+      policy_version: string;
+      granted: boolean;
+      recorded_at: Date;
+    }>(`
+      SELECT purpose, policy_version, granted, recorded_at
+      FROM consent_receipt WHERE user_id = $1 ORDER BY recorded_at ASC
+    `, [userId]);
+    return result.rows.map((row) => ({
+      purpose: row.purpose,
+      policyVersion: row.policy_version,
+      granted: row.granted,
+      recordedAt: row.recorded_at,
+    }));
+  }
+
+  async deleteAccount(userId: string, now: Date): Promise<boolean> {
+    return withTransaction(this.pool, async (client) => {
+      // Remove profile-review rows tied to this subject (subject_id has no FK).
+      await client.query(
+        "DELETE FROM admin_review WHERE subject_type = 'profile' AND subject_id = $1",
+        [userId],
+      );
+      await client.query("DELETE FROM profile_review WHERE user_id = $1", [userId]);
+      // Everything personal hangs off app_user with ON DELETE CASCADE.
+      const result = await client.query("DELETE FROM app_user WHERE id = $1", [userId]);
+      void now;
+      return (result.rowCount ?? 0) > 0;
+    });
   }
 }

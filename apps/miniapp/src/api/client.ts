@@ -3,6 +3,8 @@ import {
   apiErrorEnvelopeSchema,
   candidateReviewStatusSchema,
   type CandidateReviewStatus,
+  dataExportResponseSchema,
+  type DataExportResponse,
   draftResponseSchema,
   draftSaveResponseSchema,
   type ApiErrorCode,
@@ -127,6 +129,17 @@ export class KidanApiClient {
   async getReviewStatus(): Promise<CandidateReviewStatus> {
     const data = await this.request("GET", "/v1/onboarding/review-status");
     return this.parse(candidateReviewStatusSchema, data);
+  }
+
+  /** The caller's own complete data bundle (B6). Session-scoped. */
+  async exportData(): Promise<DataExportResponse> {
+    const data = await this.request("GET", "/v1/onboarding/export");
+    return this.parse(dataExportResponseSchema, data);
+  }
+
+  /** Permanently deletes the caller's account and all personal data (B6). */
+  async deleteAccount(csrfToken: string): Promise<void> {
+    await this.request("POST", "/v1/onboarding/delete-account", { confirm: true }, csrfToken, 200);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

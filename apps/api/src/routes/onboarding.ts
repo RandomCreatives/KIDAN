@@ -1,5 +1,7 @@
 import {
   candidateReviewStatusSchema,
+  dataExportResponseSchema,
+  deleteAccountRequestSchema,
   draftResponseSchema,
   draftSaveResponseSchema,
   INITIAL_ONBOARDING_STEP,
@@ -126,6 +128,41 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
       return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
     }
     return reply.send({ data: validated.data });
+  });
+
+  // B6: self-serve data export for the session owner.
+  app.get("/v1/onboarding/export", async (request, reply) => {
+    const session = await requireSession(request, reply);
+    if (!session) return;
+    const bundle = await options.onboardingService.exportData(session.user.id, session.user.publicCode);
+    const validated = dataExportResponseSchema.safeParse(bundle);
+    if (!validated.success) {
+      request.log.error({ msg: "export response failed contract validation", error: validated.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    // Prevent the personal-data bundle from being cached or stored by proxies.
+    reply.header("Cache-Control", "no-store, private");
+    return reply.send({ data: validated.data });
+  });
+
+  // B6: self-serve account + data deletion. Requires CSRF and an explicit
+  // confirmation; revokes the caller's sessions after the data is removed.
+  app.post("/v1/onboarding/delete-account", async (request, reply) => {
+    const session = await requireSession(request, reply);
+    if (!session) return;
+    if (!(await requireCsrf(request, reply, session))) return;
+    const parsed = deleteAccountRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: { code: "INVALID_REQUEST", requestId: request.id } });
+    }
+    const deleted = await options.onboardingService.deleteAccount(session.user.id);
+    if (!deleted) {
+      return reply.code(404).send({ error: { code: "ACCOUNT_NOT_FOUND", requestId: request.id } });
+    }
+    // Remove all of the user's sessions so no stale cookie remains.
+    await options.sessionService.revokeAllForUser(session.user.id);
+    reply.clearCookie(options.cookieName, { path: "/" });
+    return reply.code(200).send({ data: { deleted: true } });
   });
 
   app.put("/v1/onboarding/draft", async (request, reply) => {

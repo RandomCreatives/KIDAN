@@ -10,7 +10,7 @@ import {
   type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
-import type { CandidateReviewStatus } from "@kidan/contracts";
+import type { CandidateReviewStatus, DataExportResponse } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
 import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
@@ -218,5 +218,70 @@ export class OnboardingService {
       feedbackNote,
       decidedAt: state.decidedAt ? new Date(state.decidedAt).toISOString() : null,
     };
+  }
+
+  /**
+   * Self-serve data export (B6). Compiles the caller's OWN data into a portable
+   * bundle: public profile, decrypted identity, their verification photo,
+   * review status/note, and consent receipts. Available regardless of the
+   * real-submissions flag so a candidate can always retrieve their data.
+   */
+  async exportData(userId: string, publicCode: string, now = new Date()): Promise<DataExportResponse> {
+    const draft = await this.repository.getDraft(userId);
+    const identityCiphertexts = await this.repository.getIdentityCiphertexts(userId);
+    const photo = await this.repository.getVerificationPhoto(userId);
+    const review = await this.getCandidateReviewStatus(userId);
+    const consentRows = await this.repository.listConsentReceipts(userId);
+
+    let identity: DataExportResponse["identity"] = null;
+    if (
+      identityCiphertexts?.legalNameCiphertext
+      && identityCiphertexts.phoneCiphertext
+      && identityCiphertexts.dateOfBirthCiphertext
+    ) {
+      identity = {
+        fullName: this.identityCipher.decrypt(identityCiphertexts.legalNameCiphertext, `${userId}:legal-name`),
+        phoneNumber: this.identityCipher.decrypt(identityCiphertexts.phoneCiphertext, `${userId}:phone`),
+        dateOfBirth: this.identityCipher.decrypt(identityCiphertexts.dateOfBirthCiphertext, `${userId}:date-of-birth`),
+      };
+    }
+
+    let verificationPhoto: DataExportResponse["verificationPhoto"] = null;
+    if (photo && !photo.deletedAt && photo.photoCiphertext.length > 0) {
+      try {
+        const bytes = this.identityCipher.decryptBuffer(photo.photoCiphertext, `${userId}:verification-photo`);
+        verificationPhoto = {
+          mediaType: photo.mediaType as "image/jpeg" | "image/png" | "image/webp",
+          dataUrl: `data:${photo.mediaType};base64,${bytes.toString("base64")}`,
+        };
+      } catch {
+        verificationPhoto = null;
+      }
+    }
+
+    return {
+      exportedAt: now.toISOString(),
+      publicCode,
+      submitted: Boolean(draft?.submittedAt),
+      publicProfile: partialPublicOnboardingPayloadSchema.parse(draft?.publicPayload ?? {}),
+      identity,
+      verificationPhoto,
+      review,
+      consents: consentRows.map((consent) => ({
+        purpose: consent.purpose,
+        policyVersion: consent.policyVersion,
+        granted: consent.granted,
+        recordedAt: (consent.recordedAt ? new Date(consent.recordedAt) : now).toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * Self-serve account deletion (B6). Hard-deletes the user and all personal
+   * data (cascading). Returns false when there is nothing to delete. Session
+   * revocation is handled by the route after a successful delete.
+   */
+  async deleteAccount(userId: string, now = new Date()): Promise<boolean> {
+    return this.repository.deleteAccount(userId, now);
   }
 }

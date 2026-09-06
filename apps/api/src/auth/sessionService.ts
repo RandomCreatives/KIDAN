@@ -88,4 +88,8 @@ export class SessionService {
   async revoke(sessionToken: string, now = new Date()): Promise<void> {
     await this.repository.revokeSession(this.sessionHasher.hash(`session:${sessionToken}`), now);
   }
+
+  async revokeAllForUser(userId: string, now = new Date()): Promise<void> {
+    await this.repository.revokeAllSessionsForUser(userId, now);
+  }
 }

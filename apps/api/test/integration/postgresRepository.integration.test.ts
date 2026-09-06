@@ -566,6 +566,45 @@ describe("PostgreSQL repository integration", () => {
       expect(/^\d+$/.test(telegramId)).toBe(true);
     });
 
+    it("self-serve delete removes the user and all personal data (B6)", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const console_ = admin();
+      await console_.decide(user.publicCode, { decision: "approved" });
+
+      const deleted = await services.repository.deleteAccount(user.id, new Date());
+      expect(deleted).toBe(true);
+
+      // app_user and every cascading personal row are gone.
+      const users = await harness.pool.query("SELECT 1 FROM app_user WHERE id = $1", [user.id]);
+      expect(users.rowCount).toBe(0);
+      for (const table of ["identity_vault", "discovery_profile", "onboarding_draft", "verification_photo", "app_session", "consent_receipt", "profile_review"]) {
+        const r = await harness.pool.query(`SELECT 1 FROM ${table} WHERE user_id = $1`, [user.id]);
+        expect(r.rowCount, table).toBe(0);
+      }
+      // Profile audit rows for this subject are also removed.
+      const reviews = await harness.pool.query(
+        "SELECT 1 FROM admin_review WHERE subject_type='profile' AND subject_id = $1",
+        [user.id],
+      );
+      expect(reviews.rowCount).toBe(0);
+
+      // A second delete reports nothing to delete.
+      expect(await services.repository.deleteAccount(user.id, new Date())).toBe(false);
+    });
+
+    it("self-serve export round-trips the candidate's own identity and photo (B6)", async () => {
+      const user = await newUser(services);
+      await completeSubmission(user);
+      const bundle = await services.onboarding.exportData(user.id, user.publicCode);
+      expect(bundle.publicCode).toBe(user.publicCode);
+      expect(bundle.identity?.fullName).toBe("Demo Candidate");
+      expect(bundle.verificationPhoto).not.toBeNull();
+      expect(Array.from(Buffer.from(bundle.verificationPhoto!.dataUrl.split(",")[1]!, "base64").subarray(0, 3)))
+        .toEqual([0xff, 0xd8, 0xff]);
+      expect(bundle.consents.length).toBeGreaterThanOrEqual(6);
+    });
+
     it("changes_requested reopens the draft; resubmission returns to queue with history", async () => {
       const user = await newUser(services);
       await completeSubmission(user);
