@@ -431,6 +431,43 @@ describe("KidanApiClient", () => {
     expect(body.idempotencyKey).toBe("123e4567-e89b-12d3-a456-426614174000");
   });
 
+  it("fetches the values-only connections list", async () => {
+    const list = {
+      connections: [
+        {
+          id: "123e4567-e89b-12d3-a456-426614174000",
+          status: "admin_approved_pending_confirmation",
+          other: { publicCode: "KD-2A3B4C", age: 28, city: "Addis Ababa", gender: "female" },
+          iConfirmed: false,
+          theyConfirmed: false,
+          updatedAt: "2026-09-06T12:00:00.000Z",
+        },
+      ],
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: list }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await client.getConnections();
+    expect(result.connections).toHaveLength(1);
+    expect(result.connections[0]!.other.publicCode).toBe("KD-2A3B4C");
+    // Values-only: the wire payload carries no name/phone/photo fields.
+    expect(JSON.stringify(result)).not.toContain("phone");
+    expect(fetchImpl).toHaveBeenCalledWith("/api/v1/connections", expect.objectContaining({ method: "GET" }));
+  });
+
+  it("confirms a connection as a CSRF-guarded POST", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: { status: "connected" } }, 200));
+    const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const result = await client.confirmConnection("123e4567-e89b-12d3-a456-426614174000", true, "csrf-token");
+    expect(result.status).toBe("connected");
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(url).toBe("/api/v1/connections/123e4567-e89b-12d3-a456-426614174000/confirm");
+    expect((init as RequestInit).method).toBe("POST");
+    expect((init as RequestInit).headers).toMatchObject({ "x-csrf-token": "csrf-token" });
+    expect((init as RequestInit).body).toBe(JSON.stringify({ confirm: true }));
+  });
+
   it("deletes the account as a CSRF-guarded POST", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ data: { deleted: true } }, 200));
     const client = new KidanApiClient({ baseUrl: "/api", fetchImpl: fetchImpl as unknown as typeof fetch });

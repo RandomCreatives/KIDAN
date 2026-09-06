@@ -8,6 +8,7 @@ import { createSchemaReadinessCheck } from "./database/readiness.js";
 import { OnboardingService } from "./onboarding/onboardingService.js";
 import { AdminService } from "./admin/adminService.js";
 import { DiscoveryService } from "./discovery/discoveryService.js";
+import { ConnectionService } from "./connections/connectionService.js";
 import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
@@ -95,6 +96,12 @@ export async function buildRuntimeApp(
     // Track C: values-only discovery (only serves real cards when submissions
     // are enabled; otherwise returns an empty feed).
     options.discoveryService = new DiscoveryService(
+      repository,
+      identityCipher,
+      environment.ENABLE_REAL_SUBMISSIONS === "true",
+    );
+    // Track D: admin-gated connections.
+    options.connectionService = new ConnectionService(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",

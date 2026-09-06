@@ -1,11 +1,15 @@
 import {
+  adminConnectionDecisionResponseSchema,
   adminDecisionRequestSchema,
   adminDecisionResponseSchema,
+  adminPendingConnectionListSchema,
   adminPhotoResponseSchema,
   adminQueueResponseSchema,
   adminSessionSchema,
   adminSubmissionDetailSchema,
+  type AdminConnectionDecisionResponse,
   type AdminDecisionRequest,
+  type AdminPendingConnection,
   type AdminQueueItem,
   type AdminSession,
   type AdminSubmissionDetail,
@@ -114,6 +118,23 @@ export class AdminApiClient {
       true,
     );
     return adminDecisionResponseSchema.parse(data);
+  }
+
+  /** Track D: mutually-interested pairs awaiting administrator approval. */
+  async listPendingConnections(): Promise<AdminPendingConnection[]> {
+    const data = await this.request("GET", "/v1/admin/connections");
+    return adminPendingConnectionListSchema.parse(data).connections;
+  }
+
+  /** Administrator approves or rejects a pending connection. */
+  async decideConnection(id: string, decision: "approved" | "rejected"): Promise<AdminConnectionDecisionResponse> {
+    const data = await this.request(
+      "POST",
+      `/v1/admin/connections/${encodeURIComponent(id)}/decision`,
+      { decision },
+      true,
+    );
+    return adminConnectionDecisionResponseSchema.parse(data);
   }
 
   async logout(): Promise<void> {

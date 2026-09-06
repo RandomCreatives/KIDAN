@@ -422,3 +422,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .privacy-message.ok { color: #1e7a46; }
 .privacy-message.err { color: #a4322c; }
 .privacy-note { font-size: 11px; color: #858b87; line-height: 1.5; background: var(--paper); border: 1px dashed var(--line); border-radius: 14px; padding: 13px; }
+
+/* Track D: admin-gated connections */
+.status-icon.green { color: var(--forest); background: rgba(31,75,60,.1); }
+.status-icon.muted { color: #6b7280; background: #eef0f2; }
+.connection-card { align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.connection-actions { display: flex; gap: 8px; width: 100%; }
+.connection-button { min-height: 42px; width: auto; flex: 1; padding: 0 16px; }
+.waiting-note { font-size: 11px; font-weight: 600; color: #956e32; }
+.quiet-copy { font-size: 12.5px; line-height: 1.6; color: var(--muted, #5c6660); margin: 0; }

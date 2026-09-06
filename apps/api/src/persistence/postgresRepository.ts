@@ -4,11 +4,13 @@ import { withTransaction } from "../database/pool.js";
 import type {
   AdminDecisionInput,
   AdminQueueRow,
+  AdminPendingConnectionRow,
   AdminReviewAuditRow,
   AdminSubmissionRow,
   CandidateReviewState,
   DiscoveryCandidateRow,
   DraftRecord,
+  UserConnectionRow,
   IdentityUpdate,
   PersistenceRepository,
   SessionRecord,
@@ -732,5 +734,178 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       [actorUserId, targetUserId],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async recordDecisionAndMaybeConnect(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<string | null> {
+    return withTransaction(this.pool, async (client) => {
+      const inserted = await client.query(`
+        INSERT INTO discovery_decision (actor_user_id, target_user_id, decision, idempotency_key)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (actor_user_id, target_user_id) DO NOTHING
+      `, [input.actorUserId, input.targetUserId, input.decision, input.idempotencyKey]);
+      if ((inserted.rowCount ?? 0) === 0) return null;
+      if (input.decision !== "interested") return null;
+
+      // Mutual interest: both sides have an 'interested' decision for each other.
+      const mutual = await client.query<{ uid: string }>(`
+        SELECT CASE WHEN $1::text < $2::text THEN $1 ELSE $2 END AS uid
+        FROM discovery_decision d1
+        JOIN discovery_decision d2
+          ON d1.actor_user_id = $1 AND d1.target_user_id = $2 AND d1.decision = 'interested'
+         AND d2.actor_user_id = $2 AND d2.target_user_id = $1 AND d2.decision = 'interested'
+        LIMIT 1
+      `, [input.actorUserId, input.targetUserId]);
+      if (mutual.rowCount === 0) return null;
+
+      const a = input.actorUserId < input.targetUserId ? input.actorUserId : input.targetUserId;
+      const b = input.actorUserId < input.targetUserId ? input.targetUserId : input.actorUserId;
+      const created = await client.query<{ id: string }>(`
+        INSERT INTO connection (user_a_id, user_b_id, status, created_at, updated_at)
+        VALUES ($1, $2, 'mutual_pending_admin', $3, $3)
+        ON CONFLICT (user_a_id, user_b_id) DO NOTHING
+        RETURNING id
+      `, [a, b, input.now]);
+      return created.rows[0]?.id ?? null;
+    });
+  }
+
+  async listUserConnections(userId: string): Promise<UserConnectionRow[]> {
+    const result = await this.pool.query<{
+      id: string; status: string;
+      user_a_id: string; user_b_id: string;
+      ua_code: string; ub_code: string;
+      ua_dob: Buffer; ub_dob: Buffer;
+      ua_city: string; ub_city: string;
+      ua_gender: string; ub_gender: string;
+      ua_conf: boolean; ub_conf: boolean;
+      updated_at: Date;
+    }>(`
+      SELECT c.id, c.status::text AS status, c.user_a_id, c.user_b_id,
+             ua.public_code AS ua_code, ub.public_code AS ub_code,
+             va.date_of_birth_ciphertext AS ua_dob, vb.date_of_birth_ciphertext AS ub_dob,
+             pa.city_code AS ua_city, pb.city_code AS ub_city,
+             pa.gender::text AS ua_gender, pb.gender::text AS ub_gender,
+             (cc_a.confirmed IS TRUE) AS ua_conf, (cc_b.confirmed IS TRUE) AS ub_conf,
+             c.updated_at
+      FROM connection c
+      JOIN app_user ua ON ua.id = c.user_a_id
+      JOIN app_user ub ON ub.id = c.user_b_id
+      JOIN identity_vault va ON va.user_id = ua.id
+      JOIN identity_vault vb ON vb.user_id = ub.id
+      JOIN discovery_profile pa ON pa.user_id = ua.id
+      JOIN discovery_profile pb ON pb.user_id = ub.id
+      LEFT JOIN connection_confirmation cc_a ON cc_a.connection_id = c.id AND cc_a.user_id = c.user_a_id AND cc_a.confirmed
+      LEFT JOIN connection_confirmation cc_b ON cc_b.connection_id = c.id AND cc_b.user_id = c.user_b_id AND cc_b.confirmed
+      WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
+        AND c.status NOT IN ('mutual_pending_admin', 'admin_rejected')
+      ORDER BY c.updated_at DESC
+    `, [userId]);
+    return result.rows.map((r) => ({
+      id: r.id, status: r.status,
+      userAId: r.user_a_id, userBId: r.user_b_id,
+      userACode: r.ua_code, userBCode: r.ub_code,
+      userADobCiphertext: r.ua_dob, userBDobCiphertext: r.ub_dob,
+      userACity: r.ua_city, userBCity: r.ub_city,
+      userAGender: r.ua_gender, userBGender: r.ub_gender,
+      userAConfirmed: r.ua_conf, userBConfirmed: r.ub_conf,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  async setConnectionConfirmation(input: {
+    connectionId: string; userId: string; confirm: boolean; now: Date;
+  }): Promise<{ status: string } | null> {
+    return withTransaction(this.pool, async (client) => {
+      const result = await client.query<{ status: string; user_a_id: string; user_b_id: string }>(`
+        SELECT status::text AS status, user_a_id, user_b_id
+        FROM connection WHERE id = $1 FOR UPDATE
+      `, [input.connectionId]);
+      const row = result.rows[0];
+      if (!row) return null;
+      if (row.user_a_id !== input.userId && row.user_b_id !== input.userId) return null;
+      if (row.status !== "admin_approved_pending_confirmation") {
+        return { status: row.status };
+      }
+      await client.query(`
+        INSERT INTO connection_confirmation (connection_id, user_id, confirmed, confirmed_at)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (connection_id, user_id) DO UPDATE SET confirmed = EXCLUDED.confirmed, confirmed_at = EXCLUDED.confirmed_at
+      `, [input.connectionId, input.userId, input.confirm, input.now]);
+
+      if (!input.confirm) {
+        await client.query(
+          "UPDATE connection SET status = 'declined', closed_at = $2, updated_at = $2 WHERE id = $1",
+          [input.connectionId, input.now],
+        );
+        return { status: "declined" };
+      }
+
+      const both = await client.query<{ both_confirmed: boolean }>(`
+        SELECT (count(*) FILTER (WHERE confirmed) >= 2) AS both_confirmed
+        FROM connection_confirmation WHERE connection_id = $1
+      `, [input.connectionId]);
+      if (both.rows[0]?.both_confirmed) {
+        await client.query(
+          "UPDATE connection SET status = 'connected', opened_at = $2, updated_at = $2 WHERE id = $1",
+          [input.connectionId, input.now],
+        );
+        return { status: "connected" };
+      }
+      return { status: "admin_approved_pending_confirmation" };
+    });
+  }
+
+  async listPendingConnections(): Promise<AdminPendingConnectionRow[]> {
+    const result = await this.pool.query<{
+      id: string; user_a_id: string; user_b_id: string;
+      ua_code: string; ub_code: string;
+      ua_dob: Buffer; ub_dob: Buffer;
+      ua_city: string; ub_city: string;
+      ua_gender: string; ub_gender: string;
+      created_at: Date;
+    }>(`
+      SELECT c.id, c.user_a_id, c.user_b_id, c.created_at,
+             ua.public_code AS ua_code, ub.public_code AS ub_code,
+             va.date_of_birth_ciphertext AS ua_dob, vb.date_of_birth_ciphertext AS ub_dob,
+             pa.city_code AS ua_city, pb.city_code AS ub_city,
+             pa.gender::text AS ua_gender, pb.gender::text AS ub_gender
+      FROM connection c
+      JOIN app_user ua ON ua.id = c.user_a_id
+      JOIN app_user ub ON ub.id = c.user_b_id
+      JOIN identity_vault va ON va.user_id = ua.id
+      JOIN identity_vault vb ON vb.user_id = ub.id
+      JOIN discovery_profile pa ON pa.user_id = ua.id
+      JOIN discovery_profile pb ON pb.user_id = ub.id
+      WHERE c.status = 'mutual_pending_admin'
+      ORDER BY c.created_at ASC
+    `);
+    return result.rows.map((r) => ({
+      id: r.id, userAId: r.user_a_id, userBId: r.user_b_id,
+      userACode: r.ua_code, userBCode: r.ub_code,
+      userADobCiphertext: r.ua_dob, userBDobCiphertext: r.ub_dob,
+      userACity: r.ua_city, userBCity: r.ub_city,
+      userAGender: r.ua_gender, userBGender: r.ub_gender,
+      createdAt: r.created_at,
+    }));
+  }
+
+  async decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null> {
+    const result = await this.pool.query(
+      `UPDATE connection
+       SET status = CASE WHEN $2 THEN 'admin_approved_pending_confirmation'::connection_status ELSE 'admin_rejected'::connection_status END,
+           admin_approved_at = CASE WHEN $2 THEN $3 ELSE admin_approved_at END,
+           closed_at = CASE WHEN $2 THEN closed_at ELSE $3 END,
+           updated_at = $3
+       WHERE id = $1 AND status = 'mutual_pending_admin'
+       RETURNING status::text AS status`,
+      [input.connectionId, input.approve, input.now],
+    );
+    return result.rows[0]?.status ?? null;
   }
 }

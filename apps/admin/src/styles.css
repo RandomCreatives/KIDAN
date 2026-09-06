@@ -316,3 +316,12 @@ textarea { resize: vertical; }
 
 .decision-card { background: #fff; }
 .decision-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1rem; }
+
+/* Track D: admin-gated connections queue */
+.connections-panel { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.muted.small { font-size: 0.78rem; margin: 0.3rem 0 0.8rem; }
+.connection-item { display: flex; flex-direction: column; gap: 0.7rem; padding: 0.8rem; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 0.6rem; }
+.connection-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem; font-size: 0.82rem; }
+.pair-join { color: var(--brand); font-weight: 700; padding: 0 0.25rem; }
+.connection-decide { display: flex; gap: 0.5rem; }
+.connection-decide .btn { margin-top: 0; flex: 1; }

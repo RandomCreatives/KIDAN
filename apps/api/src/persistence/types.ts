@@ -215,6 +215,66 @@ export interface PersistenceRepository {
   }): Promise<boolean>;
   /** True when the actor already has a decision for the target. */
   hasDiscoveryDecision(actorUserId: string, targetUserId: string): Promise<boolean>;
+  // --- Track D: admin-gated connections ---
+  /**
+   * Records a discovery decision; if it makes the pair mutually interested,
+   * creates a connection in 'mutual_pending_admin'. Returns the connection id
+   * when a new mutual connection was created, else null.
+   */
+  recordDecisionAndMaybeConnect(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<string | null>;
+  /** Connections involving the user that are past mutual interest (admin onward). */
+  listUserConnections(userId: string): Promise<UserConnectionRow[]>;
+  /** Records/updates the calling user's confirmation; returns the resulting status. */
+  setConnectionConfirmation(input: {
+    connectionId: string;
+    userId: string;
+    confirm: boolean;
+    now: Date;
+  }): Promise<{ status: string } | null>;
+  /** Admin: connections awaiting administrator approval. */
+  listPendingConnections(): Promise<AdminPendingConnectionRow[]>;
+  /** Admin: approve or reject a pending connection. Returns false if not pending. */
+  decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null>;
+}
+
+/** A connection plus the two participants' values-only fields (ages computed in service). */
+export interface UserConnectionRow {
+  id: string;
+  status: string;
+  userAId: string;
+  userBId: string;
+  userACode: string;
+  userBCode: string;
+  userADobCiphertext: Buffer;
+  userBDobCiphertext: Buffer;
+  userACity: string;
+  userBCity: string;
+  userAGender: string;
+  userBGender: string;
+  userAConfirmed: boolean;
+  userBConfirmed: boolean;
+  updatedAt: Date;
+}
+
+export interface AdminPendingConnectionRow {
+  id: string;
+  userAId: string;
+  userBId: string;
+  userACode: string;
+  userBCode: string;
+  userADobCiphertext: Buffer;
+  userBDobCiphertext: Buffer;
+  userACity: string;
+  userBCity: string;
+  userAGender: string;
+  userBGender: string;
+  createdAt: Date;
 }
 
 /** Values-only data needed to build a discovery card (no identity/photo). */

@@ -7,6 +7,7 @@ import { AdminService, PILOT_ADMIN_ID } from "../../src/admin/adminService.js";
 import { SessionAccessError, SessionService } from "../../src/auth/sessionService.js";
 import { OnboardingService } from "../../src/onboarding/onboardingService.js";
 import { DiscoveryService } from "../../src/discovery/discoveryService.js";
+import { ConnectionService } from "../../src/connections/connectionService.js";
 import { PostgresPersistenceRepository } from "../../src/persistence/postgresRepository.js";
 import type { UserRecord } from "../../src/persistence/types.js";
 import { IdentityCipher, SecretHasher } from "../../src/security/crypto.js";
@@ -708,6 +709,127 @@ describe("PostgreSQL repository integration", () => {
       );
       expect(rows.rowCount).toBe(1);
       expect(rows.rows[0]!.decision).toBe("interested");
+    });
+  });
+
+  describe("admin-gated connections (Track D)", () => {
+    function discovery(): DiscoveryService {
+      return new DiscoveryService(services.repository, services.cipher, true);
+    }
+    function connections(): ConnectionService {
+      return new ConnectionService(services.repository, services.cipher, true);
+    }
+    function adminConsole(): AdminService {
+      return new AdminService(services.repository, services.cipher);
+    }
+    async function approvedPair(): Promise<{ man: UserRecord; woman: UserRecord }> {
+      const console_ = adminConsole();
+      const man = await newUser(services);
+      await completeSubmission(man, "yes", "male");
+      await console_.decide(man.publicCode, { decision: "approved" });
+      const woman = await newUser(services);
+      await completeSubmission(woman, "yes", "female");
+      await console_.decide(woman.publicCode, { decision: "approved" });
+      return { man, woman };
+    }
+
+    it("creates a canonical-ordered connection row only on mutual interest", async () => {
+      const { man, woman } = await approvedPair();
+      const feed = discovery();
+      await feed.recordDecision(man.id, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      // One-sided: no connection row yet.
+      const oneSided = await harness.pool.query("SELECT id FROM connection");
+      expect(oneSided.rowCount).toBe(0);
+      await feed.recordDecision(woman.id, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const rows = await harness.pool.query<{ user_a_id: string; user_b_id: string; status: string }>(
+        "SELECT user_a_id, user_b_id, status::text AS status FROM connection",
+      );
+      expect(rows.rowCount).toBe(1);
+      const row = rows.rows[0]!;
+      // Canonical ordering: a < b regardless of who swiped first.
+      expect(row.user_a_id < row.user_b_id).toBe(true);
+      expect(new Set([row.user_a_id, row.user_b_id])).toEqual(new Set([man.id, woman.id]));
+      expect(row.status).toBe("mutual_pending_admin");
+    });
+
+    it("runs the full admin-gated lifecycle against the database", async () => {
+      const { man, woman } = await approvedPair();
+      const feed = discovery();
+      const svc = connections();
+      await feed.recordDecision(man.id, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await feed.recordDecision(woman.id, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const pending = await svc.listPending();
+      expect(pending.connections).toHaveLength(1);
+      const connectionId = pending.connections[0]!.id;
+
+      // Hidden from participants while pending.
+      expect((await svc.listForUser(man.id)).connections).toEqual([]);
+
+      // Admin approves.
+      expect((await svc.decide(connectionId, true)).status).toBe("admin_approved_pending_confirmation");
+      expect((await svc.listPending()).connections.map((c) => c.id)).not.toContain(connectionId);
+
+      // Man confirms: still pending the woman's confirmation.
+      expect((await svc.confirm(man.id, connectionId, true)).status).toBe("admin_approved_pending_confirmation");
+      // Woman confirms: connected.
+      expect((await svc.confirm(woman.id, connectionId, true)).status).toBe("connected");
+
+      const manList = await svc.listForUser(man.id);
+      expect(manList.connections).toHaveLength(1);
+      const item = manList.connections[0]!;
+      expect(item.status).toBe("connected");
+      expect(item.other.publicCode).toBe(woman.publicCode);
+      expect(item.other.age).toBeGreaterThanOrEqual(18);
+      expect(item.iConfirmed).toBe(true);
+      expect(item.theyConfirmed).toBe(true);
+      // Values-only: never name/phone/photo.
+      const serialized = JSON.stringify(item);
+      expect(serialized).not.toContain("Demo Candidate");
+      expect(serialized).not.toMatch(/\+2519/);
+    });
+
+    it("a participant decline after approval closes the connection as declined", async () => {
+      const { man, woman } = await approvedPair();
+      const feed = discovery();
+      const svc = connections();
+      await feed.recordDecision(man.id, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await feed.recordDecision(woman.id, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const connectionId = (await svc.listPending()).connections[0]!.id;
+      await svc.decide(connectionId, true);
+      expect((await svc.confirm(woman.id, connectionId, false)).status).toBe("declined");
+      const db = await harness.pool.query<{ status: string }>(
+        "SELECT status::text AS status, closed_at FROM connection WHERE id = $1",
+        [connectionId],
+      );
+      expect(db.rows[0]!.status).toBe("declined");
+    });
+
+    it("admin rejection stays hidden from participants", async () => {
+      const { man, woman } = await approvedPair();
+      const feed = discovery();
+      const svc = connections();
+      await feed.recordDecision(man.id, {
+        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      await feed.recordDecision(woman.id, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+      });
+      const connectionId = (await svc.listPending()).connections[0]!.id;
+      expect((await svc.decide(connectionId, false)).status).toBe("admin_rejected");
+      expect((await svc.listForUser(man.id)).connections).toEqual([]);
+      expect((await svc.listForUser(woman.id)).connections).toEqual([]);
     });
   });
 });

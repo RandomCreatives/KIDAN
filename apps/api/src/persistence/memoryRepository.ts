@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   AdminDecisionInput,
+  AdminPendingConnectionRow,
   AdminQueueRow,
   AdminReviewAuditRow,
   AdminSubmissionRow,
@@ -12,6 +13,7 @@ import type {
   SessionRecord,
   SubmissionConsent,
   SubmissionRecord,
+  UserConnectionRow,
   UserRecord,
   VerificationPhotoInput,
   VerificationPhotoRecord,
@@ -38,8 +40,12 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly reviewStatus = new Map<string, string>();
   private readonly reviewHistory = new Map<string, AdminReviewAuditRow[]>();
   private readonly consentReceipts = new Map<string, SubmissionConsent[]>();
-  /** Discovery decision set: "actorId:targetId" -> decision. */
-  private readonly decisions = new Set<string>();
+  /** Discovery decisions: "actorId:targetId" -> decision. */
+  private readonly decisions = new Map<string, "pass" | "interested">();
+  /** Connections keyed by id (Track D). */
+  private readonly connections = new Map<string, MemoryConnection>();
+  /** Confirmation flags keyed by "connectionId:userId". */
+  private readonly connectionConfirmations = new Map<string, boolean>();
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -427,11 +433,136 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     void input.now;
     const key = `${input.actorUserId}:${input.targetUserId}`;
     if (this.decisions.has(key)) return false;
-    this.decisions.add(key);
+    this.decisions.set(key, input.decision);
     return true;
   }
 
   async hasDiscoveryDecision(actorUserId: string, targetUserId: string): Promise<boolean> {
     return this.decisions.has(`${actorUserId}:${targetUserId}`);
   }
+
+  async recordDecisionAndMaybeConnect(input: {
+    actorUserId: string;
+    targetUserId: string;
+    decision: "pass" | "interested";
+    idempotencyKey: string;
+    now: Date;
+  }): Promise<string | null> {
+    void input.idempotencyKey;
+    const key = `${input.actorUserId}:${input.targetUserId}`;
+    if (this.decisions.has(key)) return null;
+    this.decisions.set(key, input.decision);
+    if (input.decision !== "interested") return null;
+    const reciprocal = this.decisions.get(`${input.targetUserId}:${input.actorUserId}`);
+    if (reciprocal !== "interested") return null;
+    const a = input.actorUserId < input.targetUserId ? input.actorUserId : input.targetUserId;
+    const b = input.actorUserId < input.targetUserId ? input.targetUserId : input.actorUserId;
+    for (const connection of this.connections.values()) {
+      if (connection.userAId === a && connection.userBId === b) return null;
+    }
+    const id = randomUUID();
+    this.connections.set(id, {
+      id, userAId: a, userBId: b, status: "mutual_pending_admin",
+      createdAt: new Date(input.now), updatedAt: new Date(input.now),
+    });
+    return id;
+  }
+
+  private valuesOnlyFields(userId: string): { code: string; dob: Buffer; city: string; gender: string } {
+    const user = this.users.get(userId);
+    const draft = this.drafts.get(userId);
+    const identity = this.identities.get(userId);
+    const payload = draft?.publicPayload as
+      | { publicProfile?: { gender?: string; city?: string } }
+      | undefined;
+    return {
+      code: user?.publicCode ?? "",
+      dob: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+      city: payload?.publicProfile?.city ?? "",
+      gender: payload?.publicProfile?.gender ?? "female",
+    };
+  }
+
+  async listUserConnections(userId: string): Promise<UserConnectionRow[]> {
+    const rows: UserConnectionRow[] = [];
+    for (const c of this.connections.values()) {
+      if (c.userAId !== userId && c.userBId !== userId) continue;
+      // Hidden from participants: pre-approval states. A rejection happens
+      // before either user is told a match existed, so it stays invisible.
+      if (c.status === "mutual_pending_admin" || c.status === "admin_rejected") continue;
+      const a = this.valuesOnlyFields(c.userAId);
+      const b = this.valuesOnlyFields(c.userBId);
+      rows.push({
+        id: c.id, status: c.status,
+        userAId: c.userAId, userBId: c.userBId,
+        userACode: a.code, userBCode: b.code,
+        userADobCiphertext: a.dob, userBDobCiphertext: b.dob,
+        userACity: a.city, userBCity: b.city,
+        userAGender: a.gender, userBGender: b.gender,
+        userAConfirmed: this.connectionConfirmations.get(`${c.id}:${c.userAId}`) === true,
+        userBConfirmed: this.connectionConfirmations.get(`${c.id}:${c.userBId}`) === true,
+        updatedAt: c.updatedAt,
+      });
+    }
+    return rows.sort((x, y) => y.updatedAt.getTime() - x.updatedAt.getTime());
+  }
+
+  async setConnectionConfirmation(input: {
+    connectionId: string; userId: string; confirm: boolean; now: Date;
+  }): Promise<{ status: string } | null> {
+    const c = this.connections.get(input.connectionId);
+    if (!c) return null;
+    if (c.userAId !== input.userId && c.userBId !== input.userId) return null;
+    if (c.status !== "admin_approved_pending_confirmation") return { status: c.status };
+    this.connectionConfirmations.set(`${input.connectionId}:${input.userId}`, input.confirm);
+    if (!input.confirm) {
+      c.status = "declined";
+      c.updatedAt = new Date(input.now);
+      return { status: "declined" };
+    }
+    const both =
+      this.connectionConfirmations.get(`${c.id}:${c.userAId}`) === true &&
+      this.connectionConfirmations.get(`${c.id}:${c.userBId}`) === true;
+    if (both) {
+      c.status = "connected";
+      c.updatedAt = new Date(input.now);
+      return { status: "connected" };
+    }
+    return { status: "admin_approved_pending_confirmation" };
+  }
+
+  async listPendingConnections(): Promise<AdminPendingConnectionRow[]> {
+    const rows: AdminPendingConnectionRow[] = [];
+    for (const c of this.connections.values()) {
+      if (c.status !== "mutual_pending_admin") continue;
+      const a = this.valuesOnlyFields(c.userAId);
+      const b = this.valuesOnlyFields(c.userBId);
+      rows.push({
+        id: c.id, userAId: c.userAId, userBId: c.userBId,
+        userACode: a.code, userBCode: b.code,
+        userADobCiphertext: a.dob, userBDobCiphertext: b.dob,
+        userACity: a.city, userBCity: b.city,
+        userAGender: a.gender, userBGender: b.gender,
+        createdAt: c.createdAt,
+      });
+    }
+    return rows.sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime());
+  }
+
+  async decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null> {
+    const c = this.connections.get(input.connectionId);
+    if (!c || c.status !== "mutual_pending_admin") return null;
+    c.status = input.approve ? "admin_approved_pending_confirmation" : "admin_rejected";
+    c.updatedAt = new Date(input.now);
+    return c.status;
+  }
+}
+
+interface MemoryConnection {
+  id: string;
+  userAId: string;
+  userBId: string;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
 }

@@ -83,21 +83,15 @@ export class DiscoveryService {
     if (!targetUserId || targetUserId === actorUserId) {
       throw new DiscoveryStateError("TARGET_NOT_FOUND");
     }
-    if (await this.repository.hasDiscoveryDecision(actorUserId, targetUserId)) {
-      // Idempotent: a repeated decision for the same target is a no-op success.
-      return;
-    }
-    const inserted = await this.repository.saveDiscoveryDecision({
+    // recordDecisionAndMaybeConnect is idempotent per actor+target; when the
+    // decision completes a mutual interest it creates the pending connection.
+    await this.repository.recordDecisionAndMaybeConnect({
       actorUserId,
       targetUserId,
       decision: request.decision,
       idempotencyKey: request.idempotencyKey,
       now,
     });
-    if (!inserted) {
-      // Lost an idempotency race; the decision is already recorded — treat as success.
-      return;
-    }
   }
 }
 

@@ -1,7 +1,10 @@
 import {
+  adminConnectionDecisionRequestSchema,
+  adminConnectionDecisionResponseSchema,
   adminDecisionRequestSchema,
   adminDecisionResponseSchema,
   adminLoginRequestSchema,
+  adminPendingConnectionListSchema,
   adminPhotoResponseSchema,
   adminQueueResponseSchema,
   adminSessionSchema,
@@ -10,10 +13,12 @@ import {
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { AdminSessionService } from "../auth/adminSessionService.js";
 import { AdminDecisionError, AdminService } from "../admin/adminService.js";
+import type { ConnectionService } from "../connections/connectionService.js";
 
 interface AdminRouteOptions {
   adminSession: AdminSessionService;
   adminService: AdminService;
+  connectionService?: ConnectionService;
   cookieName: string;
   secureCookies: boolean;
 }
@@ -168,6 +173,42 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
       return reply.send({ data: response });
     } catch (error) {
       return sendAdminError(error, request, reply);
+    }
+  });
+
+  // Track D: mutually-interested pairs awaiting administrator approval.
+  app.get("/v1/admin/connections", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!options.connectionService) {
+      return reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    }
+    const pending = await options.connectionService.listPending();
+    const response = adminPendingConnectionListSchema.safeParse(pending);
+    if (!response.success) {
+      request.log.error({ msg: "admin connections response failed validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
+  });
+
+  app.post<{ Params: { id: string } }>("/v1/admin/connections/:id/decision", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!(await requireCsrf(request, reply))) return;
+    if (!options.connectionService) {
+      return reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    }
+    const parsed = adminConnectionDecisionRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: { code: "INVALID_REQUEST", requestId: request.id } });
+    }
+    try {
+      const result = await options.connectionService.decide(request.params.id, parsed.data.decision === "approved");
+      return reply.send({ data: adminConnectionDecisionResponseSchema.parse(result) });
+    } catch (error) {
+      if (error instanceof Error && error.message === "CONNECTION_NOT_PENDING") {
+        return reply.code(404).send({ error: { code: "CONNECTION_NOT_PENDING", requestId: request.id } });
+      }
+      throw error;
     }
   });
 };

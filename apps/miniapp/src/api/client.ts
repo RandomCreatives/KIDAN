@@ -5,8 +5,13 @@ import {
   type CandidateReviewStatus,
   dataExportResponseSchema,
   type DataExportResponse,
+  connectionConfirmRequestSchema,
+  connectionConfirmResponseSchema,
+  connectionListResponseSchema,
   discoveryDecisionRequestSchema,
   discoveryFeedResponseSchema,
+  type ConnectionConfirmResponse,
+  type ConnectionListResponse,
   type DiscoveryFeedResponse,
   type DiscoveryDecisionRequest,
   draftResponseSchema,
@@ -156,6 +161,23 @@ export class KidanApiClient {
   async recordDiscoveryDecision(decision: DiscoveryDecisionRequest, csrfToken: string): Promise<void> {
     const validated = discoveryDecisionRequestSchema.parse(decision);
     await this.request("POST", "/v1/discovery/decision", validated, csrfToken);
+  }
+
+  /** The participant's connections (values-only; admin approval onward). */
+  async getConnections(): Promise<ConnectionListResponse> {
+    const data = await this.request("GET", "/v1/connections");
+    return this.parse(connectionListResponseSchema, data);
+  }
+
+  /** Final participant confirmation/decline after admin approval. */
+  async confirmConnection(connectionId: string, confirm: boolean, csrfToken: string): Promise<ConnectionConfirmResponse> {
+    const data = await this.request(
+      "POST",
+      `/v1/connections/${connectionId}/confirm`,
+      connectionConfirmRequestSchema.parse({ confirm }),
+      csrfToken,
+    );
+    return this.parse(connectionConfirmResponseSchema, data);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {
