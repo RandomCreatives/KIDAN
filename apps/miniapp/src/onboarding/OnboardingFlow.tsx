@@ -475,8 +475,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
                   <input
                     ref={photoInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    capture="user"
+                    accept="image/*"
                     className="photo-file-input"
                     onChange={(event) => void handlePhotoSelected(event)}
                     aria-label="Upload your private verification photo"

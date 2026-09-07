@@ -4,7 +4,6 @@
 
 const MAX_DIMENSION = 1280;
 const JPEG_QUALITY = 0.82;
-const ACCEPTED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export interface PhotoCaptureResult {
   dataUrl: string;
@@ -12,12 +11,20 @@ export interface PhotoCaptureResult {
 
 /**
  * Downscale the image so the longest edge is at most MAX_DIMENSION, then
- * encode as JPEG. Returns a data URL. Throws if the file is not a supported
- * image or cannot be decoded.
+ * encode as JPEG. Returns a data URL.
+ *
+ * We deliberately do NOT gate on `file.type`: inside Telegram's in-app WebView,
+ * iOS photos frequently arrive as HEIC or with an empty MIME type, and the
+ * platform image decoder still renders them. The canvas re-encodes everything
+ * to JPEG, normalising the format. A file that genuinely cannot be decoded
+ * (not an image, or corrupt) fires `onerror` and is rejected.
  */
 export function fileToVerificationPhotoDataUrl(file: File): Promise<PhotoCaptureResult> {
   return new Promise((resolve, reject) => {
-    if (!ACCEPTED_TYPES.has(file.type)) {
+    // Only fast-reject obvious non-images (e.g. a PDF with a declared type).
+    // Empty/unknown MIME types are allowed through to decode — they are common
+    // for camera captures inside the Telegram WebView.
+    if (file.type && !file.type.startsWith("image/")) {
       reject(new Error("UNSUPPORTED_TYPE"));
       return;
     }
@@ -33,9 +40,14 @@ export function fileToVerificationPhotoDataUrl(file: File): Promise<PhotoCapture
         canvas.height = height;
         const context = canvas.getContext("2d");
         if (!context) throw new Error("NO_CONTEXT");
+        // Flatten transparency to white (JPEG has no alpha channel).
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
         context.drawImage(image, 0, 0, width, height);
-        // JPEG keeps the payload small; transparency is flattened to white.
         const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+        if (!dataUrl.startsWith("data:image/jpeg;base64,")) {
+          throw new Error("ENCODE_FAILED");
+        }
         URL.revokeObjectURL(url);
         resolve({ dataUrl });
       } catch (error) {
