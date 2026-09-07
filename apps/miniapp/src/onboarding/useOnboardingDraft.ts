@@ -280,11 +280,14 @@ export function useOnboardingDraft(
             message = "This environment is not accepting submissions right now.";
           } else if (error.diagnostic?.message) {
             // Staging build returns the internal reason on a 500 so we can fix it.
-            message = `Photo upload error: ${error.diagnostic.message}`;
+            const d = error.diagnostic as { name?: string; code?: string; message: string; stackTop?: string };
+            const where = d.stackTop ? ` — at ${d.stackTop}` : "";
+            message = `Photo upload error [${d.name ?? "?"}${d.code ? `/${d.code}` : ""}]: ${d.message}${where}`;
           } else {
             // Staging diagnostic: surface the status/code so upload failures are
-            // identifiable without server-log access.
-            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
+            // identifiable without server-log access. Marker d2 identifies this
+            // bundle; if it is missing the app is a cached old build.
+            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry. [d2]`;
           }
         }
         setPhotoError(message);

@@ -106,7 +106,19 @@ export async function buildApp(
       ? error.stack.split("\n").slice(1, 3).map((line) => line.trim()).join(" | ")
       : undefined;
     request.log.error({ errorName, errorCode, errorMessage, stackTop }, "Request failed");
-    return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    // TEMPORARY STAGING DIAGNOSTIC (Track D e2e): the photo-upload 500 bypasses
+    // the route catch, so it originates outside saveVerificationPhoto (hook,
+    // session lookup, serialization...). Surface name/code/message/top-frame on
+    // every 500 so the failure is identifiable without server logs. No PII:
+    // messages are sanitized and the logger redact config covers bodies/cookies.
+    // Revert before production.
+    return reply.code(500).send({
+      error: {
+        code: "INTERNAL_ERROR",
+        requestId: request.id,
+        diagnostic: { name: errorName, code: errorCode, message: errorMessage.slice(0, 200), stackTop },
+      },
+    });
   });
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send({ error: { code: "NOT_FOUND", requestId: request.id } }),
