@@ -1,17 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fileToVerificationPhotoDataUrl } from "./photoCapture";
 
-/** A fake image whose src assignment deterministically fails to decode. */
+/** Fake image whose src assignment deterministically fails to decode. */
 function installFailingImage(): void {
   class FakeImage {
-    width = 0;
-    height = 0;
+    onerror: ((event: Event) => void) | null = null;
     set src(_value: string) {
-      // Simulate a file the browser cannot decode (corrupt / unsupported).
       queueMicrotask(() => this.onerror?.(new Event("error")));
     }
-    onerror: ((event: Event) => void) | null = null;
-    onload: (() => void) | null = null;
   }
   vi.stubGlobal("Image", FakeImage);
   vi.stubGlobal("URL", { createObjectURL: () => "blob:fake", revokeObjectURL: () => undefined });
@@ -27,12 +23,19 @@ describe("fileToVerificationPhotoDataUrl", () => {
     await expect(fileToVerificationPhotoDataUrl(file)).rejects.toThrow("UNSUPPORTED_TYPE");
   });
 
-  it("does not reject an image purely on its MIME type — empty types proceed to decode", async () => {
+  it("falls back to the original file when canvas decode fails, for a supported type", async () => {
     installFailingImage();
-    // Empty MIME type (common for camera captures inside the Telegram WebView)
-    // must not be fast-rejected as an unsupported type; it reaches the decoder,
-    // which in this simulation cannot decode and rejects DECODE_FAILED.
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    const file = new File([pngBytes], "photo.png", { type: "image/png" });
+    const result = await fileToVerificationPhotoDataUrl(file);
+    expect(result.dataUrl).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it("rejects a non-image that also cannot be decoded in the WebView", async () => {
+    installFailingImage();
+    // Empty/unknown type that is genuinely not an image: not a supported type
+    // even after the FileReader fallback.
     const file = new File(["bytes"], "photo.heic", { type: "" });
-    await expect(fileToVerificationPhotoDataUrl(file)).rejects.toThrow("DECODE_FAILED");
+    await expect(fileToVerificationPhotoDataUrl(file)).rejects.toThrow("UNSUPPORTED_TYPE");
   });
 });

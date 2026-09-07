@@ -4,32 +4,59 @@
 
 const MAX_DIMENSION = 1280;
 const JPEG_QUALITY = 0.82;
+// Server caps the data URL at 5,000,000 characters (see
+// verificationPhotoUploadSchema). Stay just under it for the raw-upload fallback.
+const MAX_DATA_URL_LENGTH = 4_900_000;
+const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export interface PhotoCaptureResult {
   dataUrl: string;
 }
 
 /**
- * Downscale the image so the longest edge is at most MAX_DIMENSION, then
- * encode as JPEG. Returns a data URL.
+ * Produces an uploadable data URL for the chosen photo.
  *
- * We deliberately do NOT gate on `file.type`: inside Telegram's in-app WebView,
- * iOS photos frequently arrive as HEIC or with an empty MIME type, and the
- * platform image decoder still renders them. The canvas re-encodes everything
- * to JPEG, normalising the format. A file that genuinely cannot be decoded
- * (not an image, or corrupt) fires `onerror` and is rejected.
+ * Primary path: decode the image, downscale to max 1280px, re-encode as JPEG
+ * (normalising HEIC/PNG/WebP and shrinking large files). We do NOT gate on
+ * `file.type` for decoding — iOS/Telegram WebViews often report HEIC or an
+ * empty MIME that the platform decoder still renders.
+ *
+ * Fallback: if the embedded WebView cannot decode/encode via canvas (seen on
+ * some desktop WebViews), and the original is already a supported,
+ * size-bounded image, read it directly and upload as-is. The server validates
+ * the type and size regardless.
  */
 export function fileToVerificationPhotoDataUrl(file: File): Promise<PhotoCaptureResult> {
   return new Promise((resolve, reject) => {
-    // Only fast-reject obvious non-images (e.g. a PDF with a declared type).
-    // Empty/unknown MIME types are allowed through to decode — they are common
-    // for camera captures inside the Telegram WebView.
     if (file.type && !file.type.startsWith("image/")) {
       reject(new Error("UNSUPPORTED_TYPE"));
       return;
     }
+
+    const fail = (code: string) => reject(new Error(code));
+
+    const uploadOriginal = () => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const supportedType =
+          SUPPORTED_TYPES.includes(file.type as (typeof SUPPORTED_TYPES)[number])
+          || /^data:image\/(jpeg|png|webp);base64,/.test(dataUrl);
+        if (!supportedType) {
+          fail("UNSUPPORTED_TYPE");
+        } else if (dataUrl.length > MAX_DATA_URL_LENGTH) {
+          fail("PHOTO_TOO_LARGE");
+        } else {
+          resolve({ dataUrl });
+        }
+      };
+      reader.onerror = () => fail("READ_FAILED");
+      reader.readAsDataURL(file);
+    };
+
     const url = URL.createObjectURL(file);
     const image = new Image();
+    let settled = false;
     image.onload = () => {
       try {
         const scale = Math.min(1, MAX_DIMENSION / Math.max(image.width, image.height));
@@ -45,19 +72,26 @@ export function fileToVerificationPhotoDataUrl(file: File): Promise<PhotoCapture
         context.fillRect(0, 0, width, height);
         context.drawImage(image, 0, 0, width, height);
         const dataUrl = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-        if (!dataUrl.startsWith("data:image/jpeg;base64,")) {
-          throw new Error("ENCODE_FAILED");
+        URL.revokeObjectURL(url);
+        if (!dataUrl.startsWith("data:image/jpeg;base64,")) throw new Error("ENCODE_FAILED");
+        if (!settled) {
+          settled = true;
+          resolve({ dataUrl });
         }
+      } catch {
         URL.revokeObjectURL(url);
-        resolve({ dataUrl });
-      } catch (error) {
-        URL.revokeObjectURL(url);
-        reject(error instanceof Error ? error : new Error("ENCODE_FAILED"));
+        if (!settled) {
+          settled = true;
+          uploadOriginal();
+        }
       }
     };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error("DECODE_FAILED"));
+      if (!settled) {
+        settled = true;
+        uploadOriginal();
+      }
     };
     image.src = url;
   });
