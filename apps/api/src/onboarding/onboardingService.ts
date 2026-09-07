@@ -10,6 +10,7 @@ import {
   type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
+import { PILOT_AGE_MAX, PILOT_AGE_MIN } from "@kidan/contracts";
 import type { CandidateReviewStatus, DataExportResponse } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
 import { SubmissionStateError } from "../persistence/types.js";
@@ -142,12 +143,20 @@ export class OnboardingService {
     if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
     const identity = privateIdentitySaveRequestSchema.parse(input);
     const birthDate = new Date(`${identity.dateOfBirth}T00:00:00.000Z`);
-    const adultCutoff = new Date(Date.UTC(
-      now.getUTCFullYear() - 18,
+    // Pilot eligibility window: aged 21–45 inclusive (PILOT_AGE_MIN..PILOT_AGE_MAX).
+    const youngerThanMin = new Date(Date.UTC(
+      now.getUTCFullYear() - PILOT_AGE_MIN,
       now.getUTCMonth(),
       now.getUTCDate(),
     ));
-    if (birthDate > adultCutoff) throw new SubmissionStateError("ADULT_ELIGIBILITY_REQUIRED");
+    const olderThanMax = new Date(Date.UTC(
+      now.getUTCFullYear() - PILOT_AGE_MAX - 1,
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    ));
+    if (birthDate > youngerThanMin || birthDate <= olderThanMax) {
+      throw new SubmissionStateError("ADULT_ELIGIBILITY_REQUIRED");
+    }
     const normalizedPhone = identity.phoneNumber.replace(/[\s()-]/g, "");
     await this.repository.savePrivateIdentity(userId, {
       legalNameCiphertext: this.identityCipher.encrypt(identity.fullName.trim(), `${userId}:legal-name`),

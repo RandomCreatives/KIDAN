@@ -275,10 +275,12 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
           user_id, gender, city_code, education_level, field_of_study,
           employment_status, occupation_category, height_cm, marital_status,
           has_children, wants_children, faith_tradition, marriage_intention,
-          values_json, bio, photo_mode, review_status, updated_at
+          values_json, bio, photo_mode, review_status, updated_at,
+          has_godfather, is_deacon, church_service_active
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-          'ethiopian_orthodox_tewahedo', $12, $13::jsonb, $14, 'values_only', 'pending', $15
+          'ethiopian_orthodox_tewahedo', $12, $13::jsonb, $14, 'values_only', 'pending', $15,
+          $16, $17, $18
         )
         ON CONFLICT (user_id) DO UPDATE SET
           gender = EXCLUDED.gender, city_code = EXCLUDED.city_code,
@@ -288,12 +290,18 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
           marital_status = EXCLUDED.marital_status, has_children = EXCLUDED.has_children,
           wants_children = EXCLUDED.wants_children, marriage_intention = EXCLUDED.marriage_intention,
           values_json = EXCLUDED.values_json, bio = EXCLUDED.bio, review_status = 'pending',
+          has_godfather = EXCLUDED.has_godfather, is_deacon = EXCLUDED.is_deacon,
+          church_service_active = EXCLUDED.church_service_active,
           profile_version = discovery_profile.profile_version + 1, updated_at = EXCLUDED.updated_at
       `, [
         input.userId, profile.gender, profile.city, profile.educationLevel, profile.fieldOfStudy || null,
         profile.employmentStatus, profile.occupationCategory, profile.heightCm, profile.maritalStatus,
         profile.hasChildren, faith.wantsChildren, faith.marriageIntention,
         JSON.stringify(faith.values), faith.bio, input.now,
+        faith.hasGodfather,
+        // Deacon question is asked of men; women store NULL (not applicable).
+        profile.gender === "male" ? (faith.isDeacon ?? false) : null,
+        faith.churchServiceActive,
       ]);
 
       await client.query(`
@@ -677,11 +685,15 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       marriage_intention: string | null;
       values_json: string[];
       bio: string | null;
+      has_godfather: boolean;
+      is_deacon: boolean | null;
+      church_service_active: boolean;
       date_of_birth_ciphertext: Buffer;
     }>(`
       SELECT u.id AS user_id, u.public_code, p.gender, p.city_code,
              p.education_level, p.occupation_category, p.height_cm,
              p.marriage_intention, p.values_json, p.bio,
+             p.has_godfather, p.is_deacon, p.church_service_active,
              v.date_of_birth_ciphertext
       FROM discovery_profile p
       JOIN app_user u ON u.id = p.user_id
@@ -712,6 +724,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       marriageIntention: row.marriage_intention,
       values: Array.isArray(row.values_json) ? row.values_json : [],
       bio: row.bio,
+      hasGodfather: row.has_godfather,
+      isDeacon: row.is_deacon,
+      churchServiceActive: row.church_service_active,
       dateOfBirthCiphertext: row.date_of_birth_ciphertext,
     }));
   }
@@ -925,6 +940,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       other_education: string | null; other_occupation: string | null;
       other_height: number | null; other_marriage: string | null;
       other_values: string[]; other_bio: string | null;
+      other_godfather: boolean; other_deacon: boolean | null; other_church: boolean;
     }>(`
       SELECT c.status::text AS status, c.user_a_id, c.user_b_id,
              ou.id AS other_id, ou.public_code AS other_code,
@@ -932,7 +948,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
              op.gender::text AS other_gender, op.city_code AS other_city,
              op.education_level AS other_education, op.occupation_category AS other_occupation,
              op.height_cm AS other_height, op.marriage_intention AS other_marriage,
-             op.values_json AS other_values, op.bio AS other_bio
+             op.values_json AS other_values, op.bio AS other_bio,
+             op.has_godfather AS other_godfather, op.is_deacon AS other_deacon,
+             op.church_service_active AS other_church
       FROM connection c
       JOIN app_user ou ON ou.id = CASE WHEN c.user_a_id = $2 THEN c.user_b_id ELSE c.user_a_id END
       JOIN identity_vault ov ON ov.user_id = ou.id
@@ -969,6 +987,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         marriageIntention: row.other_marriage,
         values: row.other_values ?? [],
         bio: row.other_bio,
+        hasGodfather: row.other_godfather,
+        isDeacon: row.other_deacon,
+        churchServiceActive: row.other_church,
       },
       messages: messages.rows.map((m) => ({
         id: m.id,

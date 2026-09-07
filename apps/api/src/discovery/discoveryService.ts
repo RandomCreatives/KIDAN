@@ -64,6 +64,9 @@ export class DiscoveryService {
         marriageIntention: row.marriageIntention ?? "teklil",
         values: row.values as ValueTag[],
         bio: row.bio,
+        hasGodfather: row.hasGodfather,
+        isDeacon: row.isDeacon,
+        churchServiceActive: row.churchServiceActive,
         verified: true,
         photoMode: "values_only",
       });

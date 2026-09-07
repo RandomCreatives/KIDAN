@@ -40,6 +40,10 @@ const validDraft = {
     wantsChildren: "yes",
     values: ["active_faith", "family_oriented", "communication"],
     bio: "A synthetic profile used only for validating the onboarding contract.",
+    hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
   },
   partnerPreferences: {
     ageMin: 27,

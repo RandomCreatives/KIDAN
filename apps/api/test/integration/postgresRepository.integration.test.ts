@@ -49,7 +49,11 @@ function makePatch(
         faithTradition: "ethiopian_orthodox_tewahedo", marriageIntention: "teklil",
         wantsChildren, values: ["active_faith", "honesty", "family_oriented"],
         bio: "Synthetic information used for PostgreSQL integration testing.",
-      },
+          hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
       partnerPreferences: {
         ageMin: 28, ageMax: 36, preferredCities: ["Addis Ababa"], openToAbroad: false,
         acceptedMaritalStatuses: ["never_married"], acceptsPartnerWithChildren: false,

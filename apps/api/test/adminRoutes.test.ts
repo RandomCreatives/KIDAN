@@ -51,7 +51,11 @@ async function seedCandidate(
       wantsChildren: "yes" as const,
       values: ["active_faith", "honesty", "family_oriented"] as ValueTag[],
       bio: "Bio used for admin route testing, long enough to pass validation.",
-    },
+        hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
     partnerPreferences: {
       ageMin: 28,
       ageMax: 38,

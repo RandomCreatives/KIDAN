@@ -22,7 +22,11 @@ const payload = publicOnboardingPayloadSchema.parse({
     wantsChildren: "yes",
     values: ["active_faith", "family_oriented", "communication"],
     bio: "A synthetic profile with enough text for contract validation.",
-  },
+      hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
   partnerPreferences: {
     ageMin: 28,
     ageMax: 36,

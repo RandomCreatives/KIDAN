@@ -21,7 +21,11 @@ const completePatch: OnboardingProgressPatch = {
       faithTradition: "ethiopian_orthodox_tewahedo", marriageIntention: "teklil",
       wantsChildren: "yes", values: ["active_faith", "honesty", "family_oriented"],
       bio: "Synthetic information used for service-level persistence testing.",
-    },
+        hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
     partnerPreferences: {
       ageMin: 28, ageMax: 36, preferredCities: ["Addis Ababa"], openToAbroad: false,
       acceptedMaritalStatuses: ["never_married"], acceptsPartnerWithChildren: false,

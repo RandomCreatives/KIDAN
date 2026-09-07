@@ -44,7 +44,11 @@ function buildPayload() {
       wantsChildren: "yes" as const,
       values: ["active_faith", "honesty", "family_oriented"] as ValueTag[],
       bio: "A reasonably long bio used for admin service testing that exceeds twenty chars.",
-    },
+        hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
     partnerPreferences: {
       ageMin: 24,
       ageMax: 32,

@@ -407,7 +407,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
           gender?: string; city?: string; educationLevel?: string;
           occupationCategory?: string; heightCm?: number | null;
         };
-        faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+        faithAndFamily?: {
+          marriageIntention?: string; values?: string[]; bio?: string;
+          hasGodfather?: boolean; isDeacon?: boolean | null; churchServiceActive?: boolean;
+        };
       };
       const gender = payload.publicProfile?.gender;
       if (gender !== wantedGender) continue;
@@ -423,6 +426,9 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
         marriageIntention: payload.faithAndFamily?.marriageIntention ?? null,
         values: payload.faithAndFamily?.values ?? [],
         bio: payload.faithAndFamily?.bio ?? null,
+        hasGodfather: payload.faithAndFamily?.hasGodfather ?? false,
+        isDeacon: payload.faithAndFamily?.isDeacon ?? null,
+        churchServiceActive: payload.faithAndFamily?.churchServiceActive ?? false,
         dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
       });
     }
@@ -584,7 +590,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
             gender?: string; city?: string; educationLevel?: string;
             occupationCategory?: string; heightCm?: number | null;
           };
-          faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+          faithAndFamily?: {
+            marriageIntention?: string; values?: string[]; bio?: string;
+            hasGodfather?: boolean; isDeacon?: boolean | null; churchServiceActive?: boolean;
+          };
         }
       | undefined;
     const messages = [...this.introductionMessages.values()]
@@ -613,6 +622,9 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
         marriageIntention: payload?.faithAndFamily?.marriageIntention ?? null,
         values: payload?.faithAndFamily?.values ?? [],
         bio: payload?.faithAndFamily?.bio ?? null,
+        hasGodfather: payload?.faithAndFamily?.hasGodfather ?? false,
+        isDeacon: payload?.faithAndFamily?.isDeacon ?? null,
+        churchServiceActive: payload?.faithAndFamily?.churchServiceActive ?? false,
       },
       messages,
     };

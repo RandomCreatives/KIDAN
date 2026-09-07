@@ -292,6 +292,9 @@ export interface IntroductionThreadRow {
     marriageIntention: string | null;
     values: string[];
     bio: string | null;
+    hasGodfather: boolean;
+    isDeacon: boolean | null;
+    churchServiceActive: boolean;
   };
   messages: IntroductionMessageRow[];
 }
@@ -352,6 +355,9 @@ export interface DiscoveryCandidateRow {
   marriageIntention: string | null;
   values: string[];
   bio: string | null;
+  hasGodfather: boolean;
+  isDeacon: boolean | null;
+  churchServiceActive: boolean;
   dateOfBirthCiphertext: Buffer;
 }
 

@@ -53,7 +53,11 @@ async function setup() {
         faithTradition: "ethiopian_orthodox_tewahedo" as const, marriageIntention: "teklil" as const,
         wantsChildren: "yes" as const, values: ["active_faith", "honesty", "family_oriented"] as ValueTag[],
         bio: "Candidate review status test bio, long enough to pass the minimum length rule.",
-      },
+          hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
       partnerPreferences: {
         ageMin: 28, ageMax: 38, preferredCities: ["Addis Ababa"], openToAbroad: false,
         acceptedMaritalStatuses: ["never_married" as const], acceptsPartnerWithChildren: false,

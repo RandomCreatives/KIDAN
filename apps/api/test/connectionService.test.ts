@@ -44,7 +44,11 @@ async function createCandidate(
         faithTradition: "ethiopian_orthodox_tewahedo" as const, marriageIntention: "teklil" as const,
         wantsChildren: "yes" as const, values: ["active_faith", "honesty", "family_oriented"] as ValueTag[],
         bio: "Connection service test bio long enough to satisfy the minimum bio length validation.",
-      },
+          hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
       partnerPreferences: {
         ageMin: 22, ageMax: 40, preferredCities: ["Addis Ababa"], openToAbroad: false,
         acceptedMaritalStatuses: ["never_married" as const], acceptsPartnerWithChildren: false,
