@@ -7,6 +7,13 @@ const optionalNonEmpty = z.preprocess(
 
 const environmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  // Vercel sets VERCEL_ENV to "production", "preview", or "development". Vercel
+  // runs preview branch deployments with NODE_ENV=production, but preview
+  // environments deliberately do NOT receive the production secrets (they are
+  // scoped to the Production target). Use this to distinguish a real production
+  // deploy from a preview so a preview can boot into "not ready" mode instead
+  // of failing its strict-config validation on cold start.
+  VERCEL_ENV: z.enum(["production", "preview", "development"]).optional(),
   API_HOST: z.string().min(1).default("0.0.0.0"),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(4_000),
   APP_ORIGIN: z.preprocess(
@@ -49,10 +56,12 @@ const environmentSchema = z.object({
       path: ["DATABASE_URL"],
     });
   }
-  if (environment.NODE_ENV === "production" && configured.length !== persistenceKeys.length) {
+  if (environment.NODE_ENV === "production" && environment.VERCEL_ENV !== "preview"
+    && configured.length !== persistenceKeys.length) {
     context.addIssue({ code: "custom", message: "Production requires persistence configuration" });
   }
-  if (environment.NODE_ENV === "production" && !environment.APP_ORIGIN) {
+  if (environment.NODE_ENV === "production" && environment.VERCEL_ENV !== "preview"
+    && !environment.APP_ORIGIN) {
     context.addIssue({ code: "custom", message: "Production requires APP_ORIGIN", path: ["APP_ORIGIN"] });
   }
 });
