@@ -31,10 +31,6 @@ export function ConnectionsScreen() {
   const [busy, setBusy] = useState<string | null>(null);
   const [openIntroduction, setOpenIntroduction] = useState<ConnectionItem | null>(null);
 
-  if (openIntroduction) {
-    return <IntroductionScreen connection={openIntroduction} onBack={() => setOpenIntroduction(null)} />;
-  }
-
   const load = useCallback(() => {
     if (!realSubmissionsEnabled) {
       setConnections(null);
@@ -69,6 +65,14 @@ export function ConnectionsScreen() {
     },
     [realSubmissionsEnabled, csrfToken, load],
   );
+
+  // All hooks must run before any early return (Rules of Hooks). Opening the
+  // restricted introduction swaps this screen for IntroductionScreen; doing so
+  // above the hooks previously unmounted on a different hook count and blanked
+  // the page after both participants confirmed.
+  if (openIntroduction) {
+    return <IntroductionScreen connection={openIntroduction} onBack={() => setOpenIntroduction(null)} />;
+  }
 
   return (
     <main className="screen standard-screen">
