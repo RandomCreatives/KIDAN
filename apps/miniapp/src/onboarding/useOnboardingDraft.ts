@@ -310,7 +310,9 @@ export function useOnboardingDraft(
       } catch (error: unknown) {
         let message = "Could not save your private details. Retry.";
         if (error instanceof ApiError) {
-          if (error.code === "ADULT_ELIGIBILITY_REQUIRED") {
+          if (error.code === "PHONE_ALREADY_REGISTERED") {
+            message = "That phone number is already registered with another account.";
+          } else if (error.code === "ADULT_ELIGIBILITY_REQUIRED") {
             message = "You must be 18 or older to create a profile.";
           } else if (error.code === "UNAUTHENTICATED") {
             message = "Your session expired. Reconnect and retry.";
@@ -320,6 +322,8 @@ export function useOnboardingDraft(
             await retry();
           } else if (error.code === "NETWORK") {
             message = "Network error while saving your details. Retry.";
+          } else {
+            message = `Could not save your private details (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
           }
         }
         return { success: false, message };
