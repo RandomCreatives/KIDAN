@@ -446,3 +446,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .introduction-composer { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 10px; }
 .introduction-composer textarea { width: 100%; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font: inherit; font-size: 13px; resize: vertical; background: #fff; }
 .introduction-composer .primary-button { width: 100%; }
+
+/* Real-home gate (real pilot users awaiting/after review) */
+.gate-brand { display: flex; justify-content: center; margin-bottom: 6px; }
+.success-mark.review-tone-action { background: #fdf3e3; color: #9a6a12; }
+.success-mark.review-tone-rejected { background: #f9eceb; color: #a4322c; }
+
+/* Loading state (real home gate) */
+.centered { min-height: 60vh; display: grid; place-items: center; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(31,75,60,.18); border-top-color: var(--forest, #1f4b3c); animation: kidan-spin .8s linear infinite; }
+@keyframes kidan-spin { to { transform: rotate(360deg); } }
