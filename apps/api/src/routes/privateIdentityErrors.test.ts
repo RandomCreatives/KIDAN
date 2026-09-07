@@ -20,7 +20,7 @@ describe("private-identity duplicate phone", () => {
       saveVerificationPhoto: async () => undefined,
       savePrivateIdentity: async () => {
         const error = new Error('duplicate key value violates unique constraint "identity_vault_phone_lookup_hash_key"');
-        (error as { code: string }).code = "23505";
+        (error as unknown as { code: string }).code = "23505";
         throw error;
       },
     } as never;
