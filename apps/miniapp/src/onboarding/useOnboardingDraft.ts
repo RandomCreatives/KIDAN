@@ -276,6 +276,12 @@ export function useOnboardingDraft(
             await retry();
           } else if (error.code === "NETWORK") {
             message = "Network error while uploading. Retry.";
+          } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
+            message = "This environment is not accepting submissions right now.";
+          } else {
+            // Staging diagnostic: surface the status/code so upload failures are
+            // identifiable without server-log access.
+            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
           }
         }
         setPhotoError(message);

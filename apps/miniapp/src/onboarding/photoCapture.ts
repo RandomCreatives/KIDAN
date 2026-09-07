@@ -4,9 +4,10 @@
 
 const MAX_DIMENSION = 1280;
 const JPEG_QUALITY = 0.82;
-// Server caps the data URL at 5,000,000 characters (see
-// verificationPhotoUploadSchema). Stay just under it for the raw-upload fallback.
-const MAX_DATA_URL_LENGTH = 4_900_000;
+// Server caps the data URL at 5,000,000 characters, and Vercel's serverless
+// request body limit is ~4.5 MB total. The raw-upload fallback must stay well
+// under both (allowing for JSON envelope overhead), so bound it conservatively.
+const MAX_DATA_URL_LENGTH = 3_300_000;
 const SUPPORTED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 export interface PhotoCaptureResult {
