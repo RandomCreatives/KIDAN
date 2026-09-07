@@ -13,6 +13,12 @@ const environmentSchema = z.object({
     (value) => value === "" ? undefined : value,
     z.url().transform((value) => new URL(value).origin).optional(),
   ),
+  // Operator admin review console origin (B3). Separate from the candidate
+  // Mini App origin; the API must permit state-changing requests from both.
+  ADMIN_ORIGIN: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.url().transform((value) => new URL(value).origin).optional(),
+  ),
   DATABASE_URL: optionalNonEmpty,
   TELEGRAM_BOT_TOKEN: optionalNonEmpty,
   SESSION_SECRET: optionalNonEmpty,

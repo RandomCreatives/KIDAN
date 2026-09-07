@@ -55,7 +55,12 @@ export async function buildRuntimeApp(
     // Non-secret auth diagnostics (configured bot id + token probe) are
     // returned to the client only outside production; they are always logged.
     exposeAuthDiagnostics: !production,
-    ...(environment.APP_ORIGIN ? { allowedOrigin: environment.APP_ORIGIN } : {}),
+    ...(environment.APP_ORIGIN || environment.ADMIN_ORIGIN
+      ? {
+          allowedOrigins: [environment.APP_ORIGIN, environment.ADMIN_ORIGIN]
+            .filter((value): value is string => Boolean(value)),
+        }
+      : {}),
   };
 
   const persistenceConfigured = Boolean(
