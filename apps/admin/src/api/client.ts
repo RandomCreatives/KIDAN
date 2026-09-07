@@ -69,9 +69,15 @@ export class AdminApiClient {
       throw new AdminApiError("NETWORK", 0);
     }
 
-    const envelope = (await response.json().catch(() => ({}))) as Envelope;
+    const envelope = (await response.json().catch(() => null)) as Envelope | null;
     if (!response.ok) {
-      throw new AdminApiError(envelope.error?.code ?? "UNKNOWN", response.status);
+      throw new AdminApiError(envelope?.error?.code ?? "UNKNOWN", response.status);
+    }
+    // A 200 with a missing/non-object body (e.g. an interstitial or proxy HTML
+    // page instead of JSON) must not be treated as success: the schema parse
+    // would otherwise throw an opaque error. Surface it as an identifiable code.
+    if (!envelope || typeof envelope.data !== "object" || envelope.data === null) {
+      throw new AdminApiError("INVALID_RESPONSE", response.status);
     }
     return envelope.data as T;
   }
