@@ -194,9 +194,12 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     }
   });
 
+  // bodyLimit is a top-level route option (Fastify reads it directly); nesting
+  // it under `config` silently leaves the framework default (~1MB), which
+  // rejected every real verification photo (base64 JSON is several MB).
   app.put(
     "/v1/onboarding/verification-photo",
-    { config: { bodyLimit: 6 * 1024 * 1024 } },
+    { bodyLimit: 6 * 1024 * 1024 },
     async (request, reply) => {
       const session = await requireSession(request, reply);
       if (!session || !(await requireCsrf(request, reply, session))) return;
@@ -204,24 +207,6 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
         await options.onboardingService.saveVerificationPhoto(session.user.id, request.body);
         return reply.code(204).send();
       } catch (error) {
-        // TEMPORARY STAGING DIAGNOSTIC (Track D e2e): surface the error
-        // class+message on a 500 so the photo-upload failure is identifiable
-        // without server logs. Returns internal library messages only (no PII,
-        // no photo bytes). Revert before production.
-        if (!(error instanceof ZodError) && !(error instanceof VersionConflictError)
-          && !(error instanceof SubmissionStateError)) {
-          request.log.error({ msg: "verification photo save failed", err: error });
-          return reply.code(500).send({
-            error: {
-              code: "INTERNAL_ERROR",
-              requestId: request.id,
-              diagnostic: {
-                name: error instanceof Error ? error.name : "non-error",
-                message: String((error instanceof Error && error.message) || error).slice(0, 200),
-              },
-            },
-          });
-        }
         return sendDomainError(error, request, reply);
       }
     },

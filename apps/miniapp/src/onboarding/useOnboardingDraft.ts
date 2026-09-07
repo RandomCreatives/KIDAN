@@ -268,6 +268,8 @@ export function useOnboardingDraft(
         if (error instanceof ApiError) {
           if (error.code === "VERIFICATION_PHOTO_INVALID") {
             message = "Choose a clear JPEG, PNG, or WebP photo under 5&nbsp;MB.";
+          } else if (error.code === "PHOTO_TOO_LARGE") {
+            message = "That photo is too large to upload. Try a smaller or shorter photo.";
           } else if (error.code === "UNAUTHENTICATED") {
             message = "Your session expired. Reconnect and retry.";
             await invalidate();
@@ -278,16 +280,8 @@ export function useOnboardingDraft(
             message = "Network error while uploading. Retry.";
           } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
             message = "This environment is not accepting submissions right now.";
-          } else if (error.diagnostic?.message) {
-            // Staging build returns the internal reason on a 500 so we can fix it.
-            const d = error.diagnostic as { name?: string; code?: string; message: string; stackTop?: string };
-            const where = d.stackTop ? ` — at ${d.stackTop}` : "";
-            message = `Photo upload error [${d.name ?? "?"}${d.code ? `/${d.code}` : ""}]: ${d.message}${where}`;
           } else {
-            // Staging diagnostic: surface the status/code so upload failures are
-            // identifiable without server-log access. Marker d2 identifies this
-            // bundle; if it is missing the app is a cached old build.
-            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry. [d2]`;
+            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
           }
         }
         setPhotoError(message);

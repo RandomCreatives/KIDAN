@@ -53,18 +53,8 @@ export class ApiError extends Error {
   readonly networkCause: string | undefined;
   readonly configuredBotId: string | undefined;
   readonly tokenProbe: { ok: boolean; id?: number; username?: string; reason?: string } | undefined;
-  /** Staging-only internal error detail (never present in production). */
-  readonly diagnostic: { name?: string; message?: string } | undefined;
 
-  constructor(
-    code: ClientErrorCode,
-    status: number,
-    requestId?: string,
-    networkCause?: string,
-    configuredBotId?: string,
-    tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string },
-    diagnostic?: { name?: string; message?: string },
-  ) {
+  constructor(code: ClientErrorCode, status: number, requestId?: string, networkCause?: string, configuredBotId?: string, tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string }) {
     super(`Kidan API error ${code} (${status})`);
     this.name = "ApiError";
     this.code = code;
@@ -73,7 +63,6 @@ export class ApiError extends Error {
     this.networkCause = networkCause;
     this.configuredBotId = configuredBotId;
     this.tokenProbe = tokenProbe;
-    this.diagnostic = diagnostic;
   }
 }
 
@@ -282,8 +271,7 @@ export class KidanApiClient {
       const code = apiErrorCodeSchema.safeParse(envelope.data.error.code).data ?? "INVALID_RESPONSE";
       throw new ApiError(code, response.status, envelope.data.error.requestId, undefined,
         (envelope.data.error as { configuredBotId?: string }).configuredBotId,
-        (envelope.data.error as { tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string } }).tokenProbe,
-        (envelope.data.error as { diagnostic?: { name?: string; message?: string } }).diagnostic);
+        (envelope.data.error as { tokenProbe?: { ok: boolean; id?: number; username?: string; reason?: string } }).tokenProbe);
     }
 
     if (expectStatus !== undefined && response.status !== expectStatus) {

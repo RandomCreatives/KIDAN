@@ -105,20 +105,15 @@ export async function buildApp(
     const stackTop = error instanceof Error && error.stack
       ? error.stack.split("\n").slice(1, 3).map((line) => line.trim()).join(" | ")
       : undefined;
+    // Fastify rejects bodies exceeding the route bodyLimit (status 413) — a
+    // client-fixable condition (the miniapp downsizes photos), not a server
+    // fault, so it must not surface as a generic 500.
+    if (errorCode === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      request.log.warn({ errorName, errorCode }, "Request rejected: body too large");
+      return reply.code(413).send({ error: { code: "PHOTO_TOO_LARGE", requestId: request.id } });
+    }
     request.log.error({ errorName, errorCode, errorMessage, stackTop }, "Request failed");
-    // TEMPORARY STAGING DIAGNOSTIC (Track D e2e): the photo-upload 500 bypasses
-    // the route catch, so it originates outside saveVerificationPhoto (hook,
-    // session lookup, serialization...). Surface name/code/message/top-frame on
-    // every 500 so the failure is identifiable without server logs. No PII:
-    // messages are sanitized and the logger redact config covers bodies/cookies.
-    // Revert before production.
-    return reply.code(500).send({
-      error: {
-        code: "INTERNAL_ERROR",
-        requestId: request.id,
-        diagnostic: { name: errorName, code: errorCode, message: errorMessage.slice(0, 200), stackTop },
-      },
-    });
+    return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send({ error: { code: "NOT_FOUND", requestId: request.id } }),
