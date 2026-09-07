@@ -278,6 +278,9 @@ export function useOnboardingDraft(
             message = "Network error while uploading. Retry.";
           } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
             message = "This environment is not accepting submissions right now.";
+          } else if (error.diagnostic?.message) {
+            // Staging build returns the internal reason on a 500 so we can fix it.
+            message = `Photo upload error: ${error.diagnostic.message}`;
           } else {
             // Staging diagnostic: surface the status/code so upload failures are
             // identifiable without server-log access.
