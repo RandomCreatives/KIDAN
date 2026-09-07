@@ -67,6 +67,14 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
       const status = code === "REAL_SUBMISSIONS_DISABLED" ? 503 : 409;
       return reply.code(status).send({ error: { code, requestId: request.id } });
     }
+    // PostgreSQL unique-constraint violation (23505). Within onboarding the
+    // only user-supplied unique value is the phone number (phone_lookup_hash);
+    // telegram id and public code races are handled at account creation. This
+    // must be a recoverable 409, not a generic 500.
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") {
+      request.log.warn({ err: error }, "identity save rejected: phone already registered");
+      return reply.code(409).send({ error: { code: "PHONE_ALREADY_REGISTERED", requestId: request.id } });
+    }
     throw error;
   };
 
@@ -194,9 +202,12 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
     }
   });
 
+  // bodyLimit is a top-level route option (Fastify reads it directly); nesting
+  // it under `config` silently leaves the framework default (~1MB), which
+  // rejected every real verification photo (base64 JSON is several MB).
   app.put(
     "/v1/onboarding/verification-photo",
-    { config: { bodyLimit: 6 * 1024 * 1024 } },
+    { bodyLimit: 6 * 1024 * 1024 },
     async (request, reply) => {
       const session = await requireSession(request, reply);
       if (!session || !(await requireCsrf(request, reply, session))) return;

@@ -105,6 +105,13 @@ export async function buildApp(
     const stackTop = error instanceof Error && error.stack
       ? error.stack.split("\n").slice(1, 3).map((line) => line.trim()).join(" | ")
       : undefined;
+    // Fastify rejects bodies exceeding the route bodyLimit (status 413) — a
+    // client-fixable condition (the miniapp downsizes photos), not a server
+    // fault, so it must not surface as a generic 500.
+    if (errorCode === "FST_ERR_CTP_BODY_TOO_LARGE") {
+      request.log.warn({ errorName, errorCode }, "Request rejected: body too large");
+      return reply.code(413).send({ error: { code: "PHOTO_TOO_LARGE", requestId: request.id } });
+    }
     request.log.error({ errorName, errorCode, errorMessage, stackTop }, "Request failed");
     return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
   });

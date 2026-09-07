@@ -57,6 +57,17 @@ function isAdult(dateOfBirth: string): boolean {
   return birth <= threshold;
 }
 
+function photoErrorMessage(error: unknown): string {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "UNSUPPORTED_TYPE") {
+    return "That file is not a photo. Choose a JPEG, PNG, or WebP image.";
+  }
+  if (code === "PHOTO_TOO_LARGE") {
+    return "This photo is too large (over ~4 MB). Please use a smaller image.";
+  }
+  return "We couldn't process that photo. Try a different JPEG, PNG, or WebP image.";
+}
+
 export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps) {
   const isDemo = mode === "demo";
   const [draft, setDraft] = useState<OnboardingFormState>(initialOnboardingState);
@@ -149,8 +160,8 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         } else {
           haptic("success");
         }
-      } catch {
-        setError("Choose a clear JPEG, PNG, or WebP photo.");
+      } catch (error) {
+        setError(photoErrorMessage(error));
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     },
@@ -475,8 +486,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
                   <input
                     ref={photoInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    capture="user"
+                    accept="image/*"
                     className="photo-file-input"
                     onChange={(event) => void handlePhotoSelected(event)}
                     aria-label="Upload your private verification photo"

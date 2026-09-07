@@ -268,6 +268,8 @@ export function useOnboardingDraft(
         if (error instanceof ApiError) {
           if (error.code === "VERIFICATION_PHOTO_INVALID") {
             message = "Choose a clear JPEG, PNG, or WebP photo under 5&nbsp;MB.";
+          } else if (error.code === "PHOTO_TOO_LARGE") {
+            message = "That photo is too large to upload. Try a smaller or shorter photo.";
           } else if (error.code === "UNAUTHENTICATED") {
             message = "Your session expired. Reconnect and retry.";
             await invalidate();
@@ -276,6 +278,10 @@ export function useOnboardingDraft(
             await retry();
           } else if (error.code === "NETWORK") {
             message = "Network error while uploading. Retry.";
+          } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
+            message = "This environment is not accepting submissions right now.";
+          } else {
+            message = `Photo upload failed (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
           }
         }
         setPhotoError(message);
@@ -304,7 +310,9 @@ export function useOnboardingDraft(
       } catch (error: unknown) {
         let message = "Could not save your private details. Retry.";
         if (error instanceof ApiError) {
-          if (error.code === "ADULT_ELIGIBILITY_REQUIRED") {
+          if (error.code === "PHONE_ALREADY_REGISTERED") {
+            message = "That phone number is already registered with another account.";
+          } else if (error.code === "ADULT_ELIGIBILITY_REQUIRED") {
             message = "You must be 18 or older to create a profile.";
           } else if (error.code === "UNAUTHENTICATED") {
             message = "Your session expired. Reconnect and retry.";
@@ -314,6 +322,8 @@ export function useOnboardingDraft(
             await retry();
           } else if (error.code === "NETWORK") {
             message = "Network error while saving your details. Retry.";
+          } else {
+            message = `Could not save your private details (${error.code}${error.status ? `, HTTP ${error.status}` : ""}). Retry.`;
           }
         }
         return { success: false, message };
