@@ -21,6 +21,10 @@ export interface BuildAppOptions {
   cookieName?: string;
   secureCookies?: boolean;
   allowedOrigin?: string;
+  /** Browser origins permitted to make state-changing (non-GET) requests. The
+   *  candidate Mini App and the operator admin console are served from
+   *  different origins, so production allows both. Supersedes allowedOrigin. */
+  allowedOrigins?: string[];
   logger?: boolean;
   onClose?: () => Promise<void>;
   readinessCheck?: () => Promise<void>;
@@ -73,13 +77,15 @@ export async function buildApp(
 
   await app.register(cookie);
 
+  const allowedOrigins = options.allowedOrigins
+    ?? (options.allowedOrigin ? [options.allowedOrigin] : []);
   app.addHook("onRequest", async (request, reply) => {
-    if (!options.allowedOrigin || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return;
+    if (allowedOrigins.length === 0 || ["GET", "HEAD", "OPTIONS"].includes(request.method)) return;
     const origin = request.headers.origin;
     // Accept requests with no Origin header — these are server-side proxy
     // rewrites (e.g. Vercel's /api/* rewrite) where the browser already
     // enforced same-origin on the frontend side.
-    if (origin !== undefined && origin !== options.allowedOrigin) {
+    if (origin !== undefined && !allowedOrigins.includes(origin)) {
       return reply.code(403).send({ error: { code: "INVALID_ORIGIN", requestId: request.id } });
     }
   });
