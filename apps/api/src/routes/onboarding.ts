@@ -204,6 +204,24 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
         await options.onboardingService.saveVerificationPhoto(session.user.id, request.body);
         return reply.code(204).send();
       } catch (error) {
+        // TEMPORARY STAGING DIAGNOSTIC (Track D e2e): surface the error
+        // class+message on a 500 so the photo-upload failure is identifiable
+        // without server logs. Returns internal library messages only (no PII,
+        // no photo bytes). Revert before production.
+        if (!(error instanceof ZodError) && !(error instanceof VersionConflictError)
+          && !(error instanceof SubmissionStateError)) {
+          request.log.error({ msg: "verification photo save failed", err: error });
+          return reply.code(500).send({
+            error: {
+              code: "INTERNAL_ERROR",
+              requestId: request.id,
+              diagnostic: {
+                name: error instanceof Error ? error.name : "non-error",
+                message: String((error instanceof Error && error.message) || error).slice(0, 200),
+              },
+            },
+          });
+        }
         return sendDomainError(error, request, reply);
       }
     },
