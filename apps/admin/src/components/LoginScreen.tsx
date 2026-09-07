@@ -23,6 +23,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         setError("Incorrect operator password.");
       } else if (caught instanceof AdminApiError && caught.code === "NETWORK") {
         setError("Cannot reach the review service. Check your connection and try again.");
+      } else if (caught instanceof AdminApiError) {
+        setError(`Sign-in failed (code ${caught.code}, HTTP ${caught.status}). Please try again.`);
       } else {
         setError("Sign-in failed. Please try again.");
       }
