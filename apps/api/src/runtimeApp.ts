@@ -55,10 +55,20 @@ export async function buildRuntimeApp(
     // Non-secret auth diagnostics (configured bot id + token probe) are
     // returned to the client only outside production; they are always logged.
     exposeAuthDiagnostics: !production,
+    // The candidate Mini App and the operator admin console are served from
+    // different origins; both must be allowed for state-changing requests.
+    // APP_ORIGIN/ADMIN_ORIGIN come from the environment; when the app origin is
+    // configured (staging/production) the admin origin falls back to the known
+    // pilot staging console so the pilot works without extra env configuration.
+    // Production sets ADMIN_ORIGIN to its own domain. With no origins set at
+    // all (local development) the gate stays off.
     ...(environment.APP_ORIGIN || environment.ADMIN_ORIGIN
       ? {
-          allowedOrigins: [environment.APP_ORIGIN, environment.ADMIN_ORIGIN]
-            .filter((value): value is string => Boolean(value)),
+          allowedOrigins: [
+            environment.APP_ORIGIN,
+            environment.ADMIN_ORIGIN
+              ?? (environment.APP_ORIGIN ? "https://kidan-staging-admin.vercel.app" : undefined),
+          ].filter((value): value is string => Boolean(value)),
         }
       : {}),
   };
