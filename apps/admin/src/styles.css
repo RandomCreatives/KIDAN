@@ -104,6 +104,30 @@ input:focus, textarea:focus {
 }
 textarea { resize: vertical; }
 
+.password-field { position: relative; }
+.password-field input { padding-right: 2.75rem; }
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0;
+}
+.password-toggle:hover { background: rgba(15, 61, 46, 0.08); color: var(--brand); }
+.password-toggle:focus-visible {
+  outline: 2px solid rgba(15, 61, 46, 0.35);
+  outline-offset: 1px;
+}
+
 .form-error {
   color: var(--red);
   background: rgba(164, 50, 44, 0.08);
