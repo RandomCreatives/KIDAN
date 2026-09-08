@@ -70,6 +70,9 @@ export interface BuildAppOptions {
     events: ("auth_failure" | "server_error")[],
     since: Date,
   ) => Promise<number>;
+  /** Operator helper: fire a test admin-console-bot notification (privacy-safe). */
+  adminNotifyTestSecret?: string;
+  adminNotifyTest?: (message: string) => Promise<void>;
 }
 
 export type FastifyFactory = typeof Fastify;
@@ -216,6 +219,22 @@ export async function buildApp(
       return reply.send({
         data: { ok: ready && !degraded, ready, degraded, authFailures24h: authFailures, serverErrors24h: serverErrors },
       });
+    });
+  }
+
+  // Operator helper (opt-in): fire a test admin notification to verify the
+  // admin bot is wired up. Bearer-gated so it is never publicly reachable.
+  const adminNotifyTestSecret = options.adminNotifyTestSecret;
+  const adminNotifyTest = options.adminNotifyTest;
+  if (adminNotifyTestSecret && adminNotifyTest) {
+    app.get("/internal/admin-notify-test", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${adminNotifyTestSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
+      }
+      await adminNotifyTest("Test: admin console bot is working. Open console to review.");
+      return reply.send({ data: { sent: true } });
     });
   }
 

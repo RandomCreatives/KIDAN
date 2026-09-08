@@ -71,6 +71,13 @@ pilot is not invite-only). In the admin console:
    note).
 4. Under **Connections**, act on pairs awaiting admin approval.
 
+### Verifying the admin bot (no real submission needed)
+`GET /internal/admin-notify-test` with
+`Authorization: Bearer $ADMIN_NOTIFY_TEST_SECRET` fires a test card to the admin
+bot, so you can confirm it's wired up without a candidate. Set
+`ADMIN_NOTIFY_TEST_SECRET` (any strong value) on the API project to enable it;
+absent -> 404 (safe).
+
 ### Admin console bot (phone approvals)
 A **separate admin bot** (not `@KidanAppBot`) sends you a privacy-safe message
 ("new submission awaiting review" / "pair awaiting approval") with an **"Open
