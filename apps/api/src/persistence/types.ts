@@ -165,6 +165,12 @@ export interface PersistenceRepository {
   /** Look up a submitted user by their public code (KD-XXXXXX); null if none. */
   findUserIdByPublicCode(publicCode: string): Promise<string | null>;
   /**
+   * The discovery profile gender for a user ('male'|'female'), or null when the
+   * user has no discovery profile. Used to reject same-gender interest so a
+   * one-sided swipe can never register as an interest or reach a shortlist.
+   */
+  getDiscoveryGender(userId: string): Promise<string | null>;
+  /**
    * Records an admin decision: stamps profile_review (latest), appends an
    * admin_review audit row, and applies the lifecycle side effect:
    * approved -> discovery_profile.review_status='approved' + verification

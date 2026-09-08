@@ -206,7 +206,7 @@ export function DiscoverScreen({ onOpenRequests }: { onOpenRequests?: () => void
             <h2>Send a formal introduction?</h2>
             <p>
               A right swipe is private and never tells anyone. Sending a request is the
-              committed step — {requestTarget.age}, {requestTarget.city} ({requestTarget.publicCode})
+              committed step — {requestTarget.age}, {requestTarget.gender === "male" ? "Male" : "Female"}, {requestTarget.city} ({requestTarget.publicCode})
               {" "}will see your values-only summary and can accept or quietly decline.
             </p>
             <p className="quiet-copy">You can send {requestsLeft ?? 5} more today. Requests expire after 72 hours.</p>

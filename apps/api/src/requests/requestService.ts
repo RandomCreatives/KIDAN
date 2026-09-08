@@ -61,6 +61,20 @@ export class RequestService {
       throw new RequestStateError("TARGET_NOT_FOUND");
     }
 
+    // A request is only ever made to an opposite-gender candidate. If the
+    // target shares the sender's gender the request is rejected without
+    // revealing the target (identical to an ineligible code). This keeps the
+    // shortlist strictly opposite-gender even against a forged public code.
+    if (senderUserId && targetUserId) {
+      const [senderGender, targetGender] = await Promise.all([
+        this.repository.getDiscoveryGender(senderUserId),
+        this.repository.getDiscoveryGender(targetUserId),
+      ]);
+      if (!senderGender || !targetGender || senderGender === targetGender) {
+        throw new RequestStateError("TARGET_NOT_FOUND");
+      }
+    }
+
     // A request is the committed step from the private shortlist: the sender
     // must have right-swiped (interested) the target first.
     const shortlisted = await this.repository.hasDiscoveryDecision(senderUserId, targetUserId);

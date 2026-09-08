@@ -458,6 +458,14 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return result.rows[0]?.id ?? null;
   }
 
+  async getDiscoveryGender(userId: string): Promise<string | null> {
+    const result = await this.pool.query<{ gender: string }>(
+      "SELECT gender FROM discovery_profile WHERE user_id = $1",
+      [userId],
+    );
+    return result.rows[0]?.gender ?? null;
+  }
+
   async getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null> {
     const result = await this.pool.query<{
       public_code: string;

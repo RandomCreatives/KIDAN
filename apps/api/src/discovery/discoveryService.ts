@@ -86,6 +86,18 @@ export class DiscoveryService {
     if (!targetUserId || targetUserId === actorUserId) {
       throw new DiscoveryStateError("TARGET_NOT_FOUND");
     }
+    // A same-gender swipe never counts as an interest and never reaches a
+    // shortlist. Treat it like an ineligible target (no visibility into the
+    // candidate exists). Pass decisions are harmless and still recorded.
+    if (request.decision === "interested") {
+      const [actorGender, targetGender] = await Promise.all([
+        this.repository.getDiscoveryGender(actorUserId),
+        this.repository.getDiscoveryGender(targetUserId),
+      ]);
+      if (!actorGender || !targetGender || actorGender === targetGender) {
+        throw new DiscoveryStateError("TARGET_NOT_FOUND");
+      }
+    }
     // recordDecisionAndMaybeConnect is idempotent per actor+target; when the
     // decision completes a mutual interest it creates the pending connection.
     await this.repository.recordDecisionAndMaybeConnect({

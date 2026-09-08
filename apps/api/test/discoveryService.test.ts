@@ -198,4 +198,40 @@ describe("values-only discovery (Track C)", () => {
       }),
     ).rejects.toThrow("TARGET_NOT_FOUND");
   });
+
+  it("never records a same-gender interested swipe and keeps it out of the shortlist", async () => {
+    const env = await setup();
+    const actor = await createCandidate(
+      900000000000041n, "male", "Addis Ababa",
+      env.repository, env.cipher, env.sessions, env.onboarding, env.admin, true,
+    );
+    const man = await createCandidate(
+      900000000000042n, "male", "Adama",
+      env.repository, env.cipher, env.sessions, env.onboarding, env.admin, true,
+    );
+    // Same-gender interested is rejected (hidden as an ineligible target).
+    await expect(
+      env.discovery.recordDecision(actor.userId, {
+        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: randomUUID(),
+      }),
+    ).rejects.toThrow("TARGET_NOT_FOUND");
+    // No interest is recorded, so the target is still decidable and not shortlisted.
+    expect(await env.repository.hasDiscoveryDecision(actor.userId, man.userId)).toBe(false);
+  });
+
+  it("still records a same-gender pass (harmless, not an interest)", async () => {
+    const env = await setup();
+    const actor = await createCandidate(
+      900000000000051n, "male", "Addis Ababa",
+      env.repository, env.cipher, env.sessions, env.onboarding, env.admin, true,
+    );
+    const man = await createCandidate(
+      900000000000052n, "male", "Adama",
+      env.repository, env.cipher, env.sessions, env.onboarding, env.admin, true,
+    );
+    await env.discovery.recordDecision(actor.userId, {
+      targetPublicCode: man.publicCode, decision: "pass", idempotencyKey: randomUUID(),
+    });
+    expect(await env.repository.hasDiscoveryDecision(actor.userId, man.userId)).toBe(true);
+  });
 });

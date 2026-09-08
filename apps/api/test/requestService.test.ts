@@ -116,6 +116,22 @@ describe("intentional introduction requests (Track D2)", () => {
     ).rejects.toThrow("NOT_SHORTLISTED");
   });
 
+  it("never sends a request to a same-gender target even if it is on the shortlist", async () => {
+    const env = await setup();
+    const man = await createCandidate(900000000000003n, "male", env);
+    const man2 = await createCandidate(900000000000004n, "male", env);
+    // A forged/injected same-gender shortlist entry could bypass the discovery
+    // swipe guard; the request service must reject it as an ineligible target.
+    await env.repository.saveDiscoveryDecision({
+      actorUserId: man.userId, targetUserId: man2.userId,
+      decision: "interested", idempotencyKey: crypto.randomUUID(), now: new Date(),
+    });
+    await expect(
+      env.requests.sendRequest(man.userId, { targetPublicCode: man2.publicCode, idempotencyKey: crypto.randomUUID() }),
+    ).rejects.toThrow("TARGET_NOT_FOUND");
+    expect(await env.repository.hasDiscoveryDecision(man.userId, man2.userId)).toBe(true);
+  });
+
   it("enforces the 5 per rolling-24h cap and resets after the window", async () => {
     const env = await setup();
     const man = await createCandidate(900000000000011n, "male", env);
