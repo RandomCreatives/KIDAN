@@ -1352,15 +1352,15 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
 
       if (!input.accept) {
         await client.query(
-          "UPDATE introduction_request SET status = 'declined', responded_at = $3 WHERE id = $1",
-          [input.requestId, input.recipientUserId, input.now],
+          "UPDATE introduction_request SET status = 'declined', responded_at = $2 WHERE id = $1",
+          [input.requestId, input.now],
         );
         return { status: "declined", connectionId: null };
       }
 
       await client.query(
-        "UPDATE introduction_request SET status = 'accepted', responded_at = $3 WHERE id = $1",
-        [input.requestId, input.recipientUserId, input.now],
+        "UPDATE introduction_request SET status = 'accepted', responded_at = $2 WHERE id = $1",
+        [input.requestId, input.now],
       );
       // Normalize the pair into a canonical (user_a, user_b) connection.
       const pair = await client.query<{ a: string; b: string }>(
