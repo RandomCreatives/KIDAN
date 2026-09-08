@@ -128,9 +128,22 @@ was already in place. Added:
   by the central error handler; `auth_failure` by the Telegram initData reject path. Repository
   `recordOperationalEvent` / `countOperationalEventsSince` cover both Postgres and memory.
 
-Remaining, in order:
-1. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
-   legal/cultural study notes the future monetization decision waits on.
+**E4 done — pilot runbook & data policy.** `docs/pilot-runbook.md` (services/URLs,
+env vars, review & admission operations, monitoring/alert thresholds, incident
+response, retention, pause/close) and `docs/data-policy.md` (data classes, access
+minimization, retention table, self-serve export/delete, incident escalation,
+data residency + the deferred monetization decision). Both ships on the release
+branch.
+
+**PostgreSQL integration suite is GREEN again** after two D2 SQL-type fixes
+(`25bece5`, `2fef3de`): the `introduction_request` inserts/updates left `$3`/`$2`
+as ambiguous/unreferenced parameters, so Postgres rejected them at runtime; the
+fixes pin `$3::timestamptz` + `make_interval(hours => $4::int)` and drop the
+unused param. These surfaced only in CI (no local Postgres), which is why they
+were found late. **All GitHub Actions checks now pass on `2fef3de`.**
+
+No remaining implementation work in Phase 03 Track E — only the user merge to
+`main` and then E4 docs already included.
 
 **Future (discussion only — not built): credit system.** First phase: a free month via a credit
 system (credits > direct Telebirr), credits expire after a month; if two months of learning show
