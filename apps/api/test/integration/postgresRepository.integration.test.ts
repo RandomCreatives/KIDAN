@@ -991,4 +991,12 @@ describe("PostgreSQL repository integration", () => {
       }
     });
   });
+});describe("getPublicCode", () => {
+  it("round-trips the public code for a known user", async () => {
+    const user = await newUser(services);
+    const code = await services.repository.getPublicCode(user.id);
+    expect(code).toBe(user.publicCode);
+    expect((code ?? "").startsWith("KD-")).toBe(true);
+    expect(await services.repository.getPublicCode("00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
 });
