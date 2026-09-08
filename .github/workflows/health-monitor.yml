@@ -1,0 +1,43 @@
+name: Monitor /internal/health
+
+# The deployment previously declared this health probe as a Vercel cron (`*/10`)
+# which fails the entire deployment on Vercel's free (Hobby) plan because Hobby
+# only allows once-per-day crons. `/internal/health` is a bearer-gated HTTP route,
+# so we drive it from GitHub Actions instead — no Vercel plan upgrade needed.
+
+on:
+  schedule:
+    # Every 10 minutes (GitHub Actions supports sub-hour schedules on free).
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GET /internal/health
+        env:
+          BASE_URL: ${{ vars.KIDAN_HEALTH_BASE_URL || 'https://kidan-staging-api.vercel.app' }}
+          MONITOR_CRON_SECRET: ${{ secrets.MONITOR_CRON_SECRET }}
+        run: |
+          if [ -z "$MONITOR_CRON_SECRET" ]; then
+            echo "::warning::MONITOR_CRON_SECRET is not set — skipping probe (endpoint stays 404/unauth by design)."
+            exit 0
+          fi
+          body="$(curl -fsS -m 30 -w '\n%{http_code}' \
+            -H "Authorization: Bearer ${MONITOR_CRON_SECRET}" \
+            "$BASE_URL/internal/health")"
+          code="$(printf '%s' "$body" | tail -n1)"
+          payload="$(printf '%s' "$body" | sed '$d')"
+          echo "HTTP $code"
+          echo "$payload"
+          echo "degraded=$(printf '%s' "$payload" | grep -o '"degraded":[a-z]*')"
+          if [ "$code" = "200" ]; then
+            printf '%s' "$payload" | grep -q '"ok":true' || {
+              echo "::error::health report says ok=false -> ${payload}"; exit 1; }
+          else
+            echo "::error::/internal/health returned HTTP ${code}"; exit 1
+          fi

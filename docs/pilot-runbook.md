@@ -93,7 +93,13 @@ console shows this in the **Funnel (all-time)** panel.
   `Authorization: Bearer $MONITOR_CRON_SECRET`. Runs the `/ready` write-probe and
   returns `{ ok, ready, degraded, authFailures24h, serverErrors24h }`. `degraded`
   is true above thresholds (auth failures > 100, server errors > 50 per 24h).
-  Configured on Vercel cron every 10 minutes.
+  **Driven by a GitHub Actions scheduled workflow** (`health-monitor.yml`, every
+  10 min) — not a Vercel cron, because Vercel's free (Hobby) plan only allows
+  once-per-day crons and a sub-daily cron fails the whole deployment. The probe
+  needs a GitHub **repository secret** `MONITOR_CRON_SECRET` (same value as the
+  API env var) and an optional repository variable `KIDAN_HEALTH_BASE_URL`
+  (defaults to the staging API URL). If the secret is absent the job warns and
+  skips, and the endpoint stays 404/unauthorized by design.
 - **Log-based alerts:** the API logs structured, redacted entries on auth-failure
   and server-error. Alert on spikes of these in your log sink; never rely on
   request bodies being present (they are redacted by design).
@@ -110,8 +116,9 @@ console shows this in the **Funnel (all-time)** panel.
 
 1. **Check `/ready`.** 503 = DB/migration issue; 500 with a bad `SERVICE_NOT_READY`
    response = the write-path probe failed.
-2. **Check `/internal/health`** for error/auth-failure volume; check structured
-   logs for the redacted `errorCode`/`errorName`.
+2. **Check `/internal/health`** (manually, or the `health-monitor` Actions run)
+   for error/auth-failure volume; check structured logs for the redacted
+   `errorCode`/`errorName`.
 3. **Admin console not loading:** it builds from `main`; confirm the merge/deploy.
 4. **Candidate cannot submit:** confirm `ENABLE_REAL_SUBMISSIONS=true` and the
    cohort is under `PILOT_CAPACITY`.

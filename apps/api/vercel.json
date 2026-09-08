@@ -1,7 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci --include=dev",
-  "regions": ["fra1"],
+  "regions": [
+    "fra1"
+  ],
   "functions": {
     "api/index.ts": {
       "memory": 256,
@@ -9,10 +11,15 @@
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    {
+      "source": "/(.*)",
+      "destination": "/api/index"
+    }
   ],
   "crons": [
-    { "path": "/internal/retention", "schedule": "0 2 * * *" },
-    { "path": "/internal/health", "schedule": "*/10 * * * *" }
+    {
+      "path": "/internal/retention",
+      "schedule": "0 2 * * *"
+    }
   ]
 }
