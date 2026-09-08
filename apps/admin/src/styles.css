@@ -349,3 +349,11 @@ textarea { resize: vertical; }
 .pair-join { color: var(--brand); font-weight: 700; padding: 0 0.25rem; }
 .connection-decide { display: flex; gap: 0.5rem; }
 .connection-decide .btn { margin-top: 0; flex: 1; }
+
+/* Track E2 funnel metrics */
+.funnel-panel { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.funnel-stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 0.5rem; }
+.funnel-stat { padding: 0.6rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.funnel-stat strong { display: block; font-size: 1.15rem; color: var(--green); }
+.funnel-stat span { font-size: 0.72rem; color: var(--ink-soft); }
+.funnel-note { margin: 0.4rem 0 0; font-size: 0.75rem; color: var(--ink-soft); }

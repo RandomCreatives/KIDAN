@@ -160,6 +160,24 @@ export interface PersistenceRepository {
    * controlled cohort stays at its configured size.
    */
   countAdmittedCandidates(): Promise<number>;
+  /**
+   * Aggregate pilot-funnel counts (Track E2). Returns counts ONLY — never rows,
+   * identities, or per-user data — so operators can monitor the pilot without
+   * touching or logging any personal data.
+   */
+  getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }>;
   /** The current user lifecycle status, or null when no such user. */
   getUserStatus(userId: string): Promise<UserRecord["status"] | null>;
   /** Returns users with approved photos whose 30-day retention window has elapsed. */

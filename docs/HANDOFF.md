@@ -33,6 +33,7 @@ Staging deployment is **pinned to a release branch**, not `main` (see Deploy bel
 | C | Values-only, photo-less/name-less Tinder-style discovery feed; private pass/interested; **one-sided interest never disclosed** | `GET /v1/discovery/feed`, `POST /v1/discovery/decision` |
 | D1 | Mutual interest → `connection` row (canonical a<b, created in the decision transaction) → admin approve/reject → **both** participants confirm → `connected`; decline/reject paths; rejection invisible | `GET /v1/connections`, `POST /v1/connections/:id/confirm`, `/v1/admin/connections*` |
 | D3 | Restricted **in-app-only** introduction for connected pairs: phone/Telegram/links blocked before save (422), values-only thread, admin hide-message moderation; name/phone/Telegram never revealed | migration 0006; `GET/POST /v1/connections/:id/introduction`, `/v1/admin/introductions*` |
+| E2 | Privacy-safe funnel metrics (counts only; no PII/analytics) | `GET /v1/admin/metrics`; admin Funnel panel |
 
 **Deferred by design:** D4 contact reveal (name/phone/Telegram) — a separate, future,
 explicitly-consented gate; **not in the pilot**. No payments/credits/wallet/ratings/VIP/paid
@@ -107,12 +108,17 @@ The controlled cohort stays small by lift/promotion, and a configurable ceiling
 (`PILOT_CAPACITY_REACHED`); already-admitted candidates may always re-submit after
 `changes_requested`.
 
+**E2 done — privacy-safe funnel metrics.** Operator/admin-only `GET /v1/admin/metrics`
+(gated by the admin session) returns aggregate **counts only** per stage: submitted, approved,
+shortlisted, request pending/accepted/declined/expired, connection pendingAdmin/connected/
+declined/rejected. No identity, no third-party analytics, no per-user data. Admin console shows a
+"Funnel (all-time)" panel. (For a time-bucketed view over the 3-6 month learning period, add a
+`sinceDays` window later.)
+
 Remaining, in order:
-1. **E2 Privacy-safe funnel metrics** — counts only (submitted, approved, mutual interest,
-   introductions), no PII, no third-party analytics.
-2. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
+1. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
    verification (including completing the Track D staging deploy above).
-3. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
+2. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
    legal/cultural study notes the future monetization decision waits on.
 
 **Future (discussion only — not built): credit system.** First phase: a free month via a credit

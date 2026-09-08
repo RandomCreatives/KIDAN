@@ -225,6 +225,66 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return this.users.get(userId)?.status ?? null;
   }
 
+  async getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }> {
+    let submitted = 0;
+    let approved = 0;
+    for (const draft of this.drafts.values()) {
+      if (draft.submittedAt) submitted += 1;
+    }
+    for (const status of this.reviewStatus.values()) {
+      if (status === "approved") approved += 1;
+    }
+    let shortlisted = 0;
+    for (const decision of this.decisions.values()) {
+      if (decision === "interested") shortlisted += 1;
+    }
+    let requestsPending = 0;
+    let requestsAccepted = 0;
+    let requestsDeclined = 0;
+    let requestsExpired = 0;
+    for (const request of this.introductionRequests.values()) {
+      if (request.status === "pending") requestsPending += 1;
+      else if (request.status === "accepted") requestsAccepted += 1;
+      else if (request.status === "declined") requestsDeclined += 1;
+      else if (request.status === "expired") requestsExpired += 1;
+    }
+    let connectionsPendingAdmin = 0;
+    let connectionsConnected = 0;
+    let connectionsDeclined = 0;
+    let connectionsRejected = 0;
+    for (const connection of this.connections.values()) {
+      if (connection.status === "mutual_confirmed_pending_admin") connectionsPendingAdmin += 1;
+      else if (connection.status === "connected") connectionsConnected += 1;
+      else if (connection.status === "declined") connectionsDeclined += 1;
+      else if (connection.status === "admin_rejected") connectionsRejected += 1;
+    }
+    return {
+      submitted,
+      approved,
+      shortlisted,
+      requestsPending,
+      requestsAccepted,
+      requestsDeclined,
+      requestsExpired,
+      connectionsPendingAdmin,
+      connectionsConnected,
+      connectionsDeclined,
+      connectionsRejected,
+    };
+  }
+
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
     const photo = this.verificationPhotos.get(userId);
     return photo ? structuredClone(photo) : null;

@@ -3,6 +3,7 @@ import type { AdminQueueItem, AdminSubmissionDetail } from "@kidan/contracts";
 import { AdminApiClient, AdminApiError } from "../api/client.js";
 import { SubmissionDetail } from "./SubmissionDetail.js";
 import { ConnectionsPanel } from "./ConnectionsPanel.js";
+import { FunnelPanel } from "./FunnelPanel.js";
 
 interface ReviewConsoleProps {
   client: AdminApiClient;
@@ -123,6 +124,8 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
           )}
 
           <ConnectionsPanel client={client} onError={setError} />
+
+          <FunnelPanel client={client} onError={setError} />
         </section>
 
         <section className="detail-panel">

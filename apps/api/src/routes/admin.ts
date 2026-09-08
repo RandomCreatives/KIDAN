@@ -10,6 +10,7 @@ import {
   adminQueueResponseSchema,
   adminSessionSchema,
   adminSubmissionDetailSchema,
+  funnelMetricsSchema,
 } from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { AdminSessionService } from "../auth/adminSessionService.js";
@@ -124,6 +125,19 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
     const response = adminQueueResponseSchema.safeParse({ items });
     if (!response.success) {
       request.log.error({ msg: "admin queue response failed contract validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
+  });
+
+  // Track E2: privacy-safe pilot funnel metrics — aggregate counts only, no
+  // identities, no third-party analytics. Gated by the admin session.
+  app.get("/v1/admin/metrics", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    const metrics = await options.adminService.getFunnelMetrics();
+    const response = funnelMetricsSchema.safeParse(metrics);
+    if (!response.success) {
+      request.log.error({ msg: "admin funnel metrics response failed contract validation", error: response.error.flatten() });
       return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
     }
     return reply.send({ data: response.data });

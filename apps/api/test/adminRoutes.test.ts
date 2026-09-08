@@ -246,4 +246,27 @@ describe("admin review console routes", () => {
     // Stateless token is cleared client-side; verify the cleared cookie is set.
     expect(String(logout.headers["set-cookie"])).toContain(COOKIE);
   });
+
+  it("requires an admin session for funnel metrics", async () => {
+    ({ app } = await buildAdminApp());
+    const res = await app.inject({ method: "GET", url: "/v1/admin/metrics" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns aggregate funnel counts with no identity data", async () => {
+    ({ app } = await buildAdminApp());
+    const { cookie } = await login(app);
+    const res = await app.inject({ method: "GET", url: "/v1/admin/metrics", headers: { cookie } });
+    expect(res.statusCode).toBe(200);
+    const { data } = res.json() as {
+      data: { cohort: object; discovery: object; requests: object; connections: object };
+    };
+    // The seeded candidate has submitted.
+    expect(data.cohort).toMatchObject({ submitted: 1, approved: 0 });
+    expect(data.discovery).toHaveProperty("shortlisted");
+    expect(data.requests).toHaveProperty("pending");
+    expect(data.connections).toHaveProperty("pendingAdmin");
+    // Aggregate counts only — never identities, codes, or names.
+    expect(JSON.stringify(data)).not.toMatch(/KD-|Person|\+251|fullName|telegram|phone/i);
+  });
 });

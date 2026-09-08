@@ -3,6 +3,7 @@ import type {
   AdminQueueItem,
   AdminReviewDecision,
   AdminSubmissionDetail,
+  FunnelMetrics,
 } from "@kidan/contracts";
 import { publicOnboardingPayloadSchema } from "@kidan/contracts";
 import type { PersistenceRepository } from "../persistence/types.js";
@@ -35,6 +36,30 @@ export class AdminService {
     private readonly adminId: string = PILOT_ADMIN_ID,
   ) {
     this.notifier = notifier ?? new NoopCandidateNotifier();
+  }
+
+  /** Privacy-safe pilot funnel metrics (Track E2) — counts only, no identities. */
+  async getFunnelMetrics(): Promise<FunnelMetrics> {
+    const counts = await this.repository.getFunnelCounts();
+    return {
+      cohort: {
+        submitted: counts.submitted,
+        approved: counts.approved,
+      },
+      discovery: { shortlisted: counts.shortlisted },
+      requests: {
+        pending: counts.requestsPending,
+        accepted: counts.requestsAccepted,
+        declined: counts.requestsDeclined,
+        expired: counts.requestsExpired,
+      },
+      connections: {
+        pendingAdmin: counts.connectionsPendingAdmin,
+        connected: counts.connectionsConnected,
+        declined: counts.connectionsDeclined,
+        rejected: counts.connectionsRejected,
+      },
+    };
   }
 
   async listQueue(now = new Date()): Promise<AdminQueueItem[]> {

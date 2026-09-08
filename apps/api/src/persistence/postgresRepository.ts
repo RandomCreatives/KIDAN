@@ -390,6 +390,62 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return (result.rows[0]?.status ?? null) as UserRecord["status"] | null;
   }
 
+  async getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }> {
+    // Counts only; never selects identifying columns.
+    const result = await this.pool.query<{
+      submitted: string;
+      approved: string;
+      shortlisted: string;
+      requests_pending: string;
+      requests_accepted: string;
+      requests_declined: string;
+      requests_expired: string;
+      connections_pending_admin: string;
+      connections_connected: string;
+      connections_declined: string;
+      connections_rejected: string;
+    }>(`
+      SELECT
+        (SELECT count(*) FROM discovery_profile)::text AS submitted,
+        (SELECT count(*) FROM discovery_profile WHERE review_status = 'approved')::text AS approved,
+        (SELECT count(*) FROM discovery_decision WHERE decision = 'interested')::text AS shortlisted,
+        (SELECT count(*) FROM introduction_request WHERE status = 'pending')::text AS requests_pending,
+        (SELECT count(*) FROM introduction_request WHERE status = 'accepted')::text AS requests_accepted,
+        (SELECT count(*) FROM introduction_request WHERE status = 'declined')::text AS requests_declined,
+        (SELECT count(*) FROM introduction_request WHERE status = 'expired')::text AS requests_expired,
+        (SELECT count(*) FROM connection WHERE status = 'mutual_confirmed_pending_admin')::text AS connections_pending_admin,
+        (SELECT count(*) FROM connection WHERE status = 'connected')::text AS connections_connected,
+        (SELECT count(*) FROM connection WHERE status = 'declined')::text AS connections_declined,
+        (SELECT count(*) FROM connection WHERE status = 'admin_rejected')::text AS connections_rejected
+    `);
+    const r = result.rows[0]!;
+    return {
+      submitted: Number(r.submitted),
+      approved: Number(r.approved),
+      shortlisted: Number(r.shortlisted),
+      requestsPending: Number(r.requests_pending),
+      requestsAccepted: Number(r.requests_accepted),
+      requestsDeclined: Number(r.requests_declined),
+      requestsExpired: Number(r.requests_expired),
+      connectionsPendingAdmin: Number(r.connections_pending_admin),
+      connectionsConnected: Number(r.connections_connected),
+      connectionsDeclined: Number(r.connections_declined),
+      connectionsRejected: Number(r.connections_rejected),
+    };
+  }
+
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
     const result = await this.pool.query<{
       user_id: string;
