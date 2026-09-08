@@ -213,6 +213,18 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return Boolean(photo && photo.deletedAt === null);
   }
 
+  async countAdmittedCandidates(): Promise<number> {
+    let count = 0;
+    for (const user of this.users.values()) {
+      if (user.status === "profile_pending" || user.status === "active") count += 1;
+    }
+    return count;
+  }
+
+  async getUserStatus(userId: string): Promise<UserRecord["status"] | null> {
+    return this.users.get(userId)?.status ?? null;
+  }
+
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
     const photo = this.verificationPhotos.get(userId);
     return photo ? structuredClone(photo) : null;

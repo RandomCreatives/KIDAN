@@ -107,6 +107,7 @@ export async function buildRuntimeApp(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
+      environment.PILOT_CAPACITY,
     );
     options.onboardingService = onboardingService;
     // Track C: values-only discovery (only serves real cards when submissions

@@ -99,15 +99,26 @@ Vercel project rooted at `apps/admin`.
 
 ## Next work — Phase 03 Track E (pilot operations)
 
-Not started. In order:
-1. **E1 Invite allowlist** — single-use invite codes; only invited adult EOTC candidates can
-   submit, to keep the pilot controlled (not payment, not VIP).
-2. **E2 Privacy-safe funnel metrics** — counts only (submitted, approved, mutual interest,
+**E1 resolved as a lightweight admission valve — no invite codes.** We dropped the invite-only
+plan (it was too much operational overhead for a controlled, free pilot) and rely on the existing
+review pipeline (onboarding → private verification photo → admin review ~24-72h) as the real gate.
+The controlled cohort stays small by lift/promotion, and a configurable ceiling
+`PILOT_CAPACITY` (default 100) blocks NEW submissions when the cohort is full
+(`PILOT_CAPACITY_REACHED`); already-admitted candidates may always re-submit after
+`changes_requested`.
+
+Remaining, in order:
+1. **E2 Privacy-safe funnel metrics** — counts only (submitted, approved, mutual interest,
    introductions), no PII, no third-party analytics.
-3. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
-   verification (includes completing the Track D staging deploy above).
-4. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
+2. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
+   verification (including completing the Track D staging deploy above).
+3. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
    legal/cultural study notes the future monetization decision waits on.
+
+**Future (discussion only — not built): credit system.** First phase: a free month via a credit
+system (credits > direct Telebirr), credits expire after a month; if two months of learning show
+it's worth investing, candidates pay on month 3. Later phase 2: one-week trial + direct credit
+system. No payments/credits/wallet is implemented in the pilot.
 
 The 3–6 month controlled-learning period starts when the pilot launches, not during construction.
 

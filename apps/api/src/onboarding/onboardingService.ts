@@ -38,6 +38,8 @@ export class OnboardingService {
     private readonly repository: PersistenceRepository,
     private readonly identityCipher: IdentityCipher,
     private readonly realSubmissionsEnabledFlag: boolean,
+    /** Track E1 pilot admission valve: max candidates in the cohort. */
+    private readonly maxPilotCandidates: number = 100,
   ) {}
 
   /** Whether the deployment accepts real profile submissions (the pilot switch). */
@@ -170,6 +172,20 @@ export class OnboardingService {
     if (!this.realSubmissionsEnabledFlag) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
     const draft = await this.repository.getDraft(userId);
     if (!draft) throw new SubmissionStateError("DRAFT_NOT_FOUND");
+    // Track E1 admission valve: only block NEW admissions. A candidate is part
+    // of the cohort if they are already awaiting review/active (status
+    // profile_pending/active — counted in the cohort) OR have reached a review
+    // decision (review status set, e.g. changes_requested re-open). A brand-new
+    // candidate is held out when the controlled cohort is full.
+    const [status, reviewState] = await Promise.all([
+      this.repository.getUserStatus(userId),
+      this.repository.getCandidateReviewState(userId),
+    ]);
+    const alreadyAdmitted =
+      status === "profile_pending" || status === "active" || reviewState?.reviewStatus != null;
+    if (!alreadyAdmitted && (await this.repository.countAdmittedCandidates()) >= this.maxPilotCandidates) {
+      throw new SubmissionStateError("PILOT_CAPACITY_REACHED");
+    }
     publicOnboardingPayloadSchema.parse(draft.publicPayload);
     if (!(await this.repository.hasCompletePrivateIdentity(userId))) {
       throw new SubmissionStateError("IDENTITY_INCOMPLETE");

@@ -154,6 +154,14 @@ export interface PersistenceRepository {
   saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void>;
   hasVerificationPhoto(userId: string): Promise<boolean>;
   getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null>;
+  /**
+   * Number of candidates already in the pilot pipeline (submitted = awaiting
+   * review or approved/active). Track E1 uses it as the admission valve so the
+   * controlled cohort stays at its configured size.
+   */
+  countAdmittedCandidates(): Promise<number>;
+  /** The current user lifecycle status, or null when no such user. */
+  getUserStatus(userId: string): Promise<UserRecord["status"] | null>;
   /** Returns users with approved photos whose 30-day retention window has elapsed. */
   findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]>;
   deleteVerificationPhoto(userId: string, now: Date): Promise<boolean>;

@@ -386,6 +386,9 @@ export function useOnboardingDraft(
               return { success: true };
             } else if (error.code === "REAL_SUBMISSIONS_DISABLED") {
               message = "Submission is not enabled in this preview.";
+            } else if (error.code === "PILOT_CAPACITY_REACHED") {
+              message = "The pilot cohort is currently full. Your profile is saved — you'll be able to submit once a place opens."
+                + " Thanks for your patience.";
             } else if (error.code === "IDENTITY_INCOMPLETE") {
               message = "Complete your private identity verification before submitting.";
             } else if (error.code === "UNAUTHENTICATED") {

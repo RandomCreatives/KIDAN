@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { OnboardingProgressPatch } from "@kidan/contracts";
 import { SessionService } from "../src/auth/sessionService.js";
+import { AdminService } from "../src/admin/adminService.js";
 import { OnboardingService } from "../src/onboarding/onboardingService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
 import { IdentityCipher, SecretHasher } from "../src/security/crypto.js";
@@ -205,5 +206,83 @@ describe("OnboardingService", () => {
     expect(await repository.findVerificationPhotosDueForDeletion(new Date("2030-01-01T00:00:00Z"), 30)).toHaveLength(0);
     expect(await service.purgeExpiredVerificationPhotos(new Date("2030-01-01T00:00:00Z"))).toHaveLength(0);
     expect(await service.hasVerificationPhoto(userId)).toBe(true);
+  });
+});
+
+describe("Track E1 pilot admission valve", () => {
+  async function makeEnv(maxPilotCandidates: number) {
+    const repository = new MemoryPersistenceRepository();
+    const cipher = new IdentityCipher(randomBytes(32), randomBytes(32));
+    const sessionService = new SessionService(repository, cipher, new SecretHasher(randomBytes(32)));
+    const onboarding = new OnboardingService(repository, cipher, true, maxPilotCandidates);
+    const admin = new AdminService(repository, cipher);
+    return { repository, sessionService, onboarding, admin };
+  }
+
+  const consent = {
+    informationAccurate: true, identityProcessing: true, faithDataProcessing: true,
+    discoveryPublication: true, verificationPhotoRetention: true, communityRules: true,
+    botNotifications: false,
+  } as const;
+
+  async function admitCandidate(
+    env: Awaited<ReturnType<typeof makeEnv>>,
+    telegramId: bigint,
+  ): Promise<{ userId: string; publicCode: string }> {
+    const issued = await env.sessionService.issueForTelegramUser(telegramId, new Date());
+    const session = (await env.sessionService.authenticate(issued.sessionToken))!;
+    const userId = session.user.id;
+    const publicCode = session.user.publicCode;
+    const saved = await env.onboarding.saveProgress(userId, completePatch);
+    await env.onboarding.savePrivateIdentity(userId, {
+      fullName: "Capacity Candidate", dateOfBirth: "1996-01-01", phoneNumber: `+2519${telegramId}`,
+    });
+    await env.onboarding.saveVerificationPhoto(userId, { dataUrl: tinyJpegDataUrl() });
+    await env.onboarding.submit(userId, { expectedVersion: saved.version, consent });
+    return { userId, publicCode };
+  }
+
+  it("holds a NEW candidate out when the cohort is full", async () => {
+    const env = await makeEnv(1);
+    await admitCandidate(env, 700n);
+    expect(await env.repository.countAdmittedCandidates()).toBe(1);
+
+    // A brand-new candidate (no review status) is blocked while the cohort is full.
+    const issued = await env.sessionService.issueForTelegramUser(701n, new Date());
+    const session = (await env.sessionService.authenticate(issued.sessionToken))!;
+    const newcomerId = session.user.id;
+    const saved = await env.onboarding.saveProgress(newcomerId, completePatch);
+    await env.onboarding.savePrivateIdentity(newcomerId, {
+      fullName: "Newcomer", dateOfBirth: "1996-01-01", phoneNumber: "+2519700000000",
+    });
+    await env.onboarding.saveVerificationPhoto(newcomerId, { dataUrl: tinyJpegDataUrl() });
+    await expect(
+      env.onboarding.submit(newcomerId, { expectedVersion: saved.version, consent }),
+    ).rejects.toThrow("PILOT_CAPACITY_REACHED");
+  });
+
+  it("lets an admitted candidate re-submit after changes_requested even while full", async () => {
+    const env = await makeEnv(1);
+    const { userId, publicCode } = await admitCandidate(env, 710n);
+    // Admin requests changes: reopens the draft, sets review status to
+    // changes_requested, and moves the user to identity_pending.
+    await env.admin.decide(publicCode, { decision: "changes_requested", note: "Clarify occupation." });
+    expect(await env.repository.getUserStatus(userId)).toBe("identity_pending");
+    expect((await env.repository.getCandidateReviewState(userId))?.reviewStatus).toBe("changes_requested");
+
+    // Re-submit after editing is NOT blocked by the capacity valve (the
+    // candidate is already part of the cohort) even though there is one slot.
+    const draft = await env.onboarding.getDraft(userId);
+    await expect(
+      env.onboarding.submit(userId, { expectedVersion: draft!.version, consent }),
+    ).resolves.toBeUndefined();
+    expect(await env.repository.countAdmittedCandidates()).toBe(1);
+  });
+
+  it("allows more admissions when the cap is raised", async () => {
+    const env = await makeEnv(2);
+    await admitCandidate(env, 801n);
+    await admitCandidate(env, 802n);
+    expect(await env.repository.countAdmittedCandidates()).toBe(2);
   });
 });

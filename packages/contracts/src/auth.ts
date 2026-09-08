@@ -47,6 +47,8 @@ export const apiErrorCodeSchema = z.enum([
   "PHOTO_TOO_LARGE",
   "PHONE_ALREADY_REGISTERED",
   "ADULT_ELIGIBILITY_REQUIRED",
+  // Pilot admission valve (Track E1): the controlled cohort is full.
+  "PILOT_CAPACITY_REACHED",
   "INVALID_ONBOARDING_STATE",
   "MALFORMED_INIT_DATA",
   "INVALID_SIGNATURE",

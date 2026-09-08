@@ -373,6 +373,23 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return result.rows[0]?.present === true;
   }
 
+  async countAdmittedCandidates(): Promise<number> {
+    // Admitted = submitted (awaiting review) or approved/active. Purely a
+    // cohort head-count; returns a number, never identifying rows.
+    const result = await this.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM app_user WHERE status IN ('profile_pending', 'active')",
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async getUserStatus(userId: string): Promise<UserRecord["status"] | null> {
+    const result = await this.pool.query<{ status: string }>(
+      "SELECT status::text AS status FROM app_user WHERE id = $1",
+      [userId],
+    );
+    return (result.rows[0]?.status ?? null) as UserRecord["status"] | null;
+  }
+
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
     const result = await this.pool.query<{
       user_id: string;

@@ -32,6 +32,9 @@ const environmentSchema = z.object({
   IDENTITY_ENCRYPTION_KEY: optionalNonEmpty,
   IDENTITY_LOOKUP_KEY: optionalNonEmpty,
   ENABLE_REAL_SUBMISSIONS: z.enum(["true", "false"]).default("false"),
+  // Track E1: ceiling on the controlled pilot cohort (submitted + active). New
+  // candidates are held out at this size; raise it to grow the pilot.
+  PILOT_CAPACITY: z.coerce.number().int().min(1).default(100),
   RETENTION_CRON_SECRET: optionalNonEmpty,
   // B3 admin review console. When set, the separate operator console and its
   // /v1/admin/* endpoints are enabled. SESSION_SECRET is reused to sign the
