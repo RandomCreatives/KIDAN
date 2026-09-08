@@ -205,6 +205,8 @@ export interface PersistenceRepository {
   getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null>;
   /** Look up a submitted user by their public code (KD-XXXXXX); null if none. */
   findUserIdByPublicCode(publicCode: string): Promise<string | null>;
+  /** The user's public code (KD-XXXXXX), or null when the user is unknown. */
+  getPublicCode(userId: string): Promise<string | null>;
   /**
    * The discovery profile gender for a user ('male'|'female'), or null when the
    * user has no discovery profile. Used to reject same-gender interest so a

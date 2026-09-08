@@ -11,6 +11,7 @@ import { DiscoveryService } from "./discovery/discoveryService.js";
 import { ConnectionService } from "./connections/connectionService.js";
 import { RequestService } from "./requests/requestService.js";
 import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
+import { NoopAdminNotifier, TelegramAdminNotifier } from "./notifications/telegramAdminNotifier.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
 
@@ -103,11 +104,20 @@ export async function buildRuntimeApp(
       : "malformed-token";
     console.info(`[kidan-api] configured Telegram bot id: ${configuredBotId}`);
     options.sessionService = sessionService;
+    // Operator admin-console bot (separate bot from the candidate bot). It
+    // nags the operator on new submissions and connections awaiting approval,
+    // with a one-tap "Open console" Telegram Mini App button. Enabled only when
+    // the admin bot token, operator chat id, and admin console URL are all set;
+    // otherwise the no-op notifier is used.
+    const adminNotifier = environment.ADMIN_BOT_TOKEN && environment.ADMIN_CHAT_ID && environment.ADMIN_CONSOLE_URL
+      ? new TelegramAdminNotifier(environment.ADMIN_BOT_TOKEN.trim(), environment.ADMIN_CHAT_ID.trim(), environment.ADMIN_CONSOLE_URL.trim())
+      : new NoopAdminNotifier();
     const onboardingService = new OnboardingService(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
       environment.PILOT_CAPACITY,
+      adminNotifier,
     );
     options.onboardingService = onboardingService;
     // Track C: values-only discovery (only serves real cards when submissions
@@ -122,6 +132,7 @@ export async function buildRuntimeApp(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
+      adminNotifier,
     );
     // Track D2: intentional introduction requests (rate-capped, 72h TTL).
     options.requestService = new RequestService(

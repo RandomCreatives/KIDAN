@@ -13,6 +13,8 @@ import {
 import { PILOT_AGE_MAX, PILOT_AGE_MIN } from "@kidan/contracts";
 import type { CandidateReviewStatus, DataExportResponse } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
+import type { AdminNotifier } from "../notifications/adminNotifier.js";
+import { NoopAdminNotifier } from "../notifications/telegramAdminNotifier.js";
 import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
 
@@ -42,6 +44,8 @@ export class OnboardingService {
     private readonly realSubmissionsEnabledFlag: boolean,
     /** Track E1 pilot admission valve: max candidates in the cohort. */
     private readonly maxPilotCandidates: number = 100,
+    /** Operator admin-console bot (privacy-safe notifications); no-op when absent. */
+    private readonly adminNotifier: AdminNotifier = new NoopAdminNotifier(),
   ) {}
 
   /** Whether the deployment accepts real profile submissions (the pilot switch). */
@@ -207,6 +211,19 @@ export class OnboardingService {
       consents: receipts,
       now,
     });
+
+    // Operator admin-console bot: nudge the admin that a submission is waiting.
+    // Privacy-safe (public code + console link only). Best-effort; never blocks
+    // the submission.
+    try {
+      const publicCode = await this.repository.getPublicCode(userId);
+      await this.adminNotifier.notify({
+        kind: "new_submission",
+        message: publicCode ? `New submission ${publicCode} is awaiting review.` : "A new submission is awaiting review.",
+      });
+    } catch {
+      /* ignore: notification is best-effort */
+    }
   }
 
   parseCompletePayload(draft: DraftRecord): PublicOnboardingPayload {

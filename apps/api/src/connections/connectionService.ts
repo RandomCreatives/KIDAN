@@ -16,6 +16,8 @@ import type {
   UserConnectionRow,
 } from "../persistence/types.js";
 import type { IdentityCipher } from "../security/crypto.js";
+import type { AdminNotifier } from "../notifications/adminNotifier.js";
+import { NoopAdminNotifier } from "../notifications/telegramAdminNotifier.js";
 
 export class ConnectionStateError extends Error {
   constructor(message: string) {
@@ -75,6 +77,8 @@ export class ConnectionService {
     private readonly repository: PersistenceRepository,
     private readonly identityCipher: IdentityCipher,
     private readonly realSubmissionsEnabled: boolean,
+    /** Operator admin-console bot (privacy-safe notifications); no-op when absent. */
+    private readonly adminNotifier: AdminNotifier = new NoopAdminNotifier(),
   ) {}
 
   private ageFrom(ciphertext: Buffer, userId: string, now: Date): number {
@@ -104,6 +108,19 @@ export class ConnectionService {
     if (!this.realSubmissionsEnabled) throw new ConnectionStateError("REAL_SUBMISSIONS_DISABLED");
     const result = await this.repository.setConnectionConfirmation({ connectionId, userId, confirm, now });
     if (!result) throw new ConnectionStateError("CONNECTION_NOT_FOUND");
+    // Operator admin-console bot: a pair has reached mutual confirmation and now
+    // needs an administrator's approval. Privacy-safe (generic prompt + console
+    // link only, no codes). Best-effort.
+    if (result.status === "mutual_confirmed_pending_admin") {
+      try {
+        await this.adminNotifier.notify({
+          kind: "connection_pending_admin",
+          message: "A matched pair is awaiting your approval.",
+        });
+      } catch {
+        /* ignore: notification is best-effort */
+      }
+    }
     return result;
   }
 

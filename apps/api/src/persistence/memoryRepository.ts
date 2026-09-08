@@ -366,6 +366,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return null;
   }
 
+  async getPublicCode(userId: string): Promise<string | null> {
+    return this.users.get(userId)?.publicCode ?? null;
+  }
+
   async getDiscoveryGender(userId: string): Promise<string | null> {
     const draft = this.drafts.get(userId);
     const gender = (draft?.publicPayload as

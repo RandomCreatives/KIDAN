@@ -45,6 +45,13 @@ const environmentSchema = z.object({
   ADMIN_CONSOLE_PASSWORD: optionalNonEmpty,
   // B4: Mini App URL used to deep-link privacy-safe Telegram notifications.
   MINI_APP_URL: optionalNonEmpty,
+  // Operator admin-console bot. When ADMIN_BOT_TOKEN + ADMIN_CHAT_ID +
+  // ADMIN_CONSOLE_URL are all set, the API sends privacy-safe admin
+  // notifications (new submission / connection pending admin) to the operator
+  // chat with a one-tap "Open console" Telegram Mini App button. Absent -> no-op.
+  ADMIN_BOT_TOKEN: optionalNonEmpty,
+  ADMIN_CHAT_ID: optionalNonEmpty,
+  ADMIN_CONSOLE_URL: optionalNonEmpty,
 }).superRefine((environment, context) => {
   const persistenceKeys = [
     "DATABASE_URL",

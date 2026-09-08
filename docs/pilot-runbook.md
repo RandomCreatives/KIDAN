@@ -71,6 +71,14 @@ pilot is not invite-only). In the admin console:
    note).
 4. Under **Connections**, act on pairs awaiting admin approval.
 
+### Admin console bot (phone approvals)
+A **separate admin bot** (not `@KidanAppBot`) sends you a privacy-safe message
+("new submission awaiting review" / "pair awaiting approval") with an **"Open
+console"** button that opens the admin console **inside Telegram** as a Mini App,
+where you sign in with the admin password and decide. See
+`docs/admin-console-bot.md`. Enabled by `ADMIN_BOT_TOKEN`, `ADMIN_CHAT_ID`,
+`ADMIN_CONSOLE_URL`.
+
 ### Admission valve & growth
 `PILOT_CAPACITY` caps new admissions. When full, new candidates see "the pilot
 cohort is currently full" and their profile is saved. Raise it (or run it down as
