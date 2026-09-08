@@ -78,3 +78,9 @@ export function ChurchIcon(props: IconProps) {
 export function BellIcon(props: IconProps) {
   return <IconBase {...props}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></IconBase>;
 }
+export function MailIcon(props: IconProps) {
+  return <IconBase {...props}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></IconBase>;
+}
+export function ChevronLeftIcon(props: IconProps) {
+  return <IconBase {...props}><path d="m15 18-6-6 6-6"/></IconBase>;
+}

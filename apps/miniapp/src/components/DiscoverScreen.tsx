@@ -4,7 +4,7 @@ import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { DiscoveryCard } from "./DiscoveryCard";
 import { ProfileSheet } from "./ProfileSheet";
-import { ShieldCheckIcon, SlidersIcon, SparkIcon } from "./Icons";
+import { MailIcon, ShieldCheckIcon, SlidersIcon, SparkIcon } from "./Icons";
 import { KidanApiClient } from "../api/client.js";
 import { useAuth } from "../auth/useAuth.js";
 import { toDemoProfile } from "../data/cardAdapter.js";
@@ -13,7 +13,7 @@ import { toDemoProfile } from "../data/cardAdapter.js";
 // get abstract presentation via the adapter; no identity is added).
 type Card = DemoProfile;
 
-export function DiscoverScreen() {
+export function DiscoverScreen({ onOpenRequests }: { onOpenRequests?: () => void } = {}) {
   const { realSubmissionsEnabled, csrfToken } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
@@ -22,6 +22,26 @@ export function DiscoverScreen() {
   const [selected, setSelected] = useState<Card | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [realCards, setRealCards] = useState<DemoProfile[] | null>(null);
+  const [requestsLeft, setRequestsLeft] = useState<number | null>(null);
+  // Card the caller just right-swiped and may now send a formal request to.
+  const [requestTarget, setRequestTarget] = useState<Card | null>(null);
+  const [requestBusy, setRequestBusy] = useState(false);
+
+  // Track the rolling daily request allowance for the counter / send action.
+  useEffect(() => {
+    if (!realSubmissionsEnabled) {
+      setRequestsLeft(null);
+      return;
+    }
+    let cancelled = false;
+    void clientRef
+      .current!.getOutgoingRequests()
+      .then((res) => { if (!cancelled) setRequestsLeft(res.remainingToday); })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [realSubmissionsEnabled]);
 
   // When real submissions are enabled, load the values-only feed. Demo mode
   // keeps using the in-memory demo deck and makes no network calls.
@@ -52,8 +72,15 @@ export function DiscoverScreen() {
     (decision: "pass" | "interested", card?: Card) => {
       const target = card ?? current;
       setSelected(null);
-      setToast(decision === "interested" ? "Interest saved privately" : "Passed privately");
-      if (decision === "interested") haptic("success");
+      if (decision === "interested") {
+        haptic("success");
+        // A right swipe is a private shortlist entry. In the real pilot we
+        // surface the committed next step: send a formal introduction request.
+        if (realSubmissionsEnabled && target) setRequestTarget(target);
+        else setToast("Added to your private shortlist");
+      } else {
+        setToast("Passed privately");
+      }
 
       if (realSubmissionsEnabled && target) {
         void clientRef
@@ -74,6 +101,38 @@ export function DiscoverScreen() {
     [current, realSubmissionsEnabled, csrfToken],
   );
 
+  // The committed act: send a formal introduction request to a shortlisted
+  // card. Rate-limited to a rolling daily cap (handled server-side).
+  const sendRequest = useCallback(
+    (card: Card) => {
+      setRequestBusy(true);
+      void clientRef
+        .current!.sendIntroductionRequest(
+          { targetPublicCode: card.publicCode, idempotencyKey: crypto.randomUUID() },
+          csrfToken ?? "",
+        )
+        .then((res) => {
+          setRequestsLeft(res.remainingToday);
+          setRequestTarget(null);
+          setToast("Introduction request sent — you’ll see it if they accept.");
+          window.setTimeout(() => setToast(null), 2600);
+        })
+        .catch((error: { code?: string }) => {
+          setRequestTarget(null);
+          if (error?.code === "INTENTION_RATE_LIMIT") {
+            setToast("Daily limit reached — you can send more requests tomorrow.");
+          } else if (error?.code === "REQUEST_ALREADY_EXISTS") {
+            setToast("You’ve already sent a request to this person.");
+          } else {
+            setToast("Couldn’t send the request just now.");
+          }
+          window.setTimeout(() => setToast(null), 2800);
+        })
+        .finally(() => setRequestBusy(false));
+    },
+    [csrfToken],
+  );
+
   const resetDeck = () => {
     setIndex(0);
     if (realSubmissionsEnabled) {
@@ -88,7 +147,14 @@ export function DiscoverScreen() {
     <main className="screen discover-screen">
       <header className="topbar">
         <Brand />
-        <button className="filter-button" type="button" aria-label="Discovery preferences"><SlidersIcon size={20} /></button>
+        <div className="topbar-actions">
+          {realSubmissionsEnabled && (
+            <button className="filter-button" type="button" aria-label="Your introductions and shortlist" onClick={onOpenRequests}>
+              <MailIcon size={20} />
+            </button>
+          )}
+          <button className="filter-button" type="button" aria-label="Discovery preferences"><SlidersIcon size={20} /></button>
+        </div>
       </header>
 
       <div className="privacy-strip"><ShieldCheckIcon size={16} /><span>Anonymous discovery</span><i /> <span>Admin verified</span></div>
@@ -132,6 +198,40 @@ export function DiscoverScreen() {
           onInterested={() => decide("interested", selected)}
         />
       )}
+
+      {requestTarget && (
+        <div className="sheet-backdrop" role="presentation" onClick={() => !requestBusy && setRequestTarget(null)}>
+          <div className="request-sheet" role="dialog" aria-modal="true" aria-label="Send an introduction request" onClick={(e) => e.stopPropagation()}>
+            <span className="section-kicker">Your shortlist</span>
+            <h2>Send a formal introduction?</h2>
+            <p>
+              A right swipe is private and never tells anyone. Sending a request is the
+              committed step — {requestTarget.age}, {requestTarget.city} ({requestTarget.publicCode})
+              {" "}will see your values-only summary and can accept or quietly decline.
+            </p>
+            <p className="quiet-copy">You can send {requestsLeft ?? 5} more today. Requests expire after 72 hours.</p>
+            <div className="connection-actions">
+              <button
+                type="button"
+                className="primary-button connection-button"
+                disabled={requestBusy || (requestsLeft !== null && requestsLeft <= 0)}
+                onClick={() => sendRequest(requestTarget)}
+              >
+                <MailIcon size={16} /> Send request
+              </button>
+              <button
+                type="button"
+                className="secondary-button connection-button"
+                disabled={requestBusy}
+                onClick={() => setRequestTarget(null)}
+              >
+                Keep on shortlist
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <div className="toast" role="status"><ShieldCheckIcon size={17} /> {toast}</div>}
     </main>
   );

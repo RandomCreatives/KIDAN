@@ -4,12 +4,14 @@ import { DiscoverScreen } from "./components/DiscoverScreen";
 import { MyProfileScreen } from "./components/MyProfileScreen";
 import { PrivacyScreen } from "./components/PrivacyScreen";
 import { RealHomeGate } from "./components/RealHomeGate";
+import { RequestsScreen } from "./components/RequestsScreen";
 import { CompassIcon, ConnectionIcon, UserIcon } from "./components/Icons";
 import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
 import { PilotDisabledScreen } from "./PilotDisabledScreen";
 
 type Tab = "discover" | "connections" | "profile";
+type Overlay = null | "requests";
 
 export function App() {
   const { isDemo, realSubmissionsEnabled } = useAuth();
@@ -20,6 +22,8 @@ export function App() {
   // Bumped to force the real home gate to re-evaluate after onboarding completes.
   const [gateKey, setGateKey] = useState(0);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const openRequests = () => setOverlay("requests");
 
   const closeOnboarding = (saved?: boolean) => {
     if (saved) setDraftSaved(true);
@@ -54,10 +58,12 @@ export function App() {
             <>
               {showPrivacy ? (
                 <PrivacyScreen onClose={() => setShowPrivacy(false)} />
+              ) : overlay === "requests" ? (
+                <RequestsScreen onBack={() => setOverlay(null)} />
               ) : (
                 <>
-                  {tab === "discover" && <DiscoverScreen />}
-                  {tab === "connections" && <ConnectionsScreen />}
+                  {tab === "discover" && <DiscoverScreen onOpenRequests={openRequests} />}
+                  {tab === "connections" && <ConnectionsScreen onOpenRequests={openRequests} />}
                   {tab === "profile" && (
                     <MyProfileScreen
                       onPreviewOnboarding={() => setShowOnboarding(true)}
@@ -66,7 +72,7 @@ export function App() {
                   )}
                 </>
               )}
-              {!showPrivacy && (
+              {!showPrivacy && !overlay && (
                 <nav className="bottom-nav" aria-label="Primary navigation">
                   <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>
                     <CompassIcon /><span>Discover</span>
@@ -98,10 +104,12 @@ export function App() {
       <div className="app-viewport">
         {showPrivacy ? (
           <PrivacyScreen onClose={() => setShowPrivacy(false)} />
+        ) : overlay === "requests" ? (
+          <RequestsScreen onBack={() => setOverlay(null)} />
         ) : (
           <>
-        {tab === "discover" && <DiscoverScreen />}
-        {tab === "connections" && <ConnectionsScreen />}
+        {tab === "discover" && <DiscoverScreen onOpenRequests={openRequests} />}
+        {tab === "connections" && <ConnectionsScreen onOpenRequests={openRequests} />}
         {tab === "profile" && (
           <MyProfileScreen
             onPreviewOnboarding={() => setShowOnboarding(true)}
@@ -111,17 +119,19 @@ export function App() {
           </>
         )}
 
-        <nav className="bottom-nav" aria-label="Primary navigation">
-          <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>
-            <CompassIcon /><span>Discover</span>
-          </button>
-          <button className={tab === "connections" ? "active" : ""} type="button" onClick={() => setTab("connections")}>
-            <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>Connections</span>
-          </button>
-          <button className={tab === "profile" ? "active" : ""} type="button" onClick={() => setTab("profile")}>
-            <UserIcon /><span>Profile</span>
-          </button>
-        </nav>
+        {!showPrivacy && !overlay && (
+          <nav className="bottom-nav" aria-label="Primary navigation">
+            <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>
+              <CompassIcon /><span>Discover</span>
+            </button>
+            <button className={tab === "connections" ? "active" : ""} type="button" onClick={() => setTab("connections")}>
+              <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>Connections</span>
+            </button>
+            <button className={tab === "profile" ? "active" : ""} type="button" onClick={() => setTab("profile")}>
+              <UserIcon /><span>Profile</span>
+            </button>
+          </nav>
+        )}
       </div>
     </div>
   );

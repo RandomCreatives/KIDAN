@@ -56,6 +56,12 @@ export const apiErrorCodeSchema = z.enum([
   "INTERNAL_ERROR",
   "INVALID_RESPONSE",
   "SERVICE_NOT_READY",
+  // Track D2 intentional requests.
+  "TARGET_NOT_FOUND",
+  "NOT_SHORTLISTED",
+  "INTENTION_RATE_LIMIT",
+  "REQUEST_ALREADY_EXISTS",
+  "REQUEST_NOT_FOUND",
 ]);
 
 export const apiErrorSchema = z.object({
