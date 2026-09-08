@@ -26,7 +26,7 @@ Staging deployment is **pinned to a release branch**, not `main` (see Deploy bel
 |---|---|---|
 | A | Telegram Mini App login (HMAC-validated initData), encrypted identity vault (name/DOB/phone/telegram encrypted at rest), onboarding draft flow | `POST /v1/auth/telegram`, `/v1/session` |
 | B1 | Real submit flow with versioned drafts and consent receipts | `/v1/onboarding/*` |
-| B2 | Private verification photo — encrypted at rest, **auto-purged 30 days after profile approval** via retention cron (`/internal/retention`) | migration 0003 |
+| B2 | Private verification photo — encrypted at rest; **replaced by a ≤240px thumbnail on approval**, then purged **14 days after approval** via retention cron (`/internal/retention`) — Option A | migration 0003 |
 | B3 | Separate password-protected operator admin review console (own cookie/CSRF) | `/v1/admin/session`, `/v1/admin/submissions*` |
 | B4 | Candidate review status + privacy-safe Telegram notifications (no identity in messages) | notifier service |
 | B6 | Self-serve data export + account deletion + privacy policy | `/v1/onboarding/export`, `/v1/onboarding/delete-account` |
