@@ -365,6 +365,13 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     `, [userId, input.photoCiphertext, input.mediaType, input.sha256, input.now]);
   }
 
+  async replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void> {
+    await this.pool.query(
+      "UPDATE verification_photo SET photo_ciphertext = $2, media_type = $3 WHERE user_id = $1 AND deleted_at IS NULL",
+      [userId, input.photoCiphertext, input.mediaType],
+    );
+  }
+
   async hasVerificationPhoto(userId: string): Promise<boolean> {
     const result = await this.pool.query<{ present: boolean }>(
       "SELECT EXISTS (SELECT 1 FROM verification_photo WHERE user_id = $1 AND deleted_at IS NULL) AS present",

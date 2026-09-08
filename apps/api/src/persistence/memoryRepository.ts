@@ -211,6 +211,17 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     });
   }
 
+  async replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void> {
+    const photo = this.verificationPhotos.get(userId);
+    if (!photo || photo.deletedAt !== null) return;
+    // Preserve approvedAt/deletedAt retaining the same row.
+    this.verificationPhotos.set(userId, {
+      ...photo,
+      photoCiphertext: input.photoCiphertext,
+      mediaType: input.mediaType,
+    });
+  }
+
   async hasVerificationPhoto(userId: string): Promise<boolean> {
     const photo = this.verificationPhotos.get(userId);
     return Boolean(photo && photo.deletedAt === null);

@@ -473,6 +473,46 @@ describe("PostgreSQL repository integration", () => {
     expect(await services.onboarding.hasVerificationPhoto(user.id)).toBe(false);
   });
 
+  it("option A: replaceVerificationPhoto swaps ciphertext without resetting approved_at", async () => {
+    const user = await newUser(services);
+    const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x4a, 0x46, 0xff, 0xd9]).toString("base64")}`;
+    await services.onboarding.saveVerificationPhoto(user.id, { dataUrl });
+
+    // Simulate approval stamping approved_at.
+    await harness.pool.query("UPDATE verification_photo SET approved_at = $2 WHERE user_id = $1", [
+      user.id,
+      new Date("2026-09-01T00:00:00Z"),
+    ]);
+
+    const thumbCiphertext = Buffer.from([1, 2, 3, 4, 5]);
+    await services.repository.replaceVerificationPhoto(user.id, { photoCiphertext: thumbCiphertext, mediaType: "image/jpeg" });
+
+    const row = await harness.pool.query<{ photo_ciphertext: Buffer; media_type: string; approved_at: Date | null }>(
+      "SELECT photo_ciphertext, media_type, approved_at FROM verification_photo WHERE user_id = $1",
+      [user.id],
+    );
+    expect(row.rows[0]!.photo_ciphertext).toEqual(thumbCiphertext);
+    expect(row.rows[0]!.media_type).toBe("image/jpeg");
+    // approved_at must be preserved (retention clock not reset by the swap).
+    expect(row.rows[0]!.approved_at).not.toBeNull();
+  });
+
+  it("retention window is 14 days: due after 15 days, not before", async () => {
+    const user = await newUser(services);
+    const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x4a, 0x46, 0xff, 0xd9]).toString("base64")}`;
+    await services.onboarding.saveVerificationPhoto(user.id, { dataUrl });
+
+    const base = new Date("2026-09-01T12:00:00Z");
+    await harness.pool.query("UPDATE verification_photo SET approved_at = $2 WHERE user_id = $1", [user.id, base]);
+
+    // 13 days later -> not yet due (window is 14).
+    const notDue = await services.repository.findVerificationPhotosDueForDeletion(new Date(base.getTime() + 13 * 86400_000), 14);
+    expect(notDue).not.toContain(user.id);
+    // 15 days later -> due.
+    const due = await services.repository.findVerificationPhotosDueForDeletion(new Date(base.getTime() + 15 * 86400_000), 14);
+    expect(due).toContain(user.id);
+  });
+
   describe("admin review console (B3)", () => {
     function admin(): AdminService {
       return new AdminService(services.repository, services.cipher);

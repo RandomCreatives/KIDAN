@@ -10,6 +10,11 @@ import type { PersistenceRepository } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
 import type { CandidateNotificationKind, CandidateNotifier } from "../notifications/candidateNotifier.js";
 import { NoopCandidateNotifier } from "../notifications/telegramNotifier.js";
+import { Jimp } from "jimp";
+
+/** Largest edge of the retained post-approval verification thumbnail (Option A). */
+const VERIFICATION_THUMBNAIL_MAX_EDGE = 240;
+const VERIFICATION_THUMBNAIL_MEDIA_TYPE = "image/jpeg";
 
 /** Fixed pilot super-admin id (seeded in migration 0005). */
 export const PILOT_ADMIN_ID = "00000000-0000-4000-8000-0000000000a0";
@@ -130,6 +135,36 @@ export class AdminService {
     };
   }
 
+  /**
+   * Option A retention: replace the stored full-resolution verification photo
+   * with a small downscaled JPEG thumbnail (PII-reduction, not discovery). The
+   * thumbnail retains enough evidence for a brief dispute window but a fraction
+   * of the storage and far less identifying detail. Best-effort and PII-safe.
+   */
+  private async degradeVerificationPhotoToThumbnail(userId: string): Promise<void> {
+    try {
+      const record = await this.repository.getVerificationPhoto(userId);
+      if (!record || record.deletedAt !== null || record.photoCiphertext.length === 0) return;
+      const bytes = this.identityCipher.decryptBuffer(record.photoCiphertext, `${userId}:verification-photo`);
+      const image = await Jimp.fromBuffer(bytes);
+      const { width, height } = image.bitmap;
+      const maxDim = Math.max(width, height);
+      const scale = maxDim > VERIFICATION_THUMBNAIL_MAX_EDGE ? VERIFICATION_THUMBNAIL_MAX_EDGE / maxDim : 1;
+      const outWidth = Math.max(1, Math.round(width * scale));
+      const outHeight = Math.max(1, Math.round(height * scale));
+      const thumb = image.clone().resize({ w: outWidth, h: outHeight });
+      const thumbBytes = await thumb.getBuffer(VERIFICATION_THUMBNAIL_MEDIA_TYPE);
+      const thumbCiphertext = this.identityCipher.encryptBuffer(thumbBytes, `${userId}:verification-photo`);
+      await this.repository.replaceVerificationPhoto(userId, {
+        photoCiphertext: thumbCiphertext,
+        mediaType: VERIFICATION_THUMBNAIL_MEDIA_TYPE,
+      });
+    } catch {
+      // Swallow: approval is authoritative; retention purges the ciphertext on
+      // schedule regardless of whether the thumbnail could be produced.
+    }
+  }
+
   async getPhoto(publicCode: string): Promise<{ mediaType: string; bytes: Buffer } | null> {
     const userId = await this.repository.findUserIdByPublicCode(publicCode);
     if (!userId) return null;
@@ -168,6 +203,15 @@ export class AdminService {
       noteCiphertext,
       now,
     });
+
+    // Option A of the retention policy: once approved, the full-resolution
+    // identity photo is no longer needed. Swap the stored ciphertext for a small
+    // thumbnail (kept ~14 days for the dispute window) instead of the full image.
+    // Best-effort — a failure must never block the approval, in which case the
+    // retention cron still purges the (full-size) ciphertext on schedule.
+    if (request.decision === "approved") {
+      await this.degradeVerificationPhotoToThumbnail(userId);
+    }
 
     // Privacy-safe Telegram notification (never blocks the decision).
     await this.notifyCandidate(userId, request.decision);

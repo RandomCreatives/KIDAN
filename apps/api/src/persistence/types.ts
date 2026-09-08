@@ -152,6 +152,13 @@ export interface PersistenceRepository {
     now: Date;
   }): Promise<SubmissionRecord>;
   saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void>;
+  /**
+   * Overwrites an existing verification photo's ciphertext in place — used at
+   * approval time to swap the full-resolution identity photo for a small
+   * thumbnail (Option A of the retention policy). Unlike saveVerificationPhoto
+   * it does NOT reset approved_at/deleted_at.
+   */
+  replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void>;
   hasVerificationPhoto(userId: string): Promise<boolean>;
   getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null>;
   /**

@@ -17,7 +17,9 @@ import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
 
 const POLICY_VERSION = "2026-08-12.v1";
-const VERIFICATION_PHOTO_RETENTION_DAYS = 30;
+// Option A: after approval the full-res photo is replaced by a small thumbnail;
+// the retained copy (thumbnail) is wiped 14 days after approval (dispute window).
+const VERIFICATION_PHOTO_RETENTION_DAYS = 14;
 const ALLOWED_PHOTO_MEDIA = new Map<string, string>([
   ["jpeg", "image/jpeg"],
   ["png", "image/png"],

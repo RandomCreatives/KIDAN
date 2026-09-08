@@ -40,7 +40,8 @@ disclosures; the engineering invariants are in `docs/security-and-privacy.md`.
 
 | Data | Retention |
 |---|---|
-| Verification photo | Deleted **30 days after profile approval** (cron) |
+| Verification photo (full image) | Kept only **while under review**; replaced by a small thumbnail at approval |
+| Verification thumbnail (≤ 240 px) | Deleted **14 days after profile approval** (cron) |
 | Unanswered introduction requests | Purged **72 hours** after creation |
 | Swipe + request records for a connected pair | Deleted at the moment the pair connects |
 | Onboarding draft (public/matching) | Until submitted; held for review decisions |
