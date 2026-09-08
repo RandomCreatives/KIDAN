@@ -4,6 +4,8 @@ import { discoveryProfileSchema, publicProfileCodeSchema } from "./profile.js";
 export const connectionStatusSchema = z.enum([
   "interested_by_one",
   "mutual_pending_admin",
+  "request_accepted_pending_confirmation",
+  "mutual_confirmed_pending_admin",
   "admin_rejected",
   "admin_approved_pending_confirmation",
   "connected",

@@ -7,10 +7,12 @@ import type { OnboardingService } from "./onboarding/onboardingService.js";
 import type { AdminService } from "./admin/adminService.js";
 import type { DiscoveryService } from "./discovery/discoveryService.js";
 import type { ConnectionService } from "./connections/connectionService.js";
+import type { RequestService } from "./requests/requestService.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { discoveryRoutes } from "./routes/discovery.js";
 import { connectionRoutes } from "./routes/connections.js";
+import { requestRoutes } from "./routes/requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 
@@ -41,6 +43,8 @@ export interface BuildAppOptions {
   discoveryService?: DiscoveryService;
   // Track D: admin-gated connections.
   connectionService?: ConnectionService;
+  // Track D2: intentional introduction requests.
+  requestService?: RequestService;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
@@ -214,6 +218,22 @@ export async function buildApp(
     app.post("/v1/connections/:id/confirm", connectionsNotReady);
     app.get("/v1/connections/:id/introduction", connectionsNotReady);
     app.post("/v1/connections/:id/introduction", connectionsNotReady);
+  }
+
+  if (options.sessionService && options.requestService) {
+    await app.register(requestRoutes, {
+      sessionService: options.sessionService,
+      requestService: options.requestService,
+      cookieName,
+    });
+  } else {
+    const requestsNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.post("/v1/discovery/request", requestsNotReady);
+    app.get("/v1/requests/incoming", requestsNotReady);
+    app.get("/v1/requests/outgoing", requestsNotReady);
+    app.post("/v1/requests/:id/respond", requestsNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {

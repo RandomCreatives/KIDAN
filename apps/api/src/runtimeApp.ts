@@ -9,6 +9,7 @@ import { OnboardingService } from "./onboarding/onboardingService.js";
 import { AdminService } from "./admin/adminService.js";
 import { DiscoveryService } from "./discovery/discoveryService.js";
 import { ConnectionService } from "./connections/connectionService.js";
+import { RequestService } from "./requests/requestService.js";
 import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
@@ -121,6 +122,12 @@ export async function buildRuntimeApp(
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
+    // Track D2: intentional introduction requests (rate-capped, 72h TTL).
+    options.requestService = new RequestService(
+      repository,
+      identityCipher,
+      environment.ENABLE_REAL_SUBMISSIONS === "true",
+    );
     // Readiness proves a live connection AND that the schema migrations have
     // been applied (the auth/onboarding tables exist). A provisioned but
     // unmigrated database now reports 503 instead of failing logins with 500.
@@ -129,7 +136,19 @@ export async function buildRuntimeApp(
     const retentionSecret = environment.RETENTION_CRON_SECRET;
     if (retentionSecret) {
       options.retentionSecret = retentionSecret;
-      options.retentionPurge = () => onboardingService.purgeExpiredVerificationPhotos();
+      // Retention: 30-day verification-photo purge PLUS Track D2 housekeeping
+      // (expire unanswered/declined requests past 72h and delete swipe/request
+      // records for connected pairs). Counts only are logged (no identity).
+      options.retentionPurge = async () => {
+        const purged = await onboardingService.purgeExpiredVerificationPhotos();
+        const requests = await repository.purgeExpiredIntroductionData(new Date());
+        console.info(
+          `[kidan-api] introduction retention: ${requests.expiredRequests} expired, `
+          + `${requests.deletedRequests} connected-pair requests deleted, `
+          + `${requests.deletedSwipes} connected-pair swipes deleted`,
+        );
+        return purged;
+      };
     }
 
     // B3: operator admin review console. Enabled only when an operator

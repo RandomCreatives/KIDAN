@@ -264,6 +264,73 @@ export interface PersistenceRepository {
   listRecentIntroductionMessages(limit: number): Promise<AdminIntroductionMessageRow[]>;
   /** Admin: hides a single introduction message by id. */
   hideIntroductionMessage(messageId: string): Promise<boolean>;
+  // --- Track D2: intentional introduction requests ---
+  /**
+   * Creates a pending introduction request from the sender to the recipient.
+   * Returns 'created' with the new id, or 'duplicate' when a non-terminal
+   * request already exists for this ordered pair. A prior declined/expired
+   * request for the pair is replaced. Does NOT enforce the rate limit
+   * (caller counts via countRequestsSince) or the 72h TTL (set by caller/DB).
+   */
+  createIntroductionRequest(input: {
+    senderUserId: string;
+    recipientUserId: string;
+    idempotencyKey: string;
+    now: Date;
+    ttlHours: number;
+  }): Promise<{ id: string; status: string } | { duplicate: true; id: string; status: string }>;
+  /** Number of requests the sender created at/after `since` (rolling window). */
+  countRequestsSince(senderUserId: string, since: Date): Promise<number>;
+  /** Pending requests addressed to the recipient (not expired), sender summaries. */
+  listIncomingRequests(recipientUserId: string, now: Date): Promise<IntroductionRequestRow[]>;
+  /** Requests the sender created, excluding declined (soft) and expired. */
+  listOutgoingRequests(senderUserId: string, now: Date): Promise<IntroductionRequestRow[]>;
+  /**
+   * Recipient responds to a pending, unexpired request addressed to them.
+   * Accept -> request 'accepted' and a connection in
+   * 'request_accepted_pending_confirmation' (reused if one already exists for
+   * the pair); decline -> request 'declined'. Returns the resulting request
+   * status and connection id (null on decline), or null when not actionable.
+   */
+  respondToRequest(input: {
+    requestId: string;
+    recipientUserId: string;
+    accept: boolean;
+    now: Date;
+  }): Promise<{ status: string; connectionId: string | null } | null>;
+  /**
+   * Retention: marks pending requests past their expiry as 'expired' and
+   * deletes swipe/request records for pairs that have reached 'connected'.
+   * Returns counts for logging (no user-identifying data).
+   */
+  purgeExpiredIntroductionData(now: Date): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }>;
+}
+
+/** An introduction request joined with the OTHER party's values-only profile. */
+export interface IntroductionRequestRow {
+  id: string;
+  status: string;
+  senderUserId: string;
+  recipientUserId: string;
+  createdAt: Date;
+  expiresAt: Date;
+  /** Values-only profile of the party the viewer is reading about. */
+  other: {
+    userId: string;
+    publicCode: string;
+    dateOfBirthCiphertext: Buffer;
+    gender: string;
+    city: string;
+    educationLevel: string | null;
+    occupationCategory: string | null;
+    heightCm: number | null;
+    marriageIntention: string | null;
+    values: string[];
+    bio: string | null;
+    hasGodfather: boolean;
+    isDeacon: boolean | null;
+    churchServiceActive: boolean;
+  };
 }
 
 /** One introduction message as stored (sender id resolved to fromMe by the service). */

@@ -16,6 +16,7 @@ import { OnboardingService } from "../src/onboarding/onboardingService.js";
 import { AdminService } from "../src/admin/adminService.js";
 import { DiscoveryService } from "../src/discovery/discoveryService.js";
 import { ConnectionService } from "../src/connections/connectionService.js";
+import { RequestService } from "../src/requests/requestService.js";
 import { MemoryPersistenceRepository } from "../src/persistence/memoryRepository.js";
 import { IdentityCipher, SecretHasher } from "../src/security/crypto.js";
 
@@ -34,6 +35,7 @@ describe("connection routes", () => {
     const onboarding = new OnboardingService(repository, cipher, true);
     const discovery = new DiscoveryService(repository, cipher, true);
     const connections = new ConnectionService(repository, cipher, true);
+    const requests = new RequestService(repository, cipher, true);
     const adminSession = new AdminSessionService(sessionKey, "operator-password");
     const admin = new AdminService(repository, cipher);
     app = await buildApp({
@@ -42,10 +44,11 @@ describe("connection routes", () => {
       onboardingService: onboarding,
       discoveryService: discovery,
       connectionService: connections,
+      requestService: requests,
       adminSessionService: adminSession,
       adminService: admin,
     });
-    return { app, sessions, onboarding, admin: adminSession, adminService: admin, discovery, connections };
+    return { app, sessions, onboarding, admin: adminSession, adminService: admin, discovery, connections, requests };
   }
 
   type Env = Awaited<ReturnType<typeof build>>;
@@ -152,29 +155,70 @@ describe("connection routes", () => {
     expect(decide.statusCode).toBe(401);
   });
 
-  it("full HTTP lifecycle: mutual interest -> admin approve -> both confirm -> connected", async () => {
+  it("full HTTP lifecycle: request accepted -> both confirm -> admin approves -> connected", async () => {
     const env = await build();
     const man = await approvedCandidate(env, 700000000000011n, "male");
     const woman = await approvedCandidate(env, 700000000000012n, "female");
 
-    const interested = async (actor: { token: string; csrf: string }, targetCode: string) =>
-      env.app.inject({
-        method: "POST",
-        url: "/v1/discovery/decision",
-        headers: { ...SESSION_COOKIE(actor.token), "x-csrf-token": actor.csrf },
-        payload: { targetPublicCode: targetCode, decision: "interested", idempotencyKey: randomUUID() },
-      });
-    expect((await interested(man, woman.publicCode)).statusCode).toBe(200);
-    expect((await interested(woman, man.publicCode)).statusCode).toBe(200);
+    // The man right-swipes (private shortlist) then sends a formal request.
+    const swipe = await env.app.inject({
+      method: "POST",
+      url: "/v1/discovery/decision",
+      headers: { ...SESSION_COOKIE(man.token), "x-csrf-token": man.csrf },
+      payload: { targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: randomUUID() },
+    });
+    expect(swipe.statusCode).toBe(200);
 
-    // Users see nothing while the connection awaits admin approval.
+    const request = await env.app.inject({
+      method: "POST",
+      url: "/v1/discovery/request",
+      headers: { ...SESSION_COOKIE(man.token), "x-csrf-token": man.csrf },
+      payload: { targetPublicCode: woman.publicCode, idempotencyKey: randomUUID() },
+    });
+    expect(request.statusCode).toBe(200);
+    expect(request.json().data.dailyCap).toBe(5);
+
+    // The woman sees the incoming request with a values-only summary.
+    const incoming = await env.app.inject({
+      method: "GET",
+      url: "/v1/requests/incoming",
+      headers: SESSION_COOKIE(woman.token),
+    });
+    expect(incoming.statusCode).toBe(200);
+    expect(incoming.json().data.requests).toHaveLength(1);
+    const incomingItem = incoming.json().data.requests[0];
+    expect(incomingItem.profile.publicCode).toBe(man.publicCode);
+    expect(incomingItem.profile.photoMode).toBe("values_only");
+    expect(JSON.stringify(incoming.json())).not.toContain("Secret Route");
+    expect(JSON.stringify(incoming.json())).not.toMatch(/\+2519/);
+    const requestId = incomingItem.requestId;
+
+    // The woman accepts.
+    const respond = await env.app.inject({
+      method: "POST",
+      url: `/v1/requests/${requestId}/respond`,
+      headers: { ...SESSION_COOKIE(woman.token), "x-csrf-token": woman.csrf },
+      payload: { accept: true },
+    });
+    expect(respond.statusCode).toBe(200);
+    expect(respond.json().data.status).toBe("accepted");
+    const connectionId = respond.json().data.connectionId;
+    expect(connectionId).toBeTruthy();
+
+    // Both participants now see a values-only connection awaiting THEIR confirmation.
     for (const actor of [man, woman]) {
       const res = await env.app.inject({ method: "GET", url: "/v1/connections", headers: SESSION_COOKIE(actor.token) });
       expect(res.statusCode).toBe(200);
-      expect(res.json().data.connections).toEqual([]);
+      expect(res.json().data.connections).toHaveLength(1);
     }
+    const manList = connectionListResponseSchema.parse(
+      (await env.app.inject({ method: "GET", url: "/v1/connections", headers: SESSION_COOKIE(man.token) })).json().data,
+    );
+    expect(manList.connections[0]!.other.publicCode).toBe(woman.publicCode);
+    expect(manList.connections[0]!.other.gender).toBe("female");
+    expect(manList.connections[0]!.status).toBe("request_accepted_pending_confirmation");
 
-    // Admin logs in and sees the pending pair.
+    // The administrator sees nothing until BOTH participants confirm.
     const login = await env.app.inject({
       method: "POST",
       url: "/v1/admin/session",
@@ -183,12 +227,25 @@ describe("connection routes", () => {
     expect(login.statusCode).toBe(200);
     const adminToken = login.cookies.find((c) => c.name === "kidan_admin_session")!.value;
     const adminCsrf = login.json().data.csrfToken;
+    const emptyQueue = await env.app.inject({ method: "GET", url: "/v1/admin/connections", headers: ADMIN_COOKIE(adminToken) });
+    expect(emptyQueue.json().data.connections).toEqual([]);
 
+    const confirm = async (actor: { token: string; csrf: string }) =>
+      env.app.inject({
+        method: "POST",
+        url: `/v1/connections/${connectionId}/confirm`,
+        headers: { ...SESSION_COOKIE(actor.token), "x-csrf-token": actor.csrf },
+        payload: { confirm: true },
+      });
+    expect((await confirm(man)).json().data.status).toBe("request_accepted_pending_confirmation");
+    // After both confirm the pair enters the admin queue (hidden from users).
+    expect((await confirm(woman)).json().data.status).toBe("mutual_confirmed_pending_admin");
+
+    // The administrator now sees the mutually-confirmed pair.
     const pending = await env.app.inject({ method: "GET", url: "/v1/admin/connections", headers: ADMIN_COOKIE(adminToken) });
     expect(pending.statusCode).toBe(200);
     expect(pending.json().data.connections).toHaveLength(1);
-    const connectionId = pending.json().data.connections[0].id;
-    // No identity leaks in the admin payload either.
+    expect(pending.json().data.connections[0].id).toBe(connectionId);
     expect(JSON.stringify(pending.json())).not.toContain("Secret Route");
     expect(JSON.stringify(pending.json())).not.toContain("+2519");
 
@@ -208,25 +265,7 @@ describe("connection routes", () => {
       payload: { decision: "approved" },
     });
     expect(approve.statusCode).toBe(200);
-    expect(approve.json().data.status).toBe("admin_approved_pending_confirmation");
-
-    // Both participants now see a values-only pending connection.
-    const manList = connectionListResponseSchema.parse(
-      (await env.app.inject({ method: "GET", url: "/v1/connections", headers: SESSION_COOKIE(man.token) })).json().data,
-    );
-    expect(manList.connections).toHaveLength(1);
-    expect(manList.connections[0]!.other.publicCode).toBe(woman.publicCode);
-    expect(manList.connections[0]!.other.gender).toBe("female");
-
-    const confirm = async (actor: { token: string; csrf: string }) =>
-      env.app.inject({
-        method: "POST",
-        url: `/v1/connections/${connectionId}/confirm`,
-        headers: { ...SESSION_COOKIE(actor.token), "x-csrf-token": actor.csrf },
-        payload: { confirm: true },
-      });
-    expect((await confirm(man)).json().data.status).toBe("admin_approved_pending_confirmation");
-    expect((await confirm(woman)).json().data.status).toBe("connected");
+    expect(approve.json().data.status).toBe("connected");
 
     const finalList = (await env.app.inject({ method: "GET", url: "/v1/connections", headers: SESSION_COOKIE(man.token) })).json().data;
     expect(finalList.connections[0].status).toBe("connected");
