@@ -135,6 +135,16 @@ export async function buildRuntimeApp(
     options.readinessCheck = createSchemaReadinessCheck(pool);
     options.onClose = () => pool.end();
     const retentionSecret = environment.RETENTION_CRON_SECRET;
+    // Track E3 monitoring: PII-free auth-failure/server_error signals written to
+    // audit_event and reported by /internal/health (gated by MONITOR_CRON_SECRET).
+    if (environment.MONITOR_CRON_SECRET) {
+      options.monitorSecret = environment.MONITOR_CRON_SECRET;
+      options.recordOperationalEvent = (event, now) => {
+        void repository.recordOperationalEvent(event, now).catch(() => undefined);
+      };
+      options.countOperationalEventsSince = (events, since) =>
+        repository.countOperationalEventsSince(events, since);
+    }
     if (retentionSecret) {
       options.retentionSecret = retentionSecret;
       // Retention: 30-day verification-photo purge PLUS Track D2 housekeeping

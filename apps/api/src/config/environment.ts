@@ -36,6 +36,8 @@ const environmentSchema = z.object({
   // candidates are held out at this size; raise it to grow the pilot.
   PILOT_CAPACITY: z.coerce.number().int().min(1).default(100),
   RETENTION_CRON_SECRET: optionalNonEmpty,
+  // Track E3: bearer secret gating /internal/health (for alerting/cron).
+  MONITOR_CRON_SECRET: optionalNonEmpty,
   // B3 admin review console. When set, the separate operator console and its
   // /v1/admin/* endpoints are enabled. SESSION_SECRET is reused to sign the
   // stateless admin session cookie (a distinct domain prefix and the separate

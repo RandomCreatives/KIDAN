@@ -390,6 +390,23 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return (result.rows[0]?.status ?? null) as UserRecord["status"] | null;
   }
 
+  async recordOperationalEvent(event: string, now: Date): Promise<void> {
+    // Append-only, PII-free operational signal for alerting. Never writes the
+    // request body, headers, or any identity data into metadata_json.
+    await this.pool.query(
+      "INSERT INTO audit_event (actor_type, actor_id, action, subject_type, metadata_json, occurred_at) VALUES ('service', NULL, $1, 'operational', '{}'::jsonb, $2)",
+      [event, now],
+    );
+  }
+
+  async countOperationalEventsSince(events: string[], since: Date): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM audit_event WHERE actor_type = 'service' AND action = ANY($1::text[]) AND occurred_at >= $2",
+      [events, since],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
   async getFunnelCounts(): Promise<{
     submitted: number;
     approved: number;

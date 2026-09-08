@@ -928,4 +928,27 @@ describe("PostgreSQL repository integration", () => {
       expect(db.rows[0]!.body).toBe("A message an administrator removes.");
     });
   });
+
+  describe("operational monitoring events (Track E3)", () => {
+    it("records PII-free operational events and counts them in a window", async () => {
+      const now = new Date();
+      await services.repository.recordOperationalEvent("auth_failure", now);
+      await services.repository.recordOperationalEvent("server_error", now);
+      await services.repository.recordOperationalEvent("auth_failure", now);
+
+      const since = new Date(now.getTime() - 1000);
+      expect(await services.repository.countOperationalEventsSince(["auth_failure"], since)).toBe(2);
+      expect(await services.repository.countOperationalEventsSince(["server_error"], since)).toBe(1);
+      expect(await services.repository.countOperationalEventsSince(["auth_failure"], new Date(now.getTime() + 60_000))).toBe(0);
+
+      // metadata_json must never carry identity for these events (append-only).
+      const rows = await harness.pool.query<{ metadata_json: unknown }>(
+        "SELECT metadata_json FROM audit_event WHERE actor_type = 'service' AND action IN ('auth_failure','server_error')",
+      );
+      expect(rows.rowCount).toBeGreaterThanOrEqual(3);
+      for (const row of rows.rows) {
+        expect(String(row.metadata_json)).not.toMatch(/secret|token|cookie|name|phone/i);
+      }
+    });
+  });
 });

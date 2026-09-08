@@ -56,6 +56,9 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly introductionMessages = new Map<string, MemoryIntroductionMessage>();
   /** Intentional introduction requests keyed by id (Track D2). */
   private readonly introductionRequests = new Map<string, MemoryIntroductionRequest>();
+  /** Append-only operational events keyed by id (Track E3): { action, occurredAt }. */
+  private readonly operationalEvents = new Map<string, { action: string; occurredAt: Date }>();
+  private operationalEventCounter = 0;
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -223,6 +226,19 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
 
   async getUserStatus(userId: string): Promise<UserRecord["status"] | null> {
     return this.users.get(userId)?.status ?? null;
+  }
+
+  async recordOperationalEvent(event: string, now: Date): Promise<void> {
+    this.operationalEventCounter += 1;
+    this.operationalEvents.set(String(this.operationalEventCounter), { action: event, occurredAt: now });
+  }
+
+  async countOperationalEventsSince(events: string[], since: Date): Promise<number> {
+    let count = 0;
+    for (const event of this.operationalEvents.values()) {
+      if (events.includes(event.action) && event.occurredAt >= since) count += 1;
+    }
+    return count;
   }
 
   async getFunnelCounts(): Promise<{

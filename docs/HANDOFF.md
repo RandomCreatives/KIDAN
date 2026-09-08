@@ -34,6 +34,7 @@ Staging deployment is **pinned to a release branch**, not `main` (see Deploy bel
 | D1 | Mutual interest → `connection` row (canonical a<b, created in the decision transaction) → admin approve/reject → **both** participants confirm → `connected`; decline/reject paths; rejection invisible | `GET /v1/connections`, `POST /v1/connections/:id/confirm`, `/v1/admin/connections*` |
 | D3 | Restricted **in-app-only** introduction for connected pairs: phone/Telegram/links blocked before save (422), values-only thread, admin hide-message moderation; name/phone/Telegram never revealed | migration 0006; `GET/POST /v1/connections/:id/introduction`, `/v1/admin/introductions*` |
 | E2 | Privacy-safe funnel metrics (counts only; no PII/analytics) | `GET /v1/admin/metrics`; admin Funnel panel |
+| E3 | Monitoring/alerts: `/ready` write-probe, log-redaction verification, auth-failure/error signal | `/internal/health` (bearer-gated, cron), `audit_event` signals |
 
 **Deferred by design:** D4 contact reveal (name/phone/Telegram) — a separate, future,
 explicitly-consented gate; **not in the pilot**. No payments/credits/wallet/ratings/VIP/paid
@@ -115,10 +116,20 @@ declined/rejected. No identity, no third-party analytics, no per-user data. Admi
 "Funnel (all-time)" panel. (For a time-bucketed view over the 3-6 month learning period, add a
 `sinceDays` window later.)
 
+**E3 done — monitoring / alerts.** The `/ready` write-probe (non-mutating auth-path insertion)
+was already in place. Added:
+- **Log-redaction verification** (`logRedaction.test.ts`): captures the Fastify log stream and
+  asserts the bot token, raw initData body, cookie, csrf header, and connection-string credentials
+  are never logged. `appFactory` now accepts a logger object (merged with mandatory redact paths)
+  and exports `LOG_REDACT_PATHS`.
+- **Alert signal** (`/internal/health`, bearer-gated by `MONITOR_CRON_SECRET`, Vercel cron `*/10`):
+  runs the readiness write-probe and reports recent `auth_failure` / `server_error` volume from the
+  PII-free `audit_event` table (a `degraded` flag when over threshold). `server_error` is recorded
+  by the central error handler; `auth_failure` by the Telegram initData reject path. Repository
+  `recordOperationalEvent` / `countOperationalEventsSince` cover both Postgres and memory.
+
 Remaining, in order:
-1. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
-   verification (including completing the Track D staging deploy above).
-2. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
+1. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
    legal/cultural study notes the future monetization decision waits on.
 
 **Future (discussion only — not built): credit system.** First phase: a free month via a credit

@@ -12,6 +12,7 @@
     { "source": "/(.*)", "destination": "/api/index" }
   ],
   "crons": [
-    { "path": "/internal/retention", "schedule": "0 2 * * *" }
+    { "path": "/internal/retention", "schedule": "0 2 * * *" },
+    { "path": "/internal/health", "schedule": "*/10 * * * *" }
   ]
 }

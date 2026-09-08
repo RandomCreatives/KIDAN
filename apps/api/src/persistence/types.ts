@@ -180,6 +180,14 @@ export interface PersistenceRepository {
   }>;
   /** The current user lifecycle status, or null when no such user. */
   getUserStatus(userId: string): Promise<UserRecord["status"] | null>;
+  /**
+   * Append-only, PII-free operational signal (Track E3). Used to detect
+   * elevated auth-failures / server errors so the operator can be alerted.
+   * Never writes request bodies, headers, or identity data.
+   */
+  recordOperationalEvent(event: "auth_failure" | "server_error", now: Date): Promise<void>;
+  /** Count of operational events (any of `events`) recorded at/after `since`. */
+  countOperationalEventsSince(events: ("auth_failure" | "server_error")[], since: Date): Promise<number>;
   /** Returns users with approved photos whose 30-day retention window has elapsed. */
   findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]>;
   deleteVerificationPhoto(userId: string, now: Date): Promise<boolean>;
