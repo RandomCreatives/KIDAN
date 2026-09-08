@@ -1209,7 +1209,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return withTransaction(this.pool, async (client) => {
       const inserted = await client.query<{ id: string; status: string }>(`
         INSERT INTO introduction_request (sender_user_id, recipient_user_id, status, created_at, expires_at)
-        VALUES ($1, $2, 'pending', $3, $3 + ($4 || ' hours')::interval)
+        VALUES ($1, $2, 'pending', $3::timestamptz, $3::timestamptz + make_interval(hours => $4::int))
         ON CONFLICT (sender_user_id, recipient_user_id) DO NOTHING
         RETURNING id, status::text AS status
       `, [input.senderUserId, input.recipientUserId, input.now, String(input.ttlHours)]);
@@ -1226,7 +1226,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         // Extremely rare race; treat as a fresh insert.
         const retry = await client.query<{ id: string; status: string }>(`
           INSERT INTO introduction_request (sender_user_id, recipient_user_id, status, created_at, expires_at)
-          VALUES ($1, $2, 'pending', $3, $3 + ($4 || ' hours')::interval)
+          VALUES ($1, $2, 'pending', $3::timestamptz, $3::timestamptz + make_interval(hours => $4::int))
           RETURNING id, status::text AS status
         `, [input.senderUserId, input.recipientUserId, input.now, String(input.ttlHours)]);
         const r = retry.rows[0]!;
@@ -1239,7 +1239,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       }
       const reopened = await client.query<{ id: string; status: string }>(`
         UPDATE introduction_request
-        SET status = 'pending', created_at = $3, expires_at = $3 + ($4 || ' hours')::interval, responded_at = NULL
+        SET status = 'pending', created_at = $3::timestamptz, expires_at = $3::timestamptz + make_interval(hours => $4::int), responded_at = NULL
         WHERE id = $1 AND sender_user_id = $2
         RETURNING id, status::text AS status
       `, [row.id, input.senderUserId, input.now, String(input.ttlHours)]);
