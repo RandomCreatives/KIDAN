@@ -148,6 +148,18 @@ export async function buildRuntimeApp(
     const retentionSecret = environment.RETENTION_CRON_SECRET;
     // Track E3 monitoring: PII-free auth-failure/server_error signals written to
     // audit_event and reported by /internal/health (gated by MONITOR_CRON_SECRET).
+    // Operator helper: /internal/admin-notify-test fires a test admin-console-bot
+    // notification so the operator can verify the bot without a real submission.
+    if (environment.ADMIN_NOTIFY_TEST_SECRET && environment.ADMIN_BOT_TOKEN
+      && environment.ADMIN_CHAT_ID && environment.ADMIN_CONSOLE_URL) {
+      const testNotifier = new TelegramAdminNotifier(
+        environment.ADMIN_BOT_TOKEN.trim(),
+        environment.ADMIN_CHAT_ID.trim(),
+        environment.ADMIN_CONSOLE_URL.trim(),
+      );
+      options.adminNotifyTestSecret = environment.ADMIN_NOTIFY_TEST_SECRET;
+      options.adminNotifyTest = (message) => testNotifier.notify({ kind: "new_submission", message });
+    }
     if (environment.MONITOR_CRON_SECRET) {
       options.monitorSecret = environment.MONITOR_CRON_SECRET;
       options.recordOperationalEvent = (event, now) => {
