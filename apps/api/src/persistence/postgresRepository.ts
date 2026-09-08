@@ -886,7 +886,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       LEFT JOIN connection_confirmation cc_a ON cc_a.connection_id = c.id AND cc_a.user_id = c.user_a_id AND cc_a.confirmed
       LEFT JOIN connection_confirmation cc_b ON cc_b.connection_id = c.id AND cc_b.user_id = c.user_b_id AND cc_b.confirmed
       WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
-        AND c.status NOT IN ('mutual_pending_admin', 'admin_rejected')
+        AND c.status NOT IN ('mutual_pending_admin', 'mutual_confirmed_pending_admin', 'admin_rejected')
       ORDER BY c.updated_at DESC
     `, [userId]);
     return result.rows.map((r) => ({

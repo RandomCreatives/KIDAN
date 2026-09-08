@@ -1,13 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { AdminPendingConnection, OnboardingProgressPatch } from "@kidan/contracts";
+import type { OnboardingProgressPatch } from "@kidan/contracts";
 import { buildApp } from "../../src/appFactory.js";
 import { AdminService, PILOT_ADMIN_ID } from "../../src/admin/adminService.js";
 import { SessionAccessError, SessionService } from "../../src/auth/sessionService.js";
 import { OnboardingService } from "../../src/onboarding/onboardingService.js";
 import { DiscoveryService } from "../../src/discovery/discoveryService.js";
 import { ConnectionService } from "../../src/connections/connectionService.js";
+import { RequestService } from "../../src/requests/requestService.js";
 import { PostgresPersistenceRepository } from "../../src/persistence/postgresRepository.js";
 import type { UserRecord } from "../../src/persistence/types.js";
 import { IdentityCipher, SecretHasher } from "../../src/security/crypto.js";
@@ -716,12 +717,15 @@ describe("PostgreSQL repository integration", () => {
     });
   });
 
-  describe("admin-gated connections (Track D)", () => {
+  describe("admin-gated connections via intentional requests (Track D2)", () => {
     function discovery(): DiscoveryService {
       return new DiscoveryService(services.repository, services.cipher, true);
     }
     function connections(): ConnectionService {
       return new ConnectionService(services.repository, services.cipher, true);
+    }
+    function requests(): RequestService {
+      return new RequestService(services.repository, services.cipher, true);
     }
     function adminConsole(): AdminService {
       return new AdminService(services.repository, services.cipher);
@@ -737,85 +741,84 @@ describe("PostgreSQL repository integration", () => {
       return { man, woman };
     }
 
-    async function mutualInterest(
-      man: UserRecord,
-      woman: UserRecord,
-    ): Promise<void> {
-      const feed = discovery();
-      await feed.recordDecision(man.id, {
+    // Record a private interested swipe (shortlist-only; never a connection).
+    async function swipe(man: UserRecord, woman: UserRecord): Promise<void> {
+      await discovery().recordDecision(man.id, {
         targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
       });
-      await feed.recordDecision(woman.id, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+    }
+
+    // Drives the committed-introduction flow: shortlist -> request -> recipient
+    // accepts, returning the resulting connection id (admin acts LAST, so it is
+    // left at request_accepted_pending_confirmation).
+    async function requestAndAccept(man: UserRecord, woman: UserRecord): Promise<string> {
+      await swipe(man, woman);
+      await requests().sendRequest(man.id, {
+        targetPublicCode: woman.publicCode, idempotencyKey: crypto.randomUUID(),
       });
+      const incoming = (await requests().listIncoming(woman.id)).requests;
+      const item = incoming.find((r) => r.profile.publicCode === man.publicCode)!;
+      const responded = await requests().respond(woman.id, item.requestId, true);
+      if (!responded.connectionId) throw new Error("accepting a request did not create a connection");
+      return responded.connectionId;
     }
 
-    // The integration suite shares one disposable database across every test
-    // in this file, so pending rows from earlier tests accumulate. Always look
-    // up THIS pair's connection by their public codes rather than assuming the
-    // pending queue contains only the current pair.
-    async function pendingFor(man: UserRecord, woman: UserRecord): Promise<AdminPendingConnection> {
-      const all = (await connections().listPending()).connections;
-      const match = all.find(
-        (c) =>
-          (c.userA.publicCode === man.publicCode && c.userB.publicCode === woman.publicCode)
-          || (c.userA.publicCode === woman.publicCode && c.userB.publicCode === man.publicCode),
-      );
-      if (!match) throw new Error(`no pending connection for pair ${man.publicCode}/${woman.publicCode}`);
-      return match;
-    }
-
-    it("creates a canonical-ordered connection row only on mutual interest", async () => {
+    // A fully-connected pair via the D2 admin-last lifecycle.
+    async function fullyConnectedPair(): Promise<{ man: UserRecord; woman: UserRecord; connectionId: string }> {
       const { man, woman } = await approvedPair();
-      const feed = discovery();
-      await feed.recordDecision(man.id, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      // One-sided: no connection row for this pair yet.
-      const oneSided = await harness.pool.query(
+      const connectionId = await requestAndAccept(man, woman);
+      const svc = connections();
+      await svc.confirm(man.id, connectionId, true);
+      await svc.confirm(woman.id, connectionId, true); // -> mutual_confirmed_pending_admin
+      await svc.decide(connectionId, true); // admin approves -> connected
+      return { man, woman, connectionId };
+    }
+
+    it("never creates a connection from swipes alone (private shortlist only)", async () => {
+      const { man, woman } = await approvedPair();
+      // Even mutual interest must NOT create a connection row: a swipe is only a
+      // private shortlist entry; a connection is born solely from an accepted
+      // introduction request.
+      await swipe(man, woman);
+      await swipe(woman, man);
+      const rows = await harness.pool.query(
         "SELECT id FROM connection WHERE user_a_id IN ($1,$2) AND user_b_id IN ($1,$2)",
         [man.id, woman.id],
       );
-      expect(oneSided.rowCount).toBe(0);
-      await feed.recordDecision(woman.id, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const rows = await harness.pool.query<{ user_a_id: string; user_b_id: string; status: string }>(
-        "SELECT user_a_id, user_b_id, status::text AS status FROM connection WHERE user_a_id IN ($1,$2) AND user_b_id IN ($1,$2)",
-        [man.id, woman.id],
-      );
-      expect(rows.rowCount).toBe(1);
-      const row = rows.rows[0]!;
-      // Canonical ordering: a < b regardless of who swiped first.
-      expect(row.user_a_id < row.user_b_id).toBe(true);
-      expect(new Set([row.user_a_id, row.user_b_id])).toEqual(new Set([man.id, woman.id]));
-      expect(row.status).toBe("mutual_pending_admin");
+      expect(rows.rowCount).toBe(0);
     });
 
-    it("runs the full admin-gated lifecycle against the database", async () => {
+    it("runs the request -> accept -> confirm -> admin approval lifecycle against the database", async () => {
       const { man, woman } = await approvedPair();
+      const connectionId = await requestAndAccept(man, woman);
       const svc = connections();
-      await mutualInterest(man, woman);
-      const connectionId = (await pendingFor(man, woman)).id;
 
-      // Hidden from participants while pending.
+      // Accepting creates a connection awaiting both confirmations (admin acts LAST).
+      const afterAccept = await harness.pool.query<{ status: string }>(
+        "SELECT status::text AS status FROM connection WHERE id = $1", [connectionId],
+      );
+      expect(afterAccept.rows[0]!.status).toBe("request_accepted_pending_confirmation");
+
+      // At request_accepted_pending_confirmation the pair sees the connection
+      // so each can confirm (this is a shared, post-acceptance state, not a
+      // one-sided reveal).
+      expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).toContain(connectionId);
+
+      // Both confirm -> admin queue (internal; hidden from participants).
+      await svc.confirm(man.id, connectionId, true);
+      const afterBoth = await svc.confirm(woman.id, connectionId, true);
+      expect(afterBoth.status).toBe("mutual_confirmed_pending_admin");
+      expect((await svc.listPending()).connections.find((c) => c.id === connectionId)).toBeDefined();
       expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).not.toContain(connectionId);
 
-      // Admin approves.
-      expect((await svc.decide(connectionId, true)).status).toBe("admin_approved_pending_confirmation");
-      expect((await svc.listPending()).connections.map((c) => c.id)).not.toContain(connectionId);
-
-      // Man confirms: still pending the woman's confirmation.
-      expect((await svc.confirm(man.id, connectionId, true)).status).toBe("admin_approved_pending_confirmation");
-      // Woman confirms: connected.
-      expect((await svc.confirm(woman.id, connectionId, true)).status).toBe("connected");
+      // Admin approves -> connected.
+      expect((await svc.decide(connectionId, true)).status).toBe("connected");
 
       const manList = (await svc.listForUser(man.id)).connections.filter((c) => c.id === connectionId);
       expect(manList).toHaveLength(1);
       const item = manList[0]!;
       expect(item.status).toBe("connected");
       expect(item.other.publicCode).toBe(woman.publicCode);
-      expect(item.other.age).toBeGreaterThanOrEqual(18);
       expect(item.iConfirmed).toBe(true);
       expect(item.theyConfirmed).toBe(true);
       // Values-only: never name/phone/photo.
@@ -824,16 +827,34 @@ describe("PostgreSQL repository integration", () => {
       expect(serialized).not.toMatch(/\+2519/);
     });
 
-    it("a participant decline after approval closes the connection as declined", async () => {
+    it("a recipient decline creates no connection and stays invisible to the sender", async () => {
       const { man, woman } = await approvedPair();
+      await swipe(man, woman);
+      await requests().sendRequest(man.id, { targetPublicCode: woman.publicCode, idempotencyKey: crypto.randomUUID() });
+      const incoming = (await requests().listIncoming(woman.id)).requests;
+      const item = incoming.find((r) => r.profile.publicCode === man.publicCode)!;
+      await requests().respond(woman.id, item.requestId, false);
+
+      // No connection was created from a declined request.
+      const rows = await harness.pool.query(
+        "SELECT id FROM connection WHERE user_a_id IN ($1,$2) AND user_b_id IN ($1,$2)",
+        [man.id, woman.id],
+      );
+      expect(rows.rowCount).toBe(0);
+      // The sender still sees the request as pending (declines are soft).
+      const outgoing = (await requests().listOutgoing(man.id)).requests;
+      expect(outgoing.find((r) => r.recipient.publicCode === woman.publicCode)?.status).toBe("pending");
+    });
+
+    it("a participant declining at confirmation closes the connection as declined and hides it", async () => {
+      const { man, woman } = await approvedPair();
+      const connectionId = await requestAndAccept(man, woman);
       const svc = connections();
-      await mutualInterest(man, woman);
-      const connectionId = (await pendingFor(man, woman)).id;
-      await svc.decide(connectionId, true);
+      // Man confirms, woman declines -> connection closed as declined.
+      await svc.confirm(man.id, connectionId, true);
       expect((await svc.confirm(woman.id, connectionId, false)).status).toBe("declined");
       const db = await harness.pool.query<{ status: string; closed_at: Date | null }>(
-        "SELECT status::text AS status, closed_at FROM connection WHERE id = $1",
-        [connectionId],
+        "SELECT status::text AS status, closed_at FROM connection WHERE id = $1", [connectionId],
       );
       expect(db.rows[0]!.status).toBe("declined");
       expect(db.rows[0]!.closed_at).not.toBeNull();
@@ -841,30 +862,19 @@ describe("PostgreSQL repository integration", () => {
 
     it("admin rejection stays hidden from participants", async () => {
       const { man, woman } = await approvedPair();
+      const connectionId = await requestAndAccept(man, woman);
       const svc = connections();
-      await mutualInterest(man, woman);
-      const connectionId = (await pendingFor(man, woman)).id;
+      await svc.confirm(man.id, connectionId, true);
+      await svc.confirm(woman.id, connectionId, true);
       expect((await svc.decide(connectionId, false)).status).toBe("admin_rejected");
       expect((await svc.listForUser(man.id)).connections.map((c) => c.id)).not.toContain(connectionId);
       expect((await svc.listForUser(woman.id)).connections.map((c) => c.id)).not.toContain(connectionId);
     });
 
-    async function fullyConnectedPair(): Promise<{ man: UserRecord; woman: UserRecord; connectionId: string }> {
-      const { man, woman } = await approvedPair();
-      const svc = connections();
-      await mutualInterest(man, woman);
-      const connectionId = (await pendingFor(man, woman)).id;
-      await svc.decide(connectionId, true);
-      await svc.confirm(man.id, connectionId, true);
-      await svc.confirm(woman.id, connectionId, true);
-      return { man, woman, connectionId };
-    }
-
     it("stores introduction messages in introduction_message and enforces the connected gate", async () => {
       const { man, woman, connectionId } = await fullyConnectedPair();
       const svc = connections();
 
-      // Before connected there would be no thread; now it opens empty.
       const empty = await svc.getThread(man.id, connectionId);
       expect(empty.messages).toEqual([]);
       expect(empty.other.publicCode).toBe(woman.publicCode);
