@@ -20,9 +20,9 @@ export const maritalOptions: Array<{ value: MaritalStatus; label: string }> = [
 ];
 
 export const marriageOptions: Array<{ value: MarriageIntention; label: string }> = [
-  { value: "teklil", label: "Teklil" },
-  { value: "kidusan_kurban", label: "Kidusan Kurban" },
-  { value: "orthodox_church_marriage", label: "Orthodox church marriage" },
+  { value: "teklil", label: "Teklil · Holy Matrimony" },
+  { value: "kidusan_kurban", label: "Kidusan Kurban · Holy Communion" },
+  { value: "either", label: "Either / open" },
 ];
 
 export const cityOptions = [

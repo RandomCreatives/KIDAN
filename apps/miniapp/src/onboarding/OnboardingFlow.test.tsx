@@ -555,7 +555,7 @@ describe("OnboardingFlow", () => {
       </AuthProvider>,
     );
     await screen.findByText(/1 of 5/);
-    fireEvent.click(screen.getByRole("button", { name: /I am 18 or older/i }));
+    fireEvent.click(screen.getByRole("button", { name: /I am aged 21–45/i }));
     fireEvent.click(screen.getByRole("button", { name: /I am Ethiopian Orthodox Tewahedo/i }));
     fireEvent.click(screen.getByRole("button", { name: /I am seeking an intentional marriage/i }));
     fireEvent.click(screen.getByRole("button", { name: "Exit" }));

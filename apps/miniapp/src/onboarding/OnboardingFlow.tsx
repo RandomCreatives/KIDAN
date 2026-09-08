@@ -48,13 +48,20 @@ const LABELS = [
   "Consent",
 ] as const;
 
-function isAdult(dateOfBirth: string): boolean {
-  if (!dateOfBirth) return false;
+function ageInYears(dateOfBirth: string, now = new Date()): number | null {
+  if (!dateOfBirth) return null;
   const birth = new Date(`${dateOfBirth}T00:00:00`);
-  if (Number.isNaN(birth.getTime())) return false;
-  const threshold = new Date();
-  threshold.setFullYear(threshold.getFullYear() - 18);
-  return birth <= threshold;
+  if (Number.isNaN(birth.getTime())) return null;
+  let age = now.getUTCFullYear() - birth.getUTCFullYear();
+  const monthDiff = now.getUTCMonth() - birth.getUTCMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birth.getUTCDate())) age -= 1;
+  return age;
+}
+
+/** Pilot eligibility is a hard 21–45. */
+function isPilotAge(dateOfBirth: string): boolean {
+  const age = ageInYears(dateOfBirth);
+  return age !== null && age >= 21 && age <= 45;
 }
 
 function photoErrorMessage(error: unknown): string {
@@ -173,7 +180,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       return "Confirm all three eligibility requirements to continue.";
     }
     if (currentIndex === 1) {
-      if (!isAdult(draft.privateIdentity.dateOfBirth)) return "Enter a valid date of birth for an adult aged 18 or older.";
+      if (!isPilotAge(draft.privateIdentity.dateOfBirth)) return "The pilot is open to candidates aged 21–45. Enter a valid date of birth.";
       const result = privateIdentityDraftSchema.safeParse({
         ...draft.privateIdentity,
         verificationPhotoStatus: "not_available_in_prototype",
@@ -450,7 +457,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             </div>
             <section className="form-section">
               <h2>Eligibility</h2>
-              <ToggleCard checked={draft.eligibility.adultConfirmed} onChange={(value) => patch("eligibility", { adultConfirmed: value })} title="I am 18 or older" description="Date of birth is verified privately and never displayed." />
+              <ToggleCard checked={draft.eligibility.adultConfirmed} onChange={(value) => patch("eligibility", { adultConfirmed: value })} title="I am aged 21–45" description="Date of birth is verified privately and never displayed. The controlled pilot is open to adults aged 21–45." />
               <ToggleCard checked={draft.eligibility.eotcConfirmed} onChange={(value) => patch("eligibility", { eotcConfirmed: value })} title="I am Ethiopian Orthodox Tewahedo" description="The first release is dedicated to the EOTC community." icon={<ChurchIcon size={20} />} />
               <ToggleCard checked={draft.eligibility.marriageIntentConfirmed} onChange={(value) => patch("eligibility", { marriageIntentConfirmed: value })} title="I am seeking an intentional marriage" description="Kidan is not an open social or casual-chat platform." />
             </section>
@@ -539,6 +546,44 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             <section className="fixed-faith-card"><ChurchIcon /><div><small>Community</small><strong>Ethiopian Orthodox Tewahedo</strong></div><CheckIcon size={18} /></section>
             <div className="form-stack">
               <Field label="Church marriage intention" visibility="public"><select value={draft.faithAndFamily.marriageIntention} onChange={(event) => patch("faithAndFamily", { marriageIntention: event.target.value as MarriageIntention })}>{marriageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+              <Field label="Do you have a godfather (abiyat/godparent)?" visibility="public">
+                <SegmentedChoice
+                  value={draft.faithAndFamily.hasGodfather ? "yes" : "no"}
+                  options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
+                  onChange={(value) => patch("faithAndFamily", { hasGodfather: value === "yes" })}
+                />
+              </Field>
+              {draft.publicProfile.gender === "male" && (
+                <Field label="Are you a deacon?" visibility="public" hint="If yes, we pre-select Teklil (Holy Matrimony); you can still change it.">
+                  <SegmentedChoice
+                    value={draft.faithAndFamily.isDeacon === null ? "" : draft.faithAndFamily.isDeacon ? "yes" : "no"}
+                    options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
+                    onChange={(value) => {
+                      const isDeacon = value === "yes";
+                      patch("faithAndFamily", {
+                        isDeacon,
+                        // Deacons are married in Holy Matrimony: pre-select but
+                        // leave changeable.
+                        ...(isDeacon ? { marriageIntention: "teklil" as MarriageIntention } : {}),
+                      });
+                    }}
+                  />
+                </Field>
+              )}
+              <Field label="Are you currently active in church service?" visibility="public">
+                <SegmentedChoice
+                  value={draft.faithAndFamily.churchServiceActive ? "yes" : "no"}
+                  options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
+                  onChange={(value) => patch("faithAndFamily", { churchServiceActive: value === "yes" })}
+                />
+              </Field>
+              <Field label="Do you have a disability you would like considered for careful matching?" visibility="matching" hint="Never shown to other candidates; used only for thoughtful, private matching.">
+                <SegmentedChoice
+                  value={draft.faithAndFamily.hasDisability ? "yes" : "no"}
+                  options={[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }]}
+                  onChange={(value) => patch("faithAndFamily", { hasDisability: value === "yes" })}
+                />
+              </Field>
               <Field label="Future children" visibility="public"><select value={draft.faithAndFamily.wantsChildren} onChange={(event) => patch("faithAndFamily", { wantsChildren: event.target.value as OnboardingFormState["faithAndFamily"]["wantsChildren"] })}><option value="yes">Would like children</option><option value="no">Does not plan to have children</option><option value="open_to_discussion">Open to discussion</option></select></Field>
               <Field label="Values that describe you" visibility="public" hint={`${draft.faithAndFamily.values.length}/6 selected · choose at least 3`}><ChoiceChips values={draft.faithAndFamily.values} options={valueOptions} max={6} onChange={(values: ValueTag[]) => patch("faithAndFamily", { values })} /></Field>
               <Field label="A short introduction" visibility="public" hint={`${draft.faithAndFamily.bio.length}/280 · no names, contacts, employer, address, or parish`}><textarea rows={5} maxLength={280} value={draft.faithAndFamily.bio} onChange={(event) => patch("faithAndFamily", { bio: event.target.value })} placeholder="Share your character, family intentions, and what a faithful partnership means to you." /></Field>
