@@ -9,6 +9,7 @@ import {
   type OnboardingProgressPatch,
 } from "@kidan/contracts";
 import { ConnectionService } from "../src/connections/connectionService.js";
+import { RequestService } from "../src/requests/requestService.js";
 import { DiscoveryService } from "../src/discovery/discoveryService.js";
 import { AdminService } from "../src/admin/adminService.js";
 import { SessionService } from "../src/auth/sessionService.js";
@@ -44,7 +45,11 @@ async function createCandidate(
         faithTradition: "ethiopian_orthodox_tewahedo" as const, marriageIntention: "teklil" as const,
         wantsChildren: "yes" as const, values: ["active_faith", "honesty", "family_oriented"] as ValueTag[],
         bio: "Connection service test bio long enough to satisfy the minimum bio length validation.",
-      },
+          hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
       partnerPreferences: {
         ageMin: 22, ageMax: 40, preferredCities: ["Addis Ababa"], openToAbroad: false,
         acceptedMaritalStatuses: ["never_married" as const], acceptsPartnerWithChildren: false,
@@ -80,7 +85,32 @@ async function setup() {
   const admin = new AdminService(repository, cipher);
   const discovery = new DiscoveryService(repository, cipher, true);
   const connections = new ConnectionService(repository, cipher, true);
-  return { repository, cipher, sessions, onboarding, admin, discovery, connections };
+  const requests = new RequestService(repository, cipher, true);
+  return { repository, cipher, sessions, onboarding, admin, discovery, connections, requests };
+}
+
+/**
+ * Track D2 funnel: man shortlists (swipes right) the woman, sends a formal
+ * introduction request, and the woman accepts. Returns the resulting
+ * connection id (in 'request_accepted_pending_confirmation').
+ */
+async function acceptedRequest(
+  env: Awaited<ReturnType<typeof setup>>,
+  man: { userId: string; publicCode: string },
+  woman: { userId: string; publicCode: string },
+): Promise<{ requestId: string; connectionId: string }> {
+  await env.discovery.recordDecision(man.userId, {
+    targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
+  });
+  const created = await env.requests.sendRequest(man.userId, {
+    targetPublicCode: woman.publicCode, idempotencyKey: crypto.randomUUID(),
+  });
+  const incoming = await env.requests.listIncoming(woman.userId);
+  const requestId = incoming.requests[0]!.requestId;
+  expect(requestId).toBe(created.requestId);
+  const responded = await env.requests.respond(woman.userId, requestId, true);
+  expect(responded.status).toBe("accepted");
+  return { requestId, connectionId: responded.connectionId! };
 }
 
 describe("admin-gated connections (Track D)", () => {
@@ -106,7 +136,7 @@ describe("admin-gated connections (Track D)", () => {
     expect((await env.connections.listPending()).connections).toEqual([]);
   });
 
-  it("mutual interest creates an admin-visible pending connection, still hidden from users", async () => {
+  it("mutual swiping alone creates no admin item and no connection (Track D2)", async () => {
     const env = await setup();
     const man = await createCandidate(800000000000011n, "male", env);
     const woman = await createCandidate(800000000000012n, "female", env);
@@ -116,102 +146,102 @@ describe("admin-gated connections (Track D)", () => {
     await env.discovery.recordDecision(woman.userId, {
       targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
     });
-    const pending = await env.connections.listPending();
-    expect(pending.connections).toHaveLength(1);
-    const pair = pending.connections[0]!;
-    expect(pair.userA.publicCode).toMatch(/^KD-/);
-    expect(pair.userB.publicCode).toMatch(/^KD-/);
-    expect(pair.userA.age).toBeGreaterThanOrEqual(18);
-    // No name/phone/photo fields exist anywhere in the payload.
-    const serialized = JSON.stringify(pair);
-    expect(serialized).not.toContain("Secret");
-    expect(serialized).not.toContain("+2519");
-    // Still invisible to participants while pending.
+    // A swipe (even mutual) is a private shortlist entry only: no admin queue
+    // item and no connection is created.
+    expect((await env.connections.listPending()).connections).toEqual([]);
     expect((await env.connections.listForUser(man.userId)).connections).toEqual([]);
     expect((await env.connections.listForUser(woman.userId)).connections).toEqual([]);
   });
 
-  it("full lifecycle: admin approval -> both confirm -> connected; values-only to users", async () => {
+  it("an accepted request creates a connection hidden from the admin queue until both confirm", async () => {
     const env = await setup();
-    const man = await createCandidate(800000000000021n, "male", env);
-    const woman = await createCandidate(800000000000022n, "female", env);
-    await env.discovery.recordDecision(man.userId, {
-      targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    await env.discovery.recordDecision(woman.userId, {
-      targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    const pair = (await env.connections.listPending()).connections[0]!;
+    const man = await createCandidate(800000000000013n, "male", env);
+    const woman = await createCandidate(800000000000014n, "female", env);
+    const { connectionId } = await acceptedRequest(env, man, woman);
 
-    // Admin approves.
-    const approved = await env.connections.decide(pair.id, true);
-    expect(approved.status).toBe("admin_approved_pending_confirmation");
-    // The pending queue drains.
-    expect((await env.connections.listPending()).connections).toEqual([]);
-
-    // Both users now see the connection with values-only info about the other.
+    // The pair now sees a connection awaiting THEIR confirmation.
     const manList = connectionListResponseSchema.parse(await env.connections.listForUser(man.userId));
     const womanList = connectionListResponseSchema.parse(await env.connections.listForUser(woman.userId));
     expect(manList.connections).toHaveLength(1);
     expect(womanList.connections).toHaveLength(1);
     const manView = manList.connections[0]!;
-    expect(manView.status).toBe("admin_approved_pending_confirmation");
-    expect(manView.other.gender).toBe("female");
+    expect(manView.id).toBe(connectionId);
+    expect(manView.status).toBe("request_accepted_pending_confirmation");
     expect(manView.other.publicCode).toBe(woman.publicCode);
-    expect(manView.iConfirmed).toBe(false);
-    expect(manView.theyConfirmed).toBe(false);
+    expect(manView.other.gender).toBe("female");
     const serialized = JSON.stringify(manList);
     expect(serialized).not.toContain("Secret");
     expect(serialized).not.toContain("+2519");
 
-    // Man confirms first: still pending (waiting on the woman).
-    const afterMan = await env.connections.confirm(man.userId, pair.id, true);
-    expect(afterMan.status).toBe("admin_approved_pending_confirmation");
+    // The administrator sees nothing until BOTH participants confirm.
+    expect((await env.connections.listPending()).connections).toEqual([]);
+  });
+
+  it("full lifecycle: request accepted -> both confirm -> admin approves -> connected", async () => {
+    const env = await setup();
+    const man = await createCandidate(800000000000021n, "male", env);
+    const woman = await createCandidate(800000000000022n, "female", env);
+    const { connectionId: pair } = await acceptedRequest(env, man, woman);
+
+    // Man confirms first: still awaiting the woman; admin queue stays empty.
+    const afterMan = await env.connections.confirm(man.userId, pair, true);
+    expect(afterMan.status).toBe("request_accepted_pending_confirmation");
     const manView2 = (await env.connections.listForUser(man.userId)).connections[0]!;
     expect(manView2.iConfirmed).toBe(true);
     expect(manView2.theyConfirmed).toBe(false);
     const womanView2 = (await env.connections.listForUser(woman.userId)).connections[0]!;
     expect(womanView2.iConfirmed).toBe(false);
     expect(womanView2.theyConfirmed).toBe(true);
+    expect((await env.connections.listPending()).connections).toEqual([]);
 
-    // Woman confirms: connected.
-    const afterWoman = await env.connections.confirm(woman.userId, pair.id, true);
-    expect(afterWoman.status).toBe("connected");
+    // Woman confirms: the pair moves to the admin queue (hidden from users).
+    const afterWoman = await env.connections.confirm(woman.userId, pair, true);
+    expect(afterWoman.status).toBe("mutual_confirmed_pending_admin");
+    // While awaiting the administrator, participants no longer see the pair.
+    expect((await env.connections.listForUser(man.userId)).connections).toEqual([]);
+    expect((await env.connections.listForUser(woman.userId)).connections).toEqual([]);
+
+    const pending = await env.connections.listPending();
+    expect(pending.connections).toHaveLength(1);
+    const queued = pending.connections[0]!;
+    expect(queued.id).toBe(pair);
+    expect(queued.userA.publicCode).toMatch(/^KD-/);
+    expect(queued.userB.publicCode).toMatch(/^KD-/);
+    const queuedJson = JSON.stringify(queued);
+    expect(queuedJson).not.toContain("Secret");
+    expect(queuedJson).not.toContain("+2519");
+
+    // Administrator acts LAST: approval opens the restricted introduction.
+    const approved = await env.connections.decide(pair, true);
+    expect(approved.status).toBe("connected");
+    expect((await env.connections.listPending()).connections).toEqual([]);
     const finalMan = (await env.connections.listForUser(man.userId)).connections[0]!;
     expect(finalMan.status).toBe("connected");
     expect(finalMan.iConfirmed).toBe(true);
     expect(finalMan.theyConfirmed).toBe(true);
   });
 
-  it("a decline after admin approval closes the connection", async () => {
+  it("a decline during the post-accept confirmation closes the connection", async () => {
     const env = await setup();
     const man = await createCandidate(800000000000031n, "male", env);
     const woman = await createCandidate(800000000000032n, "female", env);
-    await env.discovery.recordDecision(man.userId, {
-      targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    await env.discovery.recordDecision(woman.userId, {
-      targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    const pair = (await env.connections.listPending()).connections[0]!;
-    await env.connections.decide(pair.id, true);
-    const declined = await env.connections.confirm(woman.userId, pair.id, false);
+    const { connectionId: pair } = await acceptedRequest(env, man, woman);
+    const declined = await env.connections.confirm(woman.userId, pair, false);
     expect(declined.status).toBe("declined");
     expect((await env.connections.listForUser(man.userId)).connections[0]!.status).toBe("declined");
+    // Nothing ever reached the admin queue.
+    expect((await env.connections.listPending()).connections).toEqual([]);
   });
 
-  it("admin rejection marks the connection rejected and hides it from users", async () => {
+  it("admin rejection of a mutually-confirmed pair marks it rejected and hides it", async () => {
     const env = await setup();
     const man = await createCandidate(800000000000041n, "male", env);
     const woman = await createCandidate(800000000000042n, "female", env);
-    await env.discovery.recordDecision(man.userId, {
-      targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    await env.discovery.recordDecision(woman.userId, {
-      targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    const pair = (await env.connections.listPending()).connections[0]!;
-    const rejected = await env.connections.decide(pair.id, false);
+    const { connectionId: pair } = await acceptedRequest(env, man, woman);
+    await env.connections.confirm(man.userId, pair, true);
+    await env.connections.confirm(woman.userId, pair, true);
+    expect((await env.connections.listPending()).connections).toHaveLength(1);
+    const rejected = await env.connections.decide(pair, false);
     expect(rejected.status).toBe("admin_rejected");
     // Rejected connections are never shown to participants.
     expect((await env.connections.listForUser(man.userId)).connections).toEqual([]);
@@ -223,16 +253,9 @@ describe("admin-gated connections (Track D)", () => {
     const man = await createCandidate(800000000000051n, "male", env);
     const stranger = await createCandidate(800000000000053n, "male", env);
     const woman = await createCandidate(800000000000052n, "female", env);
-    await env.discovery.recordDecision(man.userId, {
-      targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    await env.discovery.recordDecision(woman.userId, {
-      targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-    });
-    const pair = (await env.connections.listPending()).connections[0]!;
-    await env.connections.decide(pair.id, true);
+    const { connectionId: pair } = await acceptedRequest(env, man, woman);
     // A user who is not part of the connection cannot confirm it.
-    await expect(env.connections.confirm(stranger.userId, pair.id, true)).rejects.toThrow("CONNECTION_NOT_FOUND");
+    await expect(env.connections.confirm(stranger.userId, pair, true)).rejects.toThrow("CONNECTION_NOT_FOUND");
     // Unknown connection id.
     await expect(env.connections.confirm(man.userId, "00000000-0000-4000-8000-000000000099", true)).rejects.toThrow("CONNECTION_NOT_FOUND");
   });
@@ -244,31 +267,21 @@ describe("admin-gated connections (Track D)", () => {
       const env = await setup();
       const man = await createCandidate(manId, "male", env);
       const woman = await createCandidate(womanId, "female", env);
-      await env.discovery.recordDecision(man.userId, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      await env.discovery.recordDecision(woman.userId, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const pair = (await env.connections.listPending()).connections[0]!;
-      await env.connections.decide(pair.id, true);
-      await env.connections.confirm(man.userId, pair.id, true);
-      await env.connections.confirm(woman.userId, pair.id, true);
-      return { env, man, woman, connectionId: pair.id };
+      const { connectionId: pair } = await acceptedRequest(env, man, woman);
+      // Both participants confirm, then the administrator approves (admin last).
+      await env.connections.confirm(man.userId, pair, true);
+      await env.connections.confirm(woman.userId, pair, true);
+      await env.connections.decide(pair, true);
+      return { env, man, woman, connectionId: pair };
     }
 
     it("refuses the thread before the connection is connected", async () => {
       const env = await setup();
       const man = await createCandidate(800000000000071n, "male", env);
       const woman = await createCandidate(800000000000072n, "female", env);
-      await env.discovery.recordDecision(man.userId, {
-        targetPublicCode: woman.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      await env.discovery.recordDecision(woman.userId, {
-        targetPublicCode: man.publicCode, decision: "interested", idempotencyKey: crypto.randomUUID(),
-      });
-      const pair = (await env.connections.listPending()).connections[0]!;
-      await expect(env.connections.getThread(man.userId, pair.id)).rejects.toThrow("INTRODUCTION_NOT_OPEN");
+      const { connectionId: pair } = await acceptedRequest(env, man, woman);
+      // Accepted but not yet confirmed/approved: the thread is not open.
+      await expect(env.connections.getThread(man.userId, pair)).rejects.toThrow("INTRODUCTION_NOT_OPEN");
     });
 
     it("opens a values-only thread for a connected pair and routes fromMe correctly", async () => {

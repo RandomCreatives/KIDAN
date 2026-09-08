@@ -8,6 +8,7 @@ import type {
   AdminPendingConnectionRow,
   AdminReviewAuditRow,
   IntroductionMessageRow,
+  IntroductionRequestRow,
   IntroductionThreadRow,
   AdminSubmissionRow,
   CandidateReviewState,
@@ -275,10 +276,12 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
           user_id, gender, city_code, education_level, field_of_study,
           employment_status, occupation_category, height_cm, marital_status,
           has_children, wants_children, faith_tradition, marriage_intention,
-          values_json, bio, photo_mode, review_status, updated_at
+          values_json, bio, photo_mode, review_status, updated_at,
+          has_godfather, is_deacon, church_service_active
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-          'ethiopian_orthodox_tewahedo', $12, $13::jsonb, $14, 'values_only', 'pending', $15
+          'ethiopian_orthodox_tewahedo', $12, $13::jsonb, $14, 'values_only', 'pending', $15,
+          $16, $17, $18
         )
         ON CONFLICT (user_id) DO UPDATE SET
           gender = EXCLUDED.gender, city_code = EXCLUDED.city_code,
@@ -288,12 +291,18 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
           marital_status = EXCLUDED.marital_status, has_children = EXCLUDED.has_children,
           wants_children = EXCLUDED.wants_children, marriage_intention = EXCLUDED.marriage_intention,
           values_json = EXCLUDED.values_json, bio = EXCLUDED.bio, review_status = 'pending',
+          has_godfather = EXCLUDED.has_godfather, is_deacon = EXCLUDED.is_deacon,
+          church_service_active = EXCLUDED.church_service_active,
           profile_version = discovery_profile.profile_version + 1, updated_at = EXCLUDED.updated_at
       `, [
         input.userId, profile.gender, profile.city, profile.educationLevel, profile.fieldOfStudy || null,
         profile.employmentStatus, profile.occupationCategory, profile.heightCm, profile.maritalStatus,
         profile.hasChildren, faith.wantsChildren, faith.marriageIntention,
         JSON.stringify(faith.values), faith.bio, input.now,
+        faith.hasGodfather,
+        // Deacon question is asked of men; women store NULL (not applicable).
+        profile.gender === "male" ? (faith.isDeacon ?? false) : null,
+        faith.churchServiceActive,
       ]);
 
       await client.query(`
@@ -356,12 +365,109 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     `, [userId, input.photoCiphertext, input.mediaType, input.sha256, input.now]);
   }
 
+  async replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void> {
+    await this.pool.query(
+      "UPDATE verification_photo SET photo_ciphertext = $2, media_type = $3 WHERE user_id = $1 AND deleted_at IS NULL",
+      [userId, input.photoCiphertext, input.mediaType],
+    );
+  }
+
   async hasVerificationPhoto(userId: string): Promise<boolean> {
     const result = await this.pool.query<{ present: boolean }>(
       "SELECT EXISTS (SELECT 1 FROM verification_photo WHERE user_id = $1 AND deleted_at IS NULL) AS present",
       [userId],
     );
     return result.rows[0]?.present === true;
+  }
+
+  async countAdmittedCandidates(): Promise<number> {
+    // Admitted = submitted (awaiting review) or approved/active. Purely a
+    // cohort head-count; returns a number, never identifying rows.
+    const result = await this.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM app_user WHERE status IN ('profile_pending', 'active')",
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async getUserStatus(userId: string): Promise<UserRecord["status"] | null> {
+    const result = await this.pool.query<{ status: string }>(
+      "SELECT status::text AS status FROM app_user WHERE id = $1",
+      [userId],
+    );
+    return (result.rows[0]?.status ?? null) as UserRecord["status"] | null;
+  }
+
+  async recordOperationalEvent(event: string, now: Date): Promise<void> {
+    // Append-only, PII-free operational signal for alerting. Never writes the
+    // request body, headers, or any identity data into metadata_json.
+    await this.pool.query(
+      "INSERT INTO audit_event (actor_type, actor_id, action, subject_type, metadata_json, occurred_at) VALUES ('service', NULL, $1, 'operational', '{}'::jsonb, $2)",
+      [event, now],
+    );
+  }
+
+  async countOperationalEventsSince(events: string[], since: Date): Promise<number> {
+    const result = await this.pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM audit_event WHERE actor_type = 'service' AND action = ANY($1::text[]) AND occurred_at >= $2",
+      [events, since],
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  }
+
+  async getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }> {
+    // Counts only; never selects identifying columns.
+    const result = await this.pool.query<{
+      submitted: string;
+      approved: string;
+      shortlisted: string;
+      requests_pending: string;
+      requests_accepted: string;
+      requests_declined: string;
+      requests_expired: string;
+      connections_pending_admin: string;
+      connections_connected: string;
+      connections_declined: string;
+      connections_rejected: string;
+    }>(`
+      SELECT
+        (SELECT count(*) FROM discovery_profile)::text AS submitted,
+        (SELECT count(*) FROM discovery_profile WHERE review_status = 'approved')::text AS approved,
+        (SELECT count(*) FROM discovery_decision WHERE decision = 'interested')::text AS shortlisted,
+        (SELECT count(*) FROM introduction_request WHERE status = 'pending')::text AS requests_pending,
+        (SELECT count(*) FROM introduction_request WHERE status = 'accepted')::text AS requests_accepted,
+        (SELECT count(*) FROM introduction_request WHERE status = 'declined')::text AS requests_declined,
+        (SELECT count(*) FROM introduction_request WHERE status = 'expired')::text AS requests_expired,
+        (SELECT count(*) FROM connection WHERE status = 'mutual_confirmed_pending_admin')::text AS connections_pending_admin,
+        (SELECT count(*) FROM connection WHERE status = 'connected')::text AS connections_connected,
+        (SELECT count(*) FROM connection WHERE status = 'declined')::text AS connections_declined,
+        (SELECT count(*) FROM connection WHERE status = 'admin_rejected')::text AS connections_rejected
+    `);
+    const r = result.rows[0]!;
+    return {
+      submitted: Number(r.submitted),
+      approved: Number(r.approved),
+      shortlisted: Number(r.shortlisted),
+      requestsPending: Number(r.requests_pending),
+      requestsAccepted: Number(r.requests_accepted),
+      requestsDeclined: Number(r.requests_declined),
+      requestsExpired: Number(r.requests_expired),
+      connectionsPendingAdmin: Number(r.connections_pending_admin),
+      connectionsConnected: Number(r.connections_connected),
+      connectionsDeclined: Number(r.connections_declined),
+      connectionsRejected: Number(r.connections_rejected),
+    };
   }
 
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
@@ -447,6 +553,14 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       [publicCode],
     );
     return result.rows[0]?.id ?? null;
+  }
+
+  async getDiscoveryGender(userId: string): Promise<string | null> {
+    const result = await this.pool.query<{ gender: string }>(
+      "SELECT gender FROM discovery_profile WHERE user_id = $1",
+      [userId],
+    );
+    return result.rows[0]?.gender ?? null;
   }
 
   async getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null> {
@@ -677,11 +791,15 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       marriage_intention: string | null;
       values_json: string[];
       bio: string | null;
+      has_godfather: boolean;
+      is_deacon: boolean | null;
+      church_service_active: boolean;
       date_of_birth_ciphertext: Buffer;
     }>(`
       SELECT u.id AS user_id, u.public_code, p.gender, p.city_code,
              p.education_level, p.occupation_category, p.height_cm,
              p.marriage_intention, p.values_json, p.bio,
+             p.has_godfather, p.is_deacon, p.church_service_active,
              v.date_of_birth_ciphertext
       FROM discovery_profile p
       JOIN app_user u ON u.id = p.user_id
@@ -712,6 +830,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       marriageIntention: row.marriage_intention,
       values: Array.isArray(row.values_json) ? row.values_json : [],
       bio: row.bio,
+      hasGodfather: row.has_godfather,
+      isDeacon: row.is_deacon,
+      churchServiceActive: row.church_service_active,
       dateOfBirthCiphertext: row.date_of_birth_ciphertext,
     }));
   }
@@ -753,28 +874,11 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         ON CONFLICT (actor_user_id, target_user_id) DO NOTHING
       `, [input.actorUserId, input.targetUserId, input.decision, input.idempotencyKey]);
       if ((inserted.rowCount ?? 0) === 0) return null;
-      if (input.decision !== "interested") return null;
-
-      // Mutual interest: both sides have an 'interested' decision for each other.
-      const mutual = await client.query<{ uid: string }>(`
-        SELECT CASE WHEN $1::text < $2::text THEN $1 ELSE $2 END AS uid
-        FROM discovery_decision d1
-        JOIN discovery_decision d2
-          ON d1.actor_user_id = $1 AND d1.target_user_id = $2 AND d1.decision = 'interested'
-         AND d2.actor_user_id = $2 AND d2.target_user_id = $1 AND d2.decision = 'interested'
-        LIMIT 1
-      `, [input.actorUserId, input.targetUserId]);
-      if (mutual.rowCount === 0) return null;
-
-      const a = input.actorUserId < input.targetUserId ? input.actorUserId : input.targetUserId;
-      const b = input.actorUserId < input.targetUserId ? input.targetUserId : input.actorUserId;
-      const created = await client.query<{ id: string }>(`
-        INSERT INTO connection (user_a_id, user_b_id, status, created_at, updated_at)
-        VALUES ($1, $2, 'mutual_pending_admin', $3, $3)
-        ON CONFLICT (user_a_id, user_b_id) DO NOTHING
-        RETURNING id
-      `, [a, b, input.now]);
-      return created.rows[0]?.id ?? null;
+      // Track D2: a right swipe is a PRIVATE shortlist entry only. It never
+      // creates an admin item or a connection — connections are born solely
+      // from an accepted intentional introduction request. Mutual swiping is
+      // at most a bonus signal, so no connection is created here.
+      return null;
     });
   }
 
@@ -806,7 +910,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       LEFT JOIN connection_confirmation cc_a ON cc_a.connection_id = c.id AND cc_a.user_id = c.user_a_id AND cc_a.confirmed
       LEFT JOIN connection_confirmation cc_b ON cc_b.connection_id = c.id AND cc_b.user_id = c.user_b_id AND cc_b.confirmed
       WHERE (c.user_a_id = $1 OR c.user_b_id = $1)
-        AND c.status NOT IN ('mutual_pending_admin', 'admin_rejected')
+        AND c.status NOT IN ('mutual_pending_admin', 'mutual_confirmed_pending_admin', 'admin_rejected')
       ORDER BY c.updated_at DESC
     `, [userId]);
     return result.rows.map((r) => ({
@@ -832,7 +936,16 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       const row = result.rows[0];
       if (!row) return null;
       if (row.user_a_id !== input.userId && row.user_b_id !== input.userId) return null;
-      if (row.status !== "admin_approved_pending_confirmation") {
+      // Track D2: after a request is accepted the pair confirms FIRST
+      // ('request_accepted_pending_confirmation'); once both confirm the pair
+      // moves to the admin queue ('mutual_confirmed_pending_admin') and the
+      // administrator acts LAST. (The legacy 'admin_approved_pending_confirmation'
+      // path — admin first — is retained for any in-flight rows.)
+      const confirmableStates = [
+        "request_accepted_pending_confirmation",
+        "admin_approved_pending_confirmation",
+      ];
+      if (!confirmableStates.includes(row.status)) {
         return { status: row.status };
       }
       await client.query(`
@@ -854,13 +967,22 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         FROM connection_confirmation WHERE connection_id = $1
       `, [input.connectionId]);
       if (both.rows[0]?.both_confirmed) {
+        if (row.status === "request_accepted_pending_confirmation") {
+          // Both participants confirmed -> administrator reviews next.
+          await client.query(
+            "UPDATE connection SET status = 'mutual_confirmed_pending_admin', updated_at = $2 WHERE id = $1",
+            [input.connectionId, input.now],
+          );
+          return { status: "mutual_confirmed_pending_admin" };
+        }
+        // Legacy admin-first flow: both confirm after approval -> connected.
         await client.query(
           "UPDATE connection SET status = 'connected', opened_at = $2, updated_at = $2 WHERE id = $1",
           [input.connectionId, input.now],
         );
         return { status: "connected" };
       }
-      return { status: "admin_approved_pending_confirmation" };
+      return { status: row.status };
     });
   }
 
@@ -885,7 +1007,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       JOIN identity_vault vb ON vb.user_id = ub.id
       JOIN discovery_profile pa ON pa.user_id = ua.id
       JOIN discovery_profile pb ON pb.user_id = ub.id
-      WHERE c.status = 'mutual_pending_admin'
+      WHERE c.status = 'mutual_confirmed_pending_admin'
       ORDER BY c.created_at ASC
     `);
     return result.rows.map((r) => ({
@@ -899,17 +1021,53 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
   }
 
   async decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null> {
-    const result = await this.pool.query(
-      `UPDATE connection
-       SET status = CASE WHEN $2 THEN 'admin_approved_pending_confirmation'::connection_status ELSE 'admin_rejected'::connection_status END,
-           admin_approved_at = CASE WHEN $2 THEN $3 ELSE admin_approved_at END,
-           closed_at = CASE WHEN $2 THEN closed_at ELSE $3 END,
-           updated_at = $3
-       WHERE id = $1 AND status = 'mutual_pending_admin'
-       RETURNING status::text AS status`,
-      [input.connectionId, input.approve, input.now],
-    );
-    return result.rows[0]?.status ?? null;
+    return withTransaction(this.pool, async (client) => {
+      // Track D2: the administrator acts LAST. Approving a pair that both
+      // participants confirmed opens the restricted introduction ('connected');
+      // rejecting -> 'admin_rejected'. Legacy 'mutual_pending_admin' rows
+      // (admin-first) still route to 'admin_approved_pending_confirmation'.
+      const result = await client.query<{ status: string }>(
+        `UPDATE connection
+         SET status = CASE
+               WHEN $2 AND status = 'mutual_confirmed_pending_admin' THEN 'connected'::connection_status
+               WHEN $2 THEN 'admin_approved_pending_confirmation'::connection_status
+               ELSE 'admin_rejected'::connection_status
+             END,
+             admin_approved_at = CASE WHEN $2 THEN $3 ELSE admin_approved_at END,
+             opened_at = CASE WHEN $2 AND status = 'mutual_confirmed_pending_admin' THEN $3 ELSE opened_at END,
+             closed_at = CASE WHEN $2 THEN closed_at ELSE $3 END,
+             updated_at = $3
+         WHERE id = $1 AND status IN ('mutual_confirmed_pending_admin', 'mutual_pending_admin')
+         RETURNING status::text AS status`,
+        [input.connectionId, input.approve, input.now],
+      );
+      const status = result.rows[0]?.status ?? null;
+      if (!status) return null;
+      // Data minimization: once a pair is connected their swipe and request
+      // records are deleted (the connection + messages are retained).
+      if (status === "connected") {
+        const conn = await client.query<{ user_a_id: string; user_b_id: string }>(
+          "SELECT user_a_id, user_b_id FROM connection WHERE id = $1",
+          [input.connectionId],
+        );
+        const pair = conn.rows[0];
+        if (pair) {
+          await client.query(
+            `DELETE FROM discovery_decision
+             WHERE (actor_user_id = $1 AND target_user_id = $2)
+                OR (actor_user_id = $2 AND target_user_id = $1)`,
+            [pair.user_a_id, pair.user_b_id],
+          );
+          await client.query(
+            `DELETE FROM introduction_request
+             WHERE (sender_user_id = $1 AND recipient_user_id = $2)
+                OR (sender_user_id = $2 AND recipient_user_id = $1)`,
+            [pair.user_a_id, pair.user_b_id],
+          );
+        }
+      }
+      return status;
+    });
   }
 
   async getIntroductionThread(input: {
@@ -925,6 +1083,7 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       other_education: string | null; other_occupation: string | null;
       other_height: number | null; other_marriage: string | null;
       other_values: string[]; other_bio: string | null;
+      other_godfather: boolean; other_deacon: boolean | null; other_church: boolean;
     }>(`
       SELECT c.status::text AS status, c.user_a_id, c.user_b_id,
              ou.id AS other_id, ou.public_code AS other_code,
@@ -932,7 +1091,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
              op.gender::text AS other_gender, op.city_code AS other_city,
              op.education_level AS other_education, op.occupation_category AS other_occupation,
              op.height_cm AS other_height, op.marriage_intention AS other_marriage,
-             op.values_json AS other_values, op.bio AS other_bio
+             op.values_json AS other_values, op.bio AS other_bio,
+             op.has_godfather AS other_godfather, op.is_deacon AS other_deacon,
+             op.church_service_active AS other_church
       FROM connection c
       JOIN app_user ou ON ou.id = CASE WHEN c.user_a_id = $2 THEN c.user_b_id ELSE c.user_a_id END
       JOIN identity_vault ov ON ov.user_id = ou.id
@@ -969,6 +1130,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
         marriageIntention: row.other_marriage,
         values: row.other_values ?? [],
         bio: row.other_bio,
+        hasGodfather: row.other_godfather,
+        isDeacon: row.other_deacon,
+        churchServiceActive: row.other_church,
       },
       messages: messages.rows.map((m) => ({
         id: m.id,
@@ -1037,5 +1201,230 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       [messageId],
     );
     return (result.rowCount ?? 0) > 0;
+  }
+
+  // --- Track D2: intentional introduction requests ---
+
+  async createIntroductionRequest(input: {
+    senderUserId: string;
+    recipientUserId: string;
+    idempotencyKey: string;
+    now: Date;
+    ttlHours: number;
+  }): Promise<{ id: string; status: string } | { duplicate: true; id: string; status: string }> {
+    void input.idempotencyKey; // pair-level uniqueness handles retries
+    return withTransaction(this.pool, async (client) => {
+      const inserted = await client.query<{ id: string; status: string }>(`
+        INSERT INTO introduction_request (sender_user_id, recipient_user_id, status, created_at, expires_at)
+        VALUES ($1, $2, 'pending', $3::timestamptz, $3::timestamptz + make_interval(hours => $4::int))
+        ON CONFLICT (sender_user_id, recipient_user_id) DO NOTHING
+        RETURNING id, status::text AS status
+      `, [input.senderUserId, input.recipientUserId, input.now, String(input.ttlHours)]);
+      if (inserted.rows[0]) {
+        return { id: inserted.rows[0].id, status: inserted.rows[0].status };
+      }
+      // A row already exists for this ordered pair.
+      const existing = await client.query<{ id: string; status: string }>(
+        "SELECT id, status::text AS status FROM introduction_request WHERE sender_user_id = $1 AND recipient_user_id = $2",
+        [input.senderUserId, input.recipientUserId],
+      );
+      const row = existing.rows[0];
+      if (!row) {
+        // Extremely rare race; treat as a fresh insert.
+        const retry = await client.query<{ id: string; status: string }>(`
+          INSERT INTO introduction_request (sender_user_id, recipient_user_id, status, created_at, expires_at)
+          VALUES ($1, $2, 'pending', $3::timestamptz, $3::timestamptz + make_interval(hours => $4::int))
+          RETURNING id, status::text AS status
+        `, [input.senderUserId, input.recipientUserId, input.now, String(input.ttlHours)]);
+        const r = retry.rows[0]!;
+        return { id: r.id, status: r.status };
+      }
+      // A live (pending/accepted) request blocks a new one. A terminal
+      // (declined/expired) request is replaced by a fresh pending request.
+      if (row.status === "pending" || row.status === "accepted") {
+        return { duplicate: true, id: row.id, status: row.status };
+      }
+      const reopened = await client.query<{ id: string; status: string }>(`
+        UPDATE introduction_request
+        SET status = 'pending', created_at = $3::timestamptz, expires_at = $3::timestamptz + make_interval(hours => $4::int), responded_at = NULL
+        WHERE id = $1 AND sender_user_id = $2
+        RETURNING id, status::text AS status
+      `, [row.id, input.senderUserId, input.now, String(input.ttlHours)]);
+      const r = reopened.rows[0]!;
+      return { id: r.id, status: r.status };
+    });
+  }
+
+  async countRequestsSince(senderUserId: string, since: Date): Promise<number> {
+    const result = await this.pool.query(
+      "SELECT count(*)::int AS c FROM introduction_request WHERE sender_user_id = $1 AND created_at >= $2",
+      [senderUserId, since],
+    );
+    return result.rows[0]?.c ?? 0;
+  }
+
+  /** Shared values-only profile mapping for the OTHER party on a request. */
+  private mapRequestRow(r: Record<string, unknown>): IntroductionRequestRow {
+    return {
+      id: r.id as string,
+      status: r.status as string,
+      senderUserId: r.sender_user_id as string,
+      recipientUserId: r.recipient_user_id as string,
+      createdAt: r.created_at as Date,
+      expiresAt: r.expires_at as Date,
+      other: {
+        userId: r.other_id as string,
+        publicCode: r.other_code as string,
+        dateOfBirthCiphertext: r.other_dob as Buffer,
+        gender: r.other_gender as string,
+        city: r.other_city as string,
+        educationLevel: (r.other_education as string | null) ?? null,
+        occupationCategory: (r.other_occupation as string | null) ?? null,
+        heightCm: (r.other_height as number | null) ?? null,
+        marriageIntention: (r.other_marriage as string | null) ?? null,
+        values: Array.isArray(r.other_values) ? (r.other_values as string[]) : [],
+        bio: (r.other_bio as string | null) ?? null,
+        hasGodfather: Boolean(r.other_godfather),
+        isDeacon: (r.other_deacon as boolean | null) ?? null,
+        churchServiceActive: Boolean(r.other_church),
+      },
+    };
+  }
+
+  private async queryRequests(viewerId: string, sql: string, params: unknown[]): Promise<IntroductionRequestRow[]> {
+    const result = await this.pool.query(sql, params);
+    void viewerId;
+    return result.rows.map((r) => this.mapRequestRow(r as unknown as Record<string, unknown>));
+  }
+
+  async listIncomingRequests(recipientUserId: string, now: Date): Promise<IntroductionRequestRow[]> {
+    const sql = `
+      SELECT r.id, r.status::text AS status, r.sender_user_id, r.recipient_user_id,
+             r.created_at, r.expires_at,
+             ou.id AS other_id, ou.public_code AS other_code,
+             ov.date_of_birth_ciphertext AS other_dob,
+             op.gender::text AS other_gender, op.city_code AS other_city,
+             op.education_level AS other_education, op.occupation_category AS other_occupation,
+             op.height_cm AS other_height, op.marriage_intention AS other_marriage,
+             op.values_json AS other_values, op.bio AS other_bio,
+             op.has_godfather AS other_godfather, op.is_deacon AS other_deacon,
+             op.church_service_active AS other_church
+      FROM introduction_request r
+      JOIN app_user ou ON ou.id = r.sender_user_id
+      JOIN identity_vault ov ON ov.user_id = ou.id
+      JOIN discovery_profile op ON op.user_id = ou.id
+      WHERE r.recipient_user_id = $1 AND r.status = 'pending' AND r.expires_at > $2
+      ORDER BY r.created_at DESC
+    `;
+    return this.queryRequests(recipientUserId, sql, [recipientUserId, now]);
+  }
+
+  async listOutgoingRequests(senderUserId: string, now: Date): Promise<IntroductionRequestRow[]> {
+    const sql = `
+      SELECT r.id, r.status::text AS status, r.sender_user_id, r.recipient_user_id,
+             r.created_at, r.expires_at,
+             ou.id AS other_id, ou.public_code AS other_code,
+             ov.date_of_birth_ciphertext AS other_dob,
+             op.gender::text AS other_gender, op.city_code AS other_city,
+             op.education_level AS other_education, op.occupation_category AS other_occupation,
+             op.height_cm AS other_height, op.marriage_intention AS other_marriage,
+             op.values_json AS other_values, op.bio AS other_bio,
+             op.has_godfather AS other_godfather, op.is_deacon AS other_deacon,
+             op.church_service_active AS other_church
+      FROM introduction_request r
+      JOIN app_user ou ON ou.id = r.recipient_user_id
+      JOIN identity_vault ov ON ov.user_id = ou.id
+      JOIN discovery_profile op ON op.user_id = ou.id
+      WHERE r.sender_user_id = $1 AND r.status IN ('pending', 'accepted', 'declined') AND r.expires_at > $2
+      ORDER BY r.created_at DESC
+    `;
+    return this.queryRequests(senderUserId, sql, [senderUserId, now]);
+  }
+
+  async respondToRequest(input: {
+    requestId: string;
+    recipientUserId: string;
+    accept: boolean;
+    now: Date;
+  }): Promise<{ status: string; connectionId: string | null } | null> {
+    return withTransaction(this.pool, async (client) => {
+      const locked = await client.query<{ id: string; status: string; sender_user_id: string; expires_at: Date }>(`
+        SELECT id, status::text AS status, sender_user_id, expires_at
+        FROM introduction_request
+        WHERE id = $1 AND recipient_user_id = $2
+        FOR UPDATE
+      `, [input.requestId, input.recipientUserId]);
+      const req = locked.rows[0];
+      if (!req || req.status !== "pending" || req.expires_at <= input.now) return null;
+
+      if (!input.accept) {
+        await client.query(
+          "UPDATE introduction_request SET status = 'declined', responded_at = $2 WHERE id = $1",
+          [input.requestId, input.now],
+        );
+        return { status: "declined", connectionId: null };
+      }
+
+      await client.query(
+        "UPDATE introduction_request SET status = 'accepted', responded_at = $2 WHERE id = $1",
+        [input.requestId, input.now],
+      );
+      // Normalize the pair into a canonical (user_a, user_b) connection.
+      const pair = await client.query<{ a: string; b: string }>(
+        `SELECT CASE WHEN sender_user_id::text < recipient_user_id::text THEN sender_user_id ELSE recipient_user_id END AS a,
+                CASE WHEN sender_user_id::text < recipient_user_id::text THEN recipient_user_id ELSE sender_user_id END AS b
+         FROM introduction_request WHERE id = $1`,
+        [input.requestId],
+      );
+      const { a, b } = pair.rows[0]!;
+      const conn = await client.query<{ id: string }>(`
+        INSERT INTO connection (user_a_id, user_b_id, status, created_at, updated_at)
+        VALUES ($1, $2, 'request_accepted_pending_confirmation', $3, $3)
+        ON CONFLICT (user_a_id, user_b_id) DO UPDATE
+          SET status = 'request_accepted_pending_confirmation',
+              closed_at = NULL, opened_at = NULL, admin_approved_at = NULL, updated_at = $3
+        RETURNING id
+      `, [a, b, input.now]);
+      const connectionId = conn.rows[0]!.id;
+      // Reset any confirmations from a prior (declined/closed) attempt.
+      await client.query("DELETE FROM connection_confirmation WHERE connection_id = $1", [connectionId]);
+      return { status: "accepted", connectionId };
+    });
+  }
+
+  async purgeExpiredIntroductionData(
+    now: Date,
+  ): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }> {
+    return withTransaction(this.pool, async (client) => {
+      // Purge unanswered (pending past TTL) and soft-declined requests.
+      const expired = await client.query(
+        `DELETE FROM introduction_request
+         WHERE status IN ('pending', 'declined') AND expires_at <= $1`,
+        [now],
+      );
+      const expiredRequests = expired.rowCount ?? 0;
+
+      // Data minimization: connected pairs keep the connection + messages but
+      // lose their swipe and request records.
+      const swipes = await client.query(
+        `DELETE FROM discovery_decision d
+         USING connection c
+         WHERE c.status = 'connected'
+           AND ((d.actor_user_id = c.user_a_id AND d.target_user_id = c.user_b_id)
+             OR (d.actor_user_id = c.user_b_id AND d.target_user_id = c.user_a_id))`,
+      );
+      const deletedSwipes = swipes.rowCount ?? 0;
+
+      const reqs = await client.query(
+        `DELETE FROM introduction_request r
+         USING connection c
+         WHERE c.status = 'connected'
+           AND ((r.sender_user_id = c.user_a_id AND r.recipient_user_id = c.user_b_id)
+             OR (r.sender_user_id = c.user_b_id AND r.recipient_user_id = c.user_a_id))`,
+      );
+      const deletedRequests = reqs.rowCount ?? 0;
+
+      return { expiredRequests, deletedRequests, deletedSwipes };
+    });
   }
 }

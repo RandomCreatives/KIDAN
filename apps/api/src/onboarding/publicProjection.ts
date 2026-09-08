@@ -19,6 +19,9 @@ export function buildDiscoveryProjection(input: {
     marriageIntention: input.payload.faithAndFamily.marriageIntention,
     values: input.payload.faithAndFamily.values,
     bio: input.payload.faithAndFamily.bio,
+    hasGodfather: input.payload.faithAndFamily.hasGodfather,
+    isDeacon: input.payload.faithAndFamily.isDeacon,
+    churchServiceActive: input.payload.faithAndFamily.churchServiceActive,
     verified: input.verified,
     photoMode: "values_only",
   });

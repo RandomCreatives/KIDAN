@@ -5,3 +5,4 @@ export * from "./discovery.js";
 export * from "./onboarding.js";
 export * from "./privacy.js";
 export * from "./profile.js";
+export * from "./request.js";

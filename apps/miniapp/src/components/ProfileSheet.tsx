@@ -37,7 +37,7 @@ export function ProfileSheet({ profile, onClose, onInterested }: ProfileSheetPro
         <header className="sheet-header">
           <div>
             <span className="sheet-kicker">Anonymous profile</span>
-            <h2 id="profile-sheet-title">{profile.age} · {profile.city}</h2>
+            <h2 id="profile-sheet-title">{profile.age} · {profile.gender === "male" ? "Male" : "Female"} · {profile.city}</h2>
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close"><XIcon /></button>
         </header>

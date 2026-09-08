@@ -80,11 +80,22 @@ export const faithAndFamilyDraftSchema = z.object({
   wantsChildren: z.enum(["yes", "no", "open_to_discussion"]),
   values: z.array(valueTagSchema).min(3).max(6),
   bio: z.string().trim().min(20).max(280),
+  // Pilot faith/family questions (Track D2).
+  // Godfather (y/n) — shown on the values-only summary.
+  hasGodfather: z.boolean(),
+  // Deacon (y/n). Asked of men; null/NA for women. Shown on the summary. When
+  // true the client pre-selects marriage goal teklil (Holy Matrimony).
+  isDeacon: z.boolean().nullable(),
+  // Currently active in church service (y/n) — shown on the summary.
+  churchServiceActive: z.boolean(),
+  // Any disability (y/n) — collected for careful matching/admin awareness;
+  // matching-only, never shown to other candidates.
+  hasDisability: z.boolean(),
 });
 
 const partnerPreferencesObjectSchema = z.object({
-  ageMin: z.number().int().min(18).max(90),
-  ageMax: z.number().int().min(18).max(90),
+  ageMin: z.number().int().min(21).max(45),
+  ageMax: z.number().int().min(21).max(45),
   preferredCities: z.array(z.string().trim().min(2).max(80)).max(12),
   openToAbroad: z.boolean(),
   acceptedMaritalStatuses: z.array(maritalStatusSchema).min(1),
@@ -222,6 +233,10 @@ export const onboardingFieldVisibility = {
   "faithAndFamily.wantsChildren": "discovery",
   "faithAndFamily.values": "discovery",
   "faithAndFamily.bio": "discovery",
+  "faithAndFamily.hasGodfather": "discovery",
+  "faithAndFamily.isDeacon": "discovery",
+  "faithAndFamily.churchServiceActive": "discovery",
+  "faithAndFamily.hasDisability": "matching_only",
   "partnerPreferences.ageMin": "matching_only",
   "partnerPreferences.ageMax": "matching_only",
   "partnerPreferences.preferredCities": "matching_only",

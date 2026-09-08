@@ -26,13 +26,15 @@ Staging deployment is **pinned to a release branch**, not `main` (see Deploy bel
 |---|---|---|
 | A | Telegram Mini App login (HMAC-validated initData), encrypted identity vault (name/DOB/phone/telegram encrypted at rest), onboarding draft flow | `POST /v1/auth/telegram`, `/v1/session` |
 | B1 | Real submit flow with versioned drafts and consent receipts | `/v1/onboarding/*` |
-| B2 | Private verification photo — encrypted at rest, **auto-purged 30 days after profile approval** via retention cron (`/internal/retention`) | migration 0003 |
+| B2 | Private verification photo — encrypted at rest; **replaced by a ≤240px thumbnail on approval**, then purged **14 days after approval** via retention cron (`/internal/retention`) — Option A | migration 0003 |
 | B3 | Separate password-protected operator admin review console (own cookie/CSRF) | `/v1/admin/session`, `/v1/admin/submissions*` |
 | B4 | Candidate review status + privacy-safe Telegram notifications (no identity in messages) | notifier service |
 | B6 | Self-serve data export + account deletion + privacy policy | `/v1/onboarding/export`, `/v1/onboarding/delete-account` |
 | C | Values-only, photo-less/name-less Tinder-style discovery feed; private pass/interested; **one-sided interest never disclosed** | `GET /v1/discovery/feed`, `POST /v1/discovery/decision` |
 | D1 | Mutual interest → `connection` row (canonical a<b, created in the decision transaction) → admin approve/reject → **both** participants confirm → `connected`; decline/reject paths; rejection invisible | `GET /v1/connections`, `POST /v1/connections/:id/confirm`, `/v1/admin/connections*` |
 | D3 | Restricted **in-app-only** introduction for connected pairs: phone/Telegram/links blocked before save (422), values-only thread, admin hide-message moderation; name/phone/Telegram never revealed | migration 0006; `GET/POST /v1/connections/:id/introduction`, `/v1/admin/introductions*` |
+| E2 | Privacy-safe funnel metrics (counts only; no PII/analytics) | `GET /v1/admin/metrics`; admin Funnel panel |
+| E3 | Monitoring/alerts: `/ready` write-probe, log-redaction verification, auth-failure/error signal | `/internal/health` (bearer-gated, cron), `audit_event` signals |
 
 **Deferred by design:** D4 contact reveal (name/phone/Telegram) — a separate, future,
 explicitly-consented gate; **not in the pilot**. No payments/credits/wallet/ratings/VIP/paid
@@ -99,15 +101,54 @@ Vercel project rooted at `apps/admin`.
 
 ## Next work — Phase 03 Track E (pilot operations)
 
-Not started. In order:
-1. **E1 Invite allowlist** — single-use invite codes; only invited adult EOTC candidates can
-   submit, to keep the pilot controlled (not payment, not VIP).
-2. **E2 Privacy-safe funnel metrics** — counts only (submitted, approved, mutual interest,
-   introductions), no PII, no third-party analytics.
-3. **E3 Monitoring/alerts** — `/ready` write-probe, error-rate/auth-failure alerts, log-redaction
-   verification (includes completing the Track D staging deploy above).
-4. **E4 Pilot runbook & data-policy docs** — operator steps, incident response, and the
-   legal/cultural study notes the future monetization decision waits on.
+**E1 resolved as a lightweight admission valve — no invite codes.** We dropped the invite-only
+plan (it was too much operational overhead for a controlled, free pilot) and rely on the existing
+review pipeline (onboarding → private verification photo → admin review ~24-72h) as the real gate.
+The controlled cohort stays small by lift/promotion, and a configurable ceiling
+`PILOT_CAPACITY` (default 100) blocks NEW submissions when the cohort is full
+(`PILOT_CAPACITY_REACHED`); already-admitted candidates may always re-submit after
+`changes_requested`.
+
+**E2 done — privacy-safe funnel metrics.** Operator/admin-only `GET /v1/admin/metrics`
+(gated by the admin session) returns aggregate **counts only** per stage: submitted, approved,
+shortlisted, request pending/accepted/declined/expired, connection pendingAdmin/connected/
+declined/rejected. No identity, no third-party analytics, no per-user data. Admin console shows a
+"Funnel (all-time)" panel. (For a time-bucketed view over the 3-6 month learning period, add a
+`sinceDays` window later.)
+
+**E3 done — monitoring / alerts.** The `/ready` write-probe (non-mutating auth-path insertion)
+was already in place. Added:
+- **Log-redaction verification** (`logRedaction.test.ts`): captures the Fastify log stream and
+  asserts the bot token, raw initData body, cookie, csrf header, and connection-string credentials
+  are never logged. `appFactory` now accepts a logger object (merged with mandatory redact paths)
+  and exports `LOG_REDACT_PATHS`.
+- **Alert signal** (`/internal/health`, bearer-gated by `MONITOR_CRON_SECRET`, Vercel cron `*/10`):
+  runs the readiness write-probe and reports recent `auth_failure` / `server_error` volume from the
+  PII-free `audit_event` table (a `degraded` flag when over threshold). `server_error` is recorded
+  by the central error handler; `auth_failure` by the Telegram initData reject path. Repository
+  `recordOperationalEvent` / `countOperationalEventsSince` cover both Postgres and memory.
+
+**E4 done — pilot runbook & data policy.** `docs/pilot-runbook.md` (services/URLs,
+env vars, review & admission operations, monitoring/alert thresholds, incident
+response, retention, pause/close) and `docs/data-policy.md` (data classes, access
+minimization, retention table, self-serve export/delete, incident escalation,
+data residency + the deferred monetization decision). Both ships on the release
+branch.
+
+**PostgreSQL integration suite is GREEN again** after two D2 SQL-type fixes
+(`25bece5`, `2fef3de`): the `introduction_request` inserts/updates left `$3`/`$2`
+as ambiguous/unreferenced parameters, so Postgres rejected them at runtime; the
+fixes pin `$3::timestamptz` + `make_interval(hours => $4::int)` and drop the
+unused param. These surfaced only in CI (no local Postgres), which is why they
+were found late. **All GitHub Actions checks now pass on `2fef3de`.**
+
+No remaining implementation work in Phase 03 Track E — only the user merge to
+`main` and then E4 docs already included.
+
+**Future (discussion only — not built): credit system.** First phase: a free month via a credit
+system (credits > direct Telebirr), credits expire after a month; if two months of learning show
+it's worth investing, candidates pay on month 3. Later phase 2: one-week trial + direct credit
+system. No payments/credits/wallet is implemented in the pilot.
 
 The 3–6 month controlled-learning period starts when the pilot launches, not during construction.
 

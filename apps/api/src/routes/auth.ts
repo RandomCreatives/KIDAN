@@ -15,6 +15,8 @@ export interface AuthRouteOptions {
   // Server-side pilot switch surfaced to the Mini App so it only offers real
   // submission when the deployment accepts it.
   realSubmissionsEnabled?: boolean;
+  // Track E3: PII-free operational signal for alerting on auth failures.
+  recordOperationalEvent?: (event: "auth_failure", now: Date) => void;
 }
 
 export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, options) => {
@@ -54,6 +56,7 @@ export const authRoutes: FastifyPluginAsync<AuthRouteOptions> = async (app, opti
         // Log the rejection reason plus the configured bot's numeric id (the
         // digits before ':' in the token — a public bot user id, never the
         // secret). initData/body are redacted by the logger config.
+        options.recordOperationalEvent?.("auth_failure", new Date());
         const configuredBotId = options.botToken.includes(":") ? options.botToken.split(":")[0] : "malformed-token";
         // Live-verify the token against Telegram (cached) so the cause is
         // visible in server logs. The result is non-secret but, together with

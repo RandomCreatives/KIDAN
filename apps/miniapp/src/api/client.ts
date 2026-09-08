@@ -19,6 +19,16 @@ import {
   type ConnectionListResponse,
   type DiscoveryFeedResponse,
   type DiscoveryDecisionRequest,
+  incomingRequestsResponseSchema,
+  outgoingRequestsResponseSchema,
+  introductionRequestCreateSchema,
+  introductionRequestCreateResponseSchema,
+  introductionRequestRespondResponseSchema,
+  introductionRequestRespondSchema,
+  type IncomingRequestsResponse,
+  type OutgoingRequestsResponse,
+  type IntroductionRequestCreate,
+  type IntroductionRequestRespondResponse,
   draftResponseSchema,
   draftSaveResponseSchema,
   type ApiErrorCode,
@@ -166,6 +176,36 @@ export class KidanApiClient {
   async recordDiscoveryDecision(decision: DiscoveryDecisionRequest, csrfToken: string): Promise<void> {
     const validated = discoveryDecisionRequestSchema.parse(decision);
     await this.request("POST", "/v1/discovery/decision", validated, csrfToken);
+  }
+
+  /**
+   * Sends a formal introduction request to a shortlisted target (Track D2).
+   * Throws ApiError with code INTENTION_RATE_LIMIT (429) when the daily cap is
+   * reached, or REQUEST_ALREADY_EXISTS (409) for a duplicate live request.
+   */
+  async sendIntroductionRequest(input: IntroductionRequestCreate, csrfToken: string) {
+    const validated = introductionRequestCreateSchema.parse(input);
+    const data = await this.request("POST", "/v1/discovery/request", validated, csrfToken);
+    return this.parse(introductionRequestCreateResponseSchema, data);
+  }
+
+  /** Pending requests addressed to the caller (sender's values-only summary). */
+  async getIncomingRequests(): Promise<IncomingRequestsResponse> {
+    const data = await this.request("GET", "/v1/requests/incoming");
+    return this.parse(incomingRequestsResponseSchema, data);
+  }
+
+  /** The caller's sent requests (declines stay invisible; shows daily allowance). */
+  async getOutgoingRequests(): Promise<OutgoingRequestsResponse> {
+    const data = await this.request("GET", "/v1/requests/outgoing");
+    return this.parse(outgoingRequestsResponseSchema, data);
+  }
+
+  /** Accepts or declines a pending request addressed to the caller. */
+  async respondToRequest(requestId: string, accept: boolean, csrfToken: string): Promise<IntroductionRequestRespondResponse> {
+    const payload = introductionRequestRespondSchema.parse({ accept });
+    const data = await this.request("POST", `/v1/requests/${requestId}/respond`, payload, csrfToken);
+    return this.parse(introductionRequestRespondResponseSchema, data);
   }
 
   /** The participant's connections (values-only; admin approval onward). */

@@ -1,16 +1,23 @@
 import { randomUUID } from "node:crypto";
 import cookie from "@fastify/cookie";
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyLoggerOptions,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 import type { SessionService } from "./auth/sessionService.js";
 import type { AdminSessionService } from "./auth/adminSessionService.js";
 import type { OnboardingService } from "./onboarding/onboardingService.js";
 import type { AdminService } from "./admin/adminService.js";
 import type { DiscoveryService } from "./discovery/discoveryService.js";
 import type { ConnectionService } from "./connections/connectionService.js";
+import type { RequestService } from "./requests/requestService.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { discoveryRoutes } from "./routes/discovery.js";
 import { connectionRoutes } from "./routes/connections.js";
+import { requestRoutes } from "./routes/requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 
@@ -25,7 +32,12 @@ export interface BuildAppOptions {
    *  candidate Mini App and the operator admin console are served from
    *  different origins, so production allows both. Supersedes allowedOrigin. */
   allowedOrigins?: string[];
-  logger?: boolean;
+  /** The Fastify logger. `false` disables logging; `true` uses the defaults
+   *  (info + redaction); an object is merged with the same mandatory redaction
+   *  paths (so tests can capture logs to a stream while secrets stay redacted). */
+  logger?: boolean | FastifyLoggerOptions;
+  /** Whether to include the full request body path in redaction (already the
+   *  default). Exposed for the log-redaction verification test. */
   onClose?: () => Promise<void>;
   readinessCheck?: () => Promise<void>;
   // When set, enables the internal scheduled maintenance endpoint
@@ -41,35 +53,60 @@ export interface BuildAppOptions {
   discoveryService?: DiscoveryService;
   // Track D: admin-gated connections.
   connectionService?: ConnectionService;
+  // Track D2: intentional introduction requests.
+  requestService?: RequestService;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
   // deployment never leaks internals unless it explicitly opts in.
   exposeAuthDiagnostics?: boolean;
+  // Track E3 monitoring: fire-and-forget, PII-free operational signals used for
+  // alerting. When a monitorSecret is supplied, a /internal/health probe is
+  // registered (bearer-gated) that runs the readiness write-probe and reports
+  // recent auth-failure / server-error volume for uptime/alerting.
+  monitorSecret?: string;
+  recordOperationalEvent?: (event: "auth_failure" | "server_error", now: Date) => void;
+  countOperationalEventsSince?: (
+    events: ("auth_failure" | "server_error")[],
+    since: Date,
+  ) => Promise<number>;
 }
 
 export type FastifyFactory = typeof Fastify;
+
+export const LOG_REDACT_PATHS = [
+  "req.headers.authorization",
+  "req.headers.cookie",
+  "req.headers['x-csrf-token']",
+  "req.body",
+  "res.headers['set-cookie']",
+] as const;
+
+export type LoggerOption =
+  | boolean
+  | (FastifyLoggerOptions & { redact?: { paths?: string[]; censor?: string } });
+
+/** Build the Fastify logger config, always enforcing the redaction paths. */
+function loggerConfig(logger: LoggerOption): false | FastifyLoggerOptions {
+  if (logger === false) return false;
+  const base = (typeof logger === "object" && logger !== null ? logger : {}) as
+    FastifyLoggerOptions & { redact?: { paths?: string[]; censor?: string } };
+  return {
+    level: base.level ?? "info",
+    ...base,
+    redact: {
+      paths: [...LOG_REDACT_PATHS, ...(base.redact?.paths ?? [])],
+      censor: base.redact?.censor ?? "[REDACTED]",
+    },
+  } as FastifyLoggerOptions;
+}
 
 export async function buildApp(
   options: BuildAppOptions = {},
   fastifyFactory: FastifyFactory = Fastify,
 ): Promise<FastifyInstance> {
   const app = fastifyFactory({
-    logger: options.logger
-      ? {
-          level: "info",
-          redact: {
-            paths: [
-              "req.headers.authorization",
-              "req.headers.cookie",
-              "req.headers['x-csrf-token']",
-              "req.body",
-              "res.headers['set-cookie']",
-            ],
-            censor: "[REDACTED]",
-          },
-        }
-      : false,
+    logger: loggerConfig(options.logger ?? false),
     bodyLimit: 32 * 1024,
     requestIdHeader: false,
     genReqId: () => randomUUID(),
@@ -119,6 +156,8 @@ export async function buildApp(
       return reply.code(413).send({ error: { code: "PHOTO_TOO_LARGE", requestId: request.id } });
     }
     request.log.error({ errorName, errorCode, errorMessage, stackTop }, "Request failed");
+    // Track E3: PII-free operational signal for alerting (never the body).
+    options.recordOperationalEvent?.("server_error", new Date());
     return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
   });
   app.setNotFoundHandler((request, reply) =>
@@ -147,6 +186,39 @@ export async function buildApp(
     });
   }
 
+  // Track E3: operator health/alert probe. Runs the /ready injection write-probe
+  // (when available) and reports recent auth-failure / server-error volume so a
+  // cron or uptime monitor can alert. Bearer-gated like /internal/retention.
+  const monitorSecret = options.monitorSecret;
+  const countEvents = options.countOperationalEventsSince;
+  const readinessCheck = options.readinessCheck;
+  if (monitorSecret && countEvents) {
+    app.get("/internal/health", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${monitorSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
+      }
+      let ready = true;
+      if (readinessCheck) {
+        try {
+          await readinessCheck();
+        } catch {
+          ready = false;
+        }
+      }
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const [authFailures, serverErrors] = await Promise.all([
+        countEvents(["auth_failure"], since),
+        countEvents(["server_error"], since),
+      ]);
+      const degraded = authFailures > 100 || serverErrors > 50;
+      return reply.send({
+        data: { ok: ready && !degraded, ready, degraded, authFailures24h: authFailures, serverErrors24h: serverErrors },
+      });
+    });
+  }
+
   const cookieName = options.cookieName ?? "kidan_session";
   if (options.botToken && options.sessionService) {
     await app.register(authRoutes, {
@@ -155,6 +227,9 @@ export async function buildApp(
       cookieName,
       secureCookies: options.secureCookies ?? false,
       exposeDiagnostics: options.exposeAuthDiagnostics ?? false,
+      ...(options.recordOperationalEvent
+        ? { recordOperationalEvent: options.recordOperationalEvent }
+        : {}),
       ...(options.onboardingService
         ? { realSubmissionsEnabled: options.onboardingService.isRealSubmissionsEnabled() }
         : {}),
@@ -214,6 +289,22 @@ export async function buildApp(
     app.post("/v1/connections/:id/confirm", connectionsNotReady);
     app.get("/v1/connections/:id/introduction", connectionsNotReady);
     app.post("/v1/connections/:id/introduction", connectionsNotReady);
+  }
+
+  if (options.sessionService && options.requestService) {
+    await app.register(requestRoutes, {
+      sessionService: options.sessionService,
+      requestService: options.requestService,
+      cookieName,
+    });
+  } else {
+    const requestsNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.post("/v1/discovery/request", requestsNotReady);
+    app.get("/v1/requests/incoming", requestsNotReady);
+    app.get("/v1/requests/outgoing", requestsNotReady);
+    app.post("/v1/requests/:id/respond", requestsNotReady);
   }
 
   if (options.adminSessionService && options.adminService) {

@@ -12,6 +12,7 @@ import type {
   DraftRecord,
   IdentityUpdate,
   IntroductionMessageRow,
+  IntroductionRequestRow,
   IntroductionThreadRow,
   SessionRecord,
   SubmissionConsent,
@@ -53,6 +54,11 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly connectionConfirmations = new Map<string, boolean>();
   /** Introduction messages keyed by id (Track D3). */
   private readonly introductionMessages = new Map<string, MemoryIntroductionMessage>();
+  /** Intentional introduction requests keyed by id (Track D2). */
+  private readonly introductionRequests = new Map<string, MemoryIntroductionRequest>();
+  /** Append-only operational events keyed by id (Track E3): { action, occurredAt }. */
+  private readonly operationalEvents = new Map<string, { action: string; occurredAt: Date }>();
+  private operationalEventCounter = 0;
 
   async findOrCreateUserByTelegram(input: {
     telegramLookupHash: Buffer;
@@ -205,9 +211,105 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     });
   }
 
+  async replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void> {
+    const photo = this.verificationPhotos.get(userId);
+    if (!photo || photo.deletedAt !== null) return;
+    // Preserve approvedAt/deletedAt retaining the same row.
+    this.verificationPhotos.set(userId, {
+      ...photo,
+      photoCiphertext: input.photoCiphertext,
+      mediaType: input.mediaType,
+    });
+  }
+
   async hasVerificationPhoto(userId: string): Promise<boolean> {
     const photo = this.verificationPhotos.get(userId);
     return Boolean(photo && photo.deletedAt === null);
+  }
+
+  async countAdmittedCandidates(): Promise<number> {
+    let count = 0;
+    for (const user of this.users.values()) {
+      if (user.status === "profile_pending" || user.status === "active") count += 1;
+    }
+    return count;
+  }
+
+  async getUserStatus(userId: string): Promise<UserRecord["status"] | null> {
+    return this.users.get(userId)?.status ?? null;
+  }
+
+  async recordOperationalEvent(event: string, now: Date): Promise<void> {
+    this.operationalEventCounter += 1;
+    this.operationalEvents.set(String(this.operationalEventCounter), { action: event, occurredAt: now });
+  }
+
+  async countOperationalEventsSince(events: string[], since: Date): Promise<number> {
+    let count = 0;
+    for (const event of this.operationalEvents.values()) {
+      if (events.includes(event.action) && event.occurredAt >= since) count += 1;
+    }
+    return count;
+  }
+
+  async getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }> {
+    let submitted = 0;
+    let approved = 0;
+    for (const draft of this.drafts.values()) {
+      if (draft.submittedAt) submitted += 1;
+    }
+    for (const status of this.reviewStatus.values()) {
+      if (status === "approved") approved += 1;
+    }
+    let shortlisted = 0;
+    for (const decision of this.decisions.values()) {
+      if (decision === "interested") shortlisted += 1;
+    }
+    let requestsPending = 0;
+    let requestsAccepted = 0;
+    let requestsDeclined = 0;
+    let requestsExpired = 0;
+    for (const request of this.introductionRequests.values()) {
+      if (request.status === "pending") requestsPending += 1;
+      else if (request.status === "accepted") requestsAccepted += 1;
+      else if (request.status === "declined") requestsDeclined += 1;
+      else if (request.status === "expired") requestsExpired += 1;
+    }
+    let connectionsPendingAdmin = 0;
+    let connectionsConnected = 0;
+    let connectionsDeclined = 0;
+    let connectionsRejected = 0;
+    for (const connection of this.connections.values()) {
+      if (connection.status === "mutual_confirmed_pending_admin") connectionsPendingAdmin += 1;
+      else if (connection.status === "connected") connectionsConnected += 1;
+      else if (connection.status === "declined") connectionsDeclined += 1;
+      else if (connection.status === "admin_rejected") connectionsRejected += 1;
+    }
+    return {
+      submitted,
+      approved,
+      shortlisted,
+      requestsPending,
+      requestsAccepted,
+      requestsDeclined,
+      requestsExpired,
+      connectionsPendingAdmin,
+      connectionsConnected,
+      connectionsDeclined,
+      connectionsRejected,
+    };
   }
 
   async getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null> {
@@ -262,6 +364,14 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
       if (user.publicCode === publicCode) return id;
     }
     return null;
+  }
+
+  async getDiscoveryGender(userId: string): Promise<string | null> {
+    const draft = this.drafts.get(userId);
+    const gender = (draft?.publicPayload as
+      | { publicProfile?: { gender?: string } }
+      | undefined)?.publicProfile?.gender;
+    return gender ?? null;
   }
 
   async getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null> {
@@ -407,7 +517,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
           gender?: string; city?: string; educationLevel?: string;
           occupationCategory?: string; heightCm?: number | null;
         };
-        faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+        faithAndFamily?: {
+          marriageIntention?: string; values?: string[]; bio?: string;
+          hasGodfather?: boolean; isDeacon?: boolean | null; churchServiceActive?: boolean;
+        };
       };
       const gender = payload.publicProfile?.gender;
       if (gender !== wantedGender) continue;
@@ -423,6 +536,9 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
         marriageIntention: payload.faithAndFamily?.marriageIntention ?? null,
         values: payload.faithAndFamily?.values ?? [],
         bio: payload.faithAndFamily?.bio ?? null,
+        hasGodfather: payload.faithAndFamily?.hasGodfather ?? false,
+        isDeacon: payload.faithAndFamily?.isDeacon ?? null,
+        churchServiceActive: payload.faithAndFamily?.churchServiceActive ?? false,
         dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
       });
     }
@@ -459,20 +575,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     const key = `${input.actorUserId}:${input.targetUserId}`;
     if (this.decisions.has(key)) return null;
     this.decisions.set(key, input.decision);
-    if (input.decision !== "interested") return null;
-    const reciprocal = this.decisions.get(`${input.targetUserId}:${input.actorUserId}`);
-    if (reciprocal !== "interested") return null;
-    const a = input.actorUserId < input.targetUserId ? input.actorUserId : input.targetUserId;
-    const b = input.actorUserId < input.targetUserId ? input.targetUserId : input.actorUserId;
-    for (const connection of this.connections.values()) {
-      if (connection.userAId === a && connection.userBId === b) return null;
-    }
-    const id = randomUUID();
-    this.connections.set(id, {
-      id, userAId: a, userBId: b, status: "mutual_pending_admin",
-      createdAt: new Date(input.now), updatedAt: new Date(input.now),
-    });
-    return id;
+    // Track D2: a right swipe is a private shortlist entry only; it never
+    // creates a connection. Connections are born solely from an accepted
+    // intentional introduction request.
+    return null;
   }
 
   private valuesOnlyFields(userId: string): { code: string; dob: Buffer; city: string; gender: string } {
@@ -494,9 +600,15 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     const rows: UserConnectionRow[] = [];
     for (const c of this.connections.values()) {
       if (c.userAId !== userId && c.userBId !== userId) continue;
-      // Hidden from participants: pre-approval states. A rejection happens
-      // before either user is told a match existed, so it stays invisible.
-      if (c.status === "mutual_pending_admin" || c.status === "admin_rejected") continue;
+      // Hidden from participants: pre-acceptance / pre-approval states. A
+      // rejection happens before either user is told a match existed, so it
+      // stays invisible. The admin queue state ('mutual_confirmed_pending_admin')
+      // is also internal: participants are confirming, not awaiting admin.
+      if (
+        c.status === "mutual_pending_admin"
+        || c.status === "mutual_confirmed_pending_admin"
+        || c.status === "admin_rejected"
+      ) continue;
       const a = this.valuesOnlyFields(c.userAId);
       const b = this.valuesOnlyFields(c.userBId);
       rows.push({
@@ -520,7 +632,13 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     const c = this.connections.get(input.connectionId);
     if (!c) return null;
     if (c.userAId !== input.userId && c.userBId !== input.userId) return null;
-    if (c.status !== "admin_approved_pending_confirmation") return { status: c.status };
+    // Track D2: pair confirms FIRST (request_accepted_pending_confirmation),
+    // then admin acts LAST. Legacy admin-first flow retained for in-flight rows.
+    const confirmable =
+      c.status === "request_accepted_pending_confirmation"
+      || c.status === "admin_approved_pending_confirmation";
+    if (!confirmable) return { status: c.status };
+    const fromStatus = c.status;
     this.connectionConfirmations.set(`${input.connectionId}:${input.userId}`, input.confirm);
     if (!input.confirm) {
       c.status = "declined";
@@ -531,17 +649,22 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
       this.connectionConfirmations.get(`${c.id}:${c.userAId}`) === true &&
       this.connectionConfirmations.get(`${c.id}:${c.userBId}`) === true;
     if (both) {
+      if (fromStatus === "request_accepted_pending_confirmation") {
+        c.status = "mutual_confirmed_pending_admin";
+        c.updatedAt = new Date(input.now);
+        return { status: "mutual_confirmed_pending_admin" };
+      }
       c.status = "connected";
       c.updatedAt = new Date(input.now);
       return { status: "connected" };
     }
-    return { status: "admin_approved_pending_confirmation" };
+    return { status: fromStatus };
   }
 
   async listPendingConnections(): Promise<AdminPendingConnectionRow[]> {
     const rows: AdminPendingConnectionRow[] = [];
     for (const c of this.connections.values()) {
-      if (c.status !== "mutual_pending_admin") continue;
+      if (c.status !== "mutual_confirmed_pending_admin") continue;
       const a = this.valuesOnlyFields(c.userAId);
       const b = this.valuesOnlyFields(c.userBId);
       rows.push({
@@ -558,10 +681,31 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
 
   async decideConnection(input: { connectionId: string; approve: boolean; now: Date }): Promise<string | null> {
     const c = this.connections.get(input.connectionId);
-    if (!c || c.status !== "mutual_pending_admin") return null;
+    if (!c) return null;
+    // Track D2: administrator acts LAST on a pair both participants confirmed.
+    if (c.status === "mutual_confirmed_pending_admin") {
+      c.status = input.approve ? "connected" : "admin_rejected";
+      c.updatedAt = new Date(input.now);
+      if (input.approve) this.deletePairRecords(c.userAId, c.userBId);
+      return c.status;
+    }
+    // Legacy admin-first (mutual swipe) flow.
+    if (c.status !== "mutual_pending_admin") return null;
     c.status = input.approve ? "admin_approved_pending_confirmation" : "admin_rejected";
     c.updatedAt = new Date(input.now);
     return c.status;
+  }
+
+  /** Data minimization: remove swipe + request records for a connected pair. */
+  private deletePairRecords(a: string, b: string): void {
+    this.decisions.delete(`${a}:${b}`);
+    this.decisions.delete(`${b}:${a}`);
+    for (const [id, req] of this.introductionRequests) {
+      const pair =
+        (req.senderUserId === a && req.recipientUserId === b)
+        || (req.senderUserId === b && req.recipientUserId === a);
+      if (pair) this.introductionRequests.delete(id);
+    }
   }
 
   async getIntroductionThread(input: {
@@ -584,7 +728,10 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
             gender?: string; city?: string; educationLevel?: string;
             occupationCategory?: string; heightCm?: number | null;
           };
-          faithAndFamily?: { marriageIntention?: string; values?: string[]; bio?: string };
+          faithAndFamily?: {
+            marriageIntention?: string; values?: string[]; bio?: string;
+            hasGodfather?: boolean; isDeacon?: boolean | null; churchServiceActive?: boolean;
+          };
         }
       | undefined;
     const messages = [...this.introductionMessages.values()]
@@ -613,6 +760,9 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
         marriageIntention: payload?.faithAndFamily?.marriageIntention ?? null,
         values: payload?.faithAndFamily?.values ?? [],
         bio: payload?.faithAndFamily?.bio ?? null,
+        hasGodfather: payload?.faithAndFamily?.hasGodfather ?? false,
+        isDeacon: payload?.faithAndFamily?.isDeacon ?? null,
+        churchServiceActive: payload?.faithAndFamily?.churchServiceActive ?? false,
       },
       messages,
     };
@@ -662,6 +812,194 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     message.hidden = true;
     return true;
   }
+
+  // --- Track D2: intentional introduction requests ---
+
+  async createIntroductionRequest(input: {
+    senderUserId: string;
+    recipientUserId: string;
+    idempotencyKey: string;
+    now: Date;
+    ttlHours: number;
+  }): Promise<{ id: string; status: string } | { duplicate: true; id: string; status: string }> {
+    void input.idempotencyKey;
+    for (const req of this.introductionRequests.values()) {
+      if (req.senderUserId !== input.senderUserId || req.recipientUserId !== input.recipientUserId) continue;
+      if (req.status === "pending" || req.status === "accepted") {
+        return { duplicate: true, id: req.id, status: req.status };
+      }
+      // Terminal (declined/expired): replace with a fresh pending request.
+      req.status = "pending";
+      req.createdAt = new Date(input.now);
+      req.expiresAt = new Date(input.now.getTime() + input.ttlHours * 60 * 60 * 1000);
+      req.respondedAt = null;
+      return { id: req.id, status: req.status };
+    }
+    const req: MemoryIntroductionRequest = {
+      id: randomUUID(),
+      senderUserId: input.senderUserId,
+      recipientUserId: input.recipientUserId,
+      status: "pending",
+      createdAt: new Date(input.now),
+      expiresAt: new Date(input.now.getTime() + input.ttlHours * 60 * 60 * 1000),
+      respondedAt: null,
+    };
+    this.introductionRequests.set(req.id, req);
+    return { id: req.id, status: req.status };
+  }
+
+  async countRequestsSince(senderUserId: string, since: Date): Promise<number> {
+    let n = 0;
+    for (const req of this.introductionRequests.values()) {
+      if (req.senderUserId === senderUserId && req.createdAt >= since) n += 1;
+    }
+    return n;
+  }
+
+  private requestRow(req: MemoryIntroductionRequest, otherUserId: string): IntroductionRequestRow {
+    const user = this.users.get(otherUserId);
+    const draft = this.drafts.get(otherUserId);
+    const identity = this.identities.get(otherUserId);
+    const payload = draft?.publicPayload as
+      | {
+          publicProfile?: {
+            gender?: string; city?: string; educationLevel?: string;
+            occupationCategory?: string; heightCm?: number | null;
+          };
+          faithAndFamily?: {
+            marriageIntention?: string; values?: string[]; bio?: string;
+            hasGodfather?: boolean; isDeacon?: boolean | null; churchServiceActive?: boolean;
+          };
+        }
+      | undefined;
+    return {
+      id: req.id,
+      status: req.status,
+      senderUserId: req.senderUserId,
+      recipientUserId: req.recipientUserId,
+      createdAt: req.createdAt,
+      expiresAt: req.expiresAt,
+      other: {
+        userId: otherUserId,
+        publicCode: user?.publicCode ?? "",
+        dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+        gender: payload?.publicProfile?.gender ?? "female",
+        city: payload?.publicProfile?.city ?? "",
+        educationLevel: payload?.publicProfile?.educationLevel ?? null,
+        occupationCategory: payload?.publicProfile?.occupationCategory ?? null,
+        heightCm: payload?.publicProfile?.heightCm ?? null,
+        marriageIntention: payload?.faithAndFamily?.marriageIntention ?? null,
+        values: payload?.faithAndFamily?.values ?? [],
+        bio: payload?.faithAndFamily?.bio ?? null,
+        hasGodfather: payload?.faithAndFamily?.hasGodfather ?? false,
+        isDeacon: payload?.faithAndFamily?.isDeacon ?? null,
+        churchServiceActive: payload?.faithAndFamily?.churchServiceActive ?? false,
+      },
+    };
+  }
+
+  async listIncomingRequests(recipientUserId: string, now: Date): Promise<IntroductionRequestRow[]> {
+    const rows: IntroductionRequestRow[] = [];
+    for (const req of this.introductionRequests.values()) {
+      if (req.recipientUserId !== recipientUserId) continue;
+      if (req.status !== "pending" || req.expiresAt <= now) continue;
+      rows.push(this.requestRow(req, req.senderUserId));
+    }
+    return rows.sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime());
+  }
+
+  async listOutgoingRequests(senderUserId: string, now: Date): Promise<IntroductionRequestRow[]> {
+    const rows: IntroductionRequestRow[] = [];
+    for (const req of this.introductionRequests.values()) {
+      if (req.senderUserId !== senderUserId) continue;
+      // Expired rows are dropped; declined rows are included so the SERVICE
+      // can mask them as still 'pending' (soft decline — never tell the sender).
+      if (req.status === "expired") continue;
+      if (req.expiresAt <= now) continue;
+      rows.push(this.requestRow(req, req.recipientUserId));
+    }
+    return rows.sort((x, y) => y.createdAt.getTime() - x.createdAt.getTime());
+  }
+
+  async respondToRequest(input: {
+    requestId: string;
+    recipientUserId: string;
+    accept: boolean;
+    now: Date;
+  }): Promise<{ status: string; connectionId: string | null } | null> {
+    const req = this.introductionRequests.get(input.requestId);
+    if (!req || req.recipientUserId !== input.recipientUserId) return null;
+    if (req.status !== "pending" || req.expiresAt <= input.now) return null;
+
+    if (!input.accept) {
+      req.status = "declined";
+      req.respondedAt = new Date(input.now);
+      return { status: "declined", connectionId: null };
+    }
+
+    req.status = "accepted";
+    req.respondedAt = new Date(input.now);
+    const a = req.senderUserId < req.recipientUserId ? req.senderUserId : req.recipientUserId;
+    const b = req.senderUserId < req.recipientUserId ? req.recipientUserId : req.senderUserId;
+    let conn = [...this.connections.values()].find((c) => c.userAId === a && c.userBId === b);
+    if (!conn) {
+      conn = {
+        id: randomUUID(),
+        userAId: a,
+        userBId: b,
+        status: "request_accepted_pending_confirmation",
+        createdAt: new Date(input.now),
+        updatedAt: new Date(input.now),
+      };
+      this.connections.set(conn.id, conn);
+    } else {
+      conn.status = "request_accepted_pending_confirmation";
+      conn.updatedAt = new Date(input.now);
+    }
+    // Reset any confirmations from a prior attempt.
+    for (const key of [`${conn.id}:${a}`, `${conn.id}:${b}`]) {
+      this.connectionConfirmations.delete(key);
+    }
+    return { status: "accepted", connectionId: conn.id };
+  }
+
+  async purgeExpiredIntroductionData(
+    now: Date,
+  ): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }> {
+    let expiredRequests = 0;
+    for (const [id, req] of this.introductionRequests) {
+      if ((req.status === "pending" || req.status === "declined") && req.expiresAt <= now) {
+        this.introductionRequests.delete(id);
+        expiredRequests += 1;
+      }
+    }
+    let deletedRequests = 0;
+    let deletedSwipes = 0;
+    for (const c of this.connections.values()) {
+      if (c.status !== "connected") continue;
+      const before = this.introductionRequests.size;
+      for (const [id, req] of this.introductionRequests) {
+        const pair =
+          (req.senderUserId === c.userAId && req.recipientUserId === c.userBId)
+          || (req.senderUserId === c.userBId && req.recipientUserId === c.userAId);
+        if (pair) this.introductionRequests.delete(id);
+      }
+      deletedRequests += before - this.introductionRequests.size;
+      if (this.decisions.delete(`${c.userAId}:${c.userBId}`)) deletedSwipes += 1;
+      if (this.decisions.delete(`${c.userBId}:${c.userAId}`)) deletedSwipes += 1;
+    }
+    return { expiredRequests, deletedRequests, deletedSwipes };
+  }
+}
+
+interface MemoryIntroductionRequest {
+  id: string;
+  senderUserId: string;
+  recipientUserId: string;
+  status: string;
+  createdAt: Date;
+  expiresAt: Date;
+  respondedAt: Date | null;
 }
 
 interface MemoryConnection {

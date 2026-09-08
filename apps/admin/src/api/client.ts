@@ -9,12 +9,14 @@ import {
   adminQueueResponseSchema,
   adminSessionSchema,
   adminSubmissionDetailSchema,
+  funnelMetricsSchema,
   type AdminConnectionDecisionResponse,
   type AdminDecisionRequest,
   type AdminPendingConnection,
   type AdminQueueItem,
   type AdminSession,
   type AdminSubmissionDetail,
+  type FunnelMetrics,
 } from "@kidan/contracts";
 
 export class AdminApiError extends Error {
@@ -105,6 +107,12 @@ export class AdminApiClient {
   async listQueue(): Promise<AdminQueueItem[]> {
     const data = await this.request("GET", "/v1/admin/submissions");
     return adminQueueResponseSchema.parse(data).items;
+  }
+
+  /** Track E2: aggregate pilot funnel counts (no identity data). */
+  async getFunnelMetrics(): Promise<FunnelMetrics> {
+    const data = await this.request("GET", "/v1/admin/metrics");
+    return funnelMetricsSchema.parse(data);
   }
 
   async getSubmission(publicCode: string): Promise<AdminSubmissionDetail> {

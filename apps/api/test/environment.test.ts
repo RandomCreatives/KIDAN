@@ -8,6 +8,7 @@ describe("runtime environment", () => {
       API_HOST: "0.0.0.0",
       API_PORT: 4000,
       ENABLE_REAL_SUBMISSIONS: "false",
+      PILOT_CAPACITY: 100,
     });
   });
 

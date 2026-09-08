@@ -15,6 +15,9 @@ const base: DiscoveryProfile = {
   marriageIntention: "teklil",
   values: ["active_faith", "honesty", "family_oriented"],
   bio: "A values-only bio used for the card adapter test.",
+  hasGodfather: true,
+  isDeacon: null,
+  churchServiceActive: true,
   verified: true,
   photoMode: "values_only",
 };

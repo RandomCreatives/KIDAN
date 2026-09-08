@@ -5,9 +5,17 @@ import { useAuth } from "../auth/useAuth.js";
 import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { IntroductionScreen } from "./IntroductionScreen";
-import { CheckIcon, ChevronRightIcon, ClockIcon, LockIcon, ShieldCheckIcon, XIcon } from "./Icons";
+import { CheckIcon, ChevronRightIcon, ClockIcon, LockIcon, MailIcon, ShieldCheckIcon, XIcon } from "./Icons";
 
 const STATUS_COPY: Record<string, { title: string; detail: string }> = {
+  request_accepted_pending_confirmation: {
+    title: "Request accepted",
+    detail: "They accepted your introduction. Both of you confirm before an administrator reviews.",
+  },
+  mutual_confirmed_pending_admin: {
+    title: "With the administrator",
+    detail: "You both confirmed. An administrator will review before the introduction opens.",
+  },
   admin_approved_pending_confirmation: {
     title: "Final confirmation",
     detail: "An administrator approved this introduction. Confirm when you are ready to proceed.",
@@ -22,7 +30,7 @@ const STATUS_COPY: Record<string, { title: string; detail: string }> = {
   },
 };
 
-export function ConnectionsScreen() {
+export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => void } = {}) {
   const { realSubmissionsEnabled, csrfToken } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
@@ -80,8 +88,20 @@ export function ConnectionsScreen() {
       <section className="page-intro">
         <span className="section-kicker">Private by design</span>
         <h1>Your connections</h1>
-        <p>Only mutual interest appears here. One-sided decisions are never shown, and no identity is shared until all gates open.</p>
+        <p>Only accepted introductions reach here. One-sided decisions are never shown, and no identity is shared until everyone confirms and an administrator approves.</p>
       </section>
+
+      {realSubmissionsEnabled && (
+        <button type="button" className="status-card pending-card requests-entry" onClick={onOpenRequests}>
+          <div className="status-icon amber"><MailIcon /></div>
+          <div className="status-copy">
+            <span>Introductions</span>
+            <strong>Review incoming requests &amp; your shortlist</strong>
+            <p>Send up to 5 deliberate requests a day. Declines are silent and requests expire after 72 hours.</p>
+          </div>
+          <ChevronRightIcon size={19} />
+        </button>
+      )}
 
       {realSubmissionsEnabled ? (
         connections === null ? (
@@ -115,7 +135,7 @@ export function ConnectionsScreen() {
                   <strong>{labelFor(connection)}</strong>
                   <p>{copy.detail}</p>
                 </div>
-                {connection.status === "admin_approved_pending_confirmation" && !connection.iConfirmed && (
+                {confirmable(connection.status) && !connection.iConfirmed && (
                   <div className="connection-actions">
                     <button
                       type="button"
@@ -136,7 +156,7 @@ export function ConnectionsScreen() {
                     </button>
                   </div>
                 )}
-                {connection.status === "admin_approved_pending_confirmation" && connection.iConfirmed && (
+                {confirmable(connection.status) && connection.iConfirmed && (
                   <div className="status-copy"><span className="waiting-note">Waiting for their confirmation</span></div>
                 )}
                 {connection.status === "connected" && <ChevronRightIcon size={19} />}
@@ -167,6 +187,12 @@ export function ConnectionsScreen() {
       <div className="quiet-note"><LockIcon size={17} /><p>Kidan will never place a name, phone number, or profile detail in a bot notification.</p></div>
     </main>
   );
+}
+
+/** States in which a participant can still confirm or decline. */
+function confirmable(status: string): boolean {
+  return status === "request_accepted_pending_confirmation"
+    || status === "admin_approved_pending_confirmation";
 }
 
 /** Values-only label for the other participant — never a name. */

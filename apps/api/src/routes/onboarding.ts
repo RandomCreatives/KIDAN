@@ -60,6 +60,7 @@ export const onboardingRoutes: FastifyPluginAsync<OnboardingRouteOptions> = asyn
         "DRAFT_ALREADY_SUBMITTED",
         "IDENTITY_INCOMPLETE",
         "ADULT_ELIGIBILITY_REQUIRED",
+        "PILOT_CAPACITY_REACHED",
         "VERIFICATION_PHOTO_REQUIRED",
         "VERIFICATION_PHOTO_INVALID",
       ]);

@@ -403,6 +403,7 @@ describe("KidanApiClient", () => {
           occupationCategory: "Healthcare", educationLevel: "bachelors", heightCm: 163,
           faithTradition: "ethiopian_orthodox_tewahedo", marriageIntention: "teklil",
           values: ["active_faith", "honesty"], bio: "A values-only card bio.", verified: true,
+          hasGodfather: true, isDeacon: null, churchServiceActive: true,
           photoMode: "values_only",
         },
       ],
@@ -476,6 +477,7 @@ describe("KidanApiClient", () => {
         occupationCategory: "Healthcare", educationLevel: "bachelors", heightCm: 163,
         faithTradition: "ethiopian_orthodox_tewahedo", marriageIntention: "teklil",
         values: ["active_faith", "honesty"], bio: "A values-only card bio.", verified: true,
+        hasGodfather: true, isDeacon: null, churchServiceActive: true,
         photoMode: "values_only",
       },
       messages: [

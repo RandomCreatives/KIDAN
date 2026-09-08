@@ -34,6 +34,11 @@ export interface OnboardingFormState {
     wantsChildren: "yes" | "no" | "open_to_discussion";
     values: ValueTag[];
     bio: string;
+    // Pilot faith basics (Track D2).
+    hasGodfather: boolean;
+    isDeacon: boolean | null; // men only; null = not asked (women)
+    churchServiceActive: boolean;
+    hasDisability: boolean;
   };
   partnerPreferences: {
     ageMin: number;
@@ -85,6 +90,10 @@ export const initialOnboardingState: OnboardingFormState = {
     wantsChildren: "yes",
     values: [],
     bio: "",
+    hasGodfather: false,
+    isDeacon: null,
+    churchServiceActive: false,
+    hasDisability: false,
   },
   partnerPreferences: {
     ageMin: 25,
@@ -136,6 +145,10 @@ export const syntheticOnboardingState: OnboardingFormState = {
     wantsChildren: "yes",
     values: ["active_faith", "family_oriented", "communication", "compassion"],
     bio: "I value a peaceful home, thoughtful communication, and a life grounded in faith and service.",
+    hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
   },
   partnerPreferences: {
     ageMin: 28,

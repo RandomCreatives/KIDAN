@@ -152,8 +152,49 @@ export interface PersistenceRepository {
     now: Date;
   }): Promise<SubmissionRecord>;
   saveVerificationPhoto(userId: string, input: VerificationPhotoInput): Promise<void>;
+  /**
+   * Overwrites an existing verification photo's ciphertext in place — used at
+   * approval time to swap the full-resolution identity photo for a small
+   * thumbnail (Option A of the retention policy). Unlike saveVerificationPhoto
+   * it does NOT reset approved_at/deleted_at.
+   */
+  replaceVerificationPhoto(userId: string, input: { photoCiphertext: Buffer; mediaType: string }): Promise<void>;
   hasVerificationPhoto(userId: string): Promise<boolean>;
   getVerificationPhoto(userId: string): Promise<VerificationPhotoRecord | null>;
+  /**
+   * Number of candidates already in the pilot pipeline (submitted = awaiting
+   * review or approved/active). Track E1 uses it as the admission valve so the
+   * controlled cohort stays at its configured size.
+   */
+  countAdmittedCandidates(): Promise<number>;
+  /**
+   * Aggregate pilot-funnel counts (Track E2). Returns counts ONLY — never rows,
+   * identities, or per-user data — so operators can monitor the pilot without
+   * touching or logging any personal data.
+   */
+  getFunnelCounts(): Promise<{
+    submitted: number;
+    approved: number;
+    shortlisted: number;
+    requestsPending: number;
+    requestsAccepted: number;
+    requestsDeclined: number;
+    requestsExpired: number;
+    connectionsPendingAdmin: number;
+    connectionsConnected: number;
+    connectionsDeclined: number;
+    connectionsRejected: number;
+  }>;
+  /** The current user lifecycle status, or null when no such user. */
+  getUserStatus(userId: string): Promise<UserRecord["status"] | null>;
+  /**
+   * Append-only, PII-free operational signal (Track E3). Used to detect
+   * elevated auth-failures / server errors so the operator can be alerted.
+   * Never writes request bodies, headers, or identity data.
+   */
+  recordOperationalEvent(event: "auth_failure" | "server_error", now: Date): Promise<void>;
+  /** Count of operational events (any of `events`) recorded at/after `since`. */
+  countOperationalEventsSince(events: ("auth_failure" | "server_error")[], since: Date): Promise<number>;
   /** Returns users with approved photos whose 30-day retention window has elapsed. */
   findVerificationPhotosDueForDeletion(now: Date, retentionDays: number): Promise<string[]>;
   deleteVerificationPhoto(userId: string, now: Date): Promise<boolean>;
@@ -164,6 +205,12 @@ export interface PersistenceRepository {
   getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null>;
   /** Look up a submitted user by their public code (KD-XXXXXX); null if none. */
   findUserIdByPublicCode(publicCode: string): Promise<string | null>;
+  /**
+   * The discovery profile gender for a user ('male'|'female'), or null when the
+   * user has no discovery profile. Used to reject same-gender interest so a
+   * one-sided swipe can never register as an interest or reach a shortlist.
+   */
+  getDiscoveryGender(userId: string): Promise<string | null>;
   /**
    * Records an admin decision: stamps profile_review (latest), appends an
    * admin_review audit row, and applies the lifecycle side effect:
@@ -264,6 +311,73 @@ export interface PersistenceRepository {
   listRecentIntroductionMessages(limit: number): Promise<AdminIntroductionMessageRow[]>;
   /** Admin: hides a single introduction message by id. */
   hideIntroductionMessage(messageId: string): Promise<boolean>;
+  // --- Track D2: intentional introduction requests ---
+  /**
+   * Creates a pending introduction request from the sender to the recipient.
+   * Returns 'created' with the new id, or 'duplicate' when a non-terminal
+   * request already exists for this ordered pair. A prior declined/expired
+   * request for the pair is replaced. Does NOT enforce the rate limit
+   * (caller counts via countRequestsSince) or the 72h TTL (set by caller/DB).
+   */
+  createIntroductionRequest(input: {
+    senderUserId: string;
+    recipientUserId: string;
+    idempotencyKey: string;
+    now: Date;
+    ttlHours: number;
+  }): Promise<{ id: string; status: string } | { duplicate: true; id: string; status: string }>;
+  /** Number of requests the sender created at/after `since` (rolling window). */
+  countRequestsSince(senderUserId: string, since: Date): Promise<number>;
+  /** Pending requests addressed to the recipient (not expired), sender summaries. */
+  listIncomingRequests(recipientUserId: string, now: Date): Promise<IntroductionRequestRow[]>;
+  /** Requests the sender created, excluding declined (soft) and expired. */
+  listOutgoingRequests(senderUserId: string, now: Date): Promise<IntroductionRequestRow[]>;
+  /**
+   * Recipient responds to a pending, unexpired request addressed to them.
+   * Accept -> request 'accepted' and a connection in
+   * 'request_accepted_pending_confirmation' (reused if one already exists for
+   * the pair); decline -> request 'declined'. Returns the resulting request
+   * status and connection id (null on decline), or null when not actionable.
+   */
+  respondToRequest(input: {
+    requestId: string;
+    recipientUserId: string;
+    accept: boolean;
+    now: Date;
+  }): Promise<{ status: string; connectionId: string | null } | null>;
+  /**
+   * Retention: marks pending requests past their expiry as 'expired' and
+   * deletes swipe/request records for pairs that have reached 'connected'.
+   * Returns counts for logging (no user-identifying data).
+   */
+  purgeExpiredIntroductionData(now: Date): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }>;
+}
+
+/** An introduction request joined with the OTHER party's values-only profile. */
+export interface IntroductionRequestRow {
+  id: string;
+  status: string;
+  senderUserId: string;
+  recipientUserId: string;
+  createdAt: Date;
+  expiresAt: Date;
+  /** Values-only profile of the party the viewer is reading about. */
+  other: {
+    userId: string;
+    publicCode: string;
+    dateOfBirthCiphertext: Buffer;
+    gender: string;
+    city: string;
+    educationLevel: string | null;
+    occupationCategory: string | null;
+    heightCm: number | null;
+    marriageIntention: string | null;
+    values: string[];
+    bio: string | null;
+    hasGodfather: boolean;
+    isDeacon: boolean | null;
+    churchServiceActive: boolean;
+  };
 }
 
 /** One introduction message as stored (sender id resolved to fromMe by the service). */
@@ -292,6 +406,9 @@ export interface IntroductionThreadRow {
     marriageIntention: string | null;
     values: string[];
     bio: string | null;
+    hasGodfather: boolean;
+    isDeacon: boolean | null;
+    churchServiceActive: boolean;
   };
   messages: IntroductionMessageRow[];
 }
@@ -352,6 +469,9 @@ export interface DiscoveryCandidateRow {
   marriageIntention: string | null;
   values: string[];
   bio: string | null;
+  hasGodfather: boolean;
+  isDeacon: boolean | null;
+  churchServiceActive: boolean;
   dateOfBirthCiphertext: Buffer;
 }
 

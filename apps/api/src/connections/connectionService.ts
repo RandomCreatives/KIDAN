@@ -200,6 +200,9 @@ export class ConnectionService {
       marriageIntention: (row.other.marriageIntention ?? "teklil") as DiscoveryProfile["marriageIntention"],
       values: row.other.values as ValueTag[],
       bio: row.other.bio ?? "",
+      hasGodfather: row.other.hasGodfather ?? false,
+      isDeacon: row.other.isDeacon ?? null,
+      churchServiceActive: row.other.churchServiceActive ?? false,
       verified: true,
       photoMode: "values_only",
     };

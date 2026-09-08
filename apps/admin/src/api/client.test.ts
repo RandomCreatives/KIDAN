@@ -66,6 +66,26 @@ describe("AdminApiClient", () => {
     expect(items[0]!.publicCode).toBe("KD-2A3B4C");
   });
 
+  it("parses funnel metrics into validated aggregate counts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          data: {
+            cohort: { submitted: 4, approved: 2 },
+            discovery: { shortlisted: 7 },
+            requests: { pending: 3, accepted: 2, declined: 1, expired: 0 },
+            connections: { pendingAdmin: 1, connected: 1, declined: 0, rejected: 0 },
+          },
+        }),
+      ),
+    );
+    const client = new AdminApiClient("/api");
+    const metrics = await client.getFunnelMetrics();
+    expect(metrics.cohort).toEqual({ submitted: 4, approved: 2 });
+    expect(metrics.requests.accepted).toBe(2);
+  });
+
   it("lists pending connections as values-only pairs", async () => {
     vi.stubGlobal(
       "fetch",

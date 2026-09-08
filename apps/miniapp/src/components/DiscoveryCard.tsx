@@ -69,7 +69,7 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      aria-label={`Anonymous profile, age ${profile.age}, ${profile.city}`}
+      aria-label={`Anonymous ${profile.gender} profile, age ${profile.age}, ${profile.city}`}
     >
       {interactive && dragX !== 0 && (
         <div className={`swipe-stamp ${dragX > 0 ? "approve" : "pass"}`}>
@@ -92,6 +92,8 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
         <div className="visual-caption">
           <div className="profile-title-row">
             <h2>{profile.age}</h2>
+            <span className="dot">•</span>
+            <span className="gender-label">{profile.gender}</span>
             <span className="dot">•</span>
             <span>{profile.city}</span>
           </div>

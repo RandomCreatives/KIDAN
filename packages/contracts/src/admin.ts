@@ -101,3 +101,34 @@ export const candidateReviewStatusSchema = z.object({
   decidedAt: z.string().datetime().nullable(),
 });
 export type CandidateReviewStatus = z.infer<typeof candidateReviewStatusSchema>;
+
+/**
+ * Privacy-safe pilot funnel metrics (Track E2). Counts ONLY — never identities,
+ * profiles, or any per-user data, never third-party analytics. Each number is
+ * an aggregate over the whole cohort at this instant.
+ */
+export const funnelMetricsSchema = z.object({
+  cohort: z.object({
+    /** Candidates who have submitted onboarding. */
+    submitted: z.number().int().nonnegative(),
+    /** Candidate profiles an administrator has approved (active). */
+    approved: z.number().int().nonnegative(),
+  }),
+  discovery: z.object({
+    /** Total interested (right-swipe) decisions recorded — private shortlist adds. */
+    shortlisted: z.number().int().nonnegative(),
+  }),
+  requests: z.object({
+    pending: z.number().int().nonnegative(),
+    accepted: z.number().int().nonnegative(),
+    declined: z.number().int().nonnegative(),
+    expired: z.number().int().nonnegative(),
+  }),
+  connections: z.object({
+    pendingAdmin: z.number().int().nonnegative(),
+    connected: z.number().int().nonnegative(),
+    declined: z.number().int().nonnegative(),
+    rejected: z.number().int().nonnegative(),
+  }),
+});
+export type FunnelMetrics = z.infer<typeof funnelMetricsSchema>;

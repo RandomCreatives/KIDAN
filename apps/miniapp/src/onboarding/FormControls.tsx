@@ -11,11 +11,19 @@ export function StepHeading({ eyebrow, title, description }: { eyebrow: string; 
   );
 }
 
-export function VisibilityPill({ visibility }: { visibility: "admin" | "public" }) {
+export type FieldVisibility = "admin" | "public" | "matching";
+
+export function VisibilityPill({ visibility }: { visibility: FieldVisibility }) {
+  const label =
+    visibility === "admin"
+      ? "Admin only"
+      : visibility === "matching"
+        ? "Private · matching only"
+        : "Shown in discovery";
   return (
     <span className={`visibility-pill ${visibility}`}>
-      {visibility === "admin" ? <LockIcon size={12} /> : <EyeIcon size={12} />}
-      {visibility === "admin" ? "Admin only" : "Shown in discovery"}
+      {visibility === "public" ? <EyeIcon size={12} /> : <LockIcon size={12} />}
+      {label}
     </span>
   );
 }
@@ -23,7 +31,7 @@ export function VisibilityPill({ visibility }: { visibility: "admin" | "public" 
 export function Field({ label, hint, visibility, children }: {
   label: string;
   hint?: string;
-  visibility?: "admin" | "public";
+  visibility?: FieldVisibility;
   children: ReactNode;
 }) {
   return (

@@ -47,6 +47,8 @@ export const apiErrorCodeSchema = z.enum([
   "PHOTO_TOO_LARGE",
   "PHONE_ALREADY_REGISTERED",
   "ADULT_ELIGIBILITY_REQUIRED",
+  // Pilot admission valve (Track E1): the controlled cohort is full.
+  "PILOT_CAPACITY_REACHED",
   "INVALID_ONBOARDING_STATE",
   "MALFORMED_INIT_DATA",
   "INVALID_SIGNATURE",
@@ -56,6 +58,12 @@ export const apiErrorCodeSchema = z.enum([
   "INTERNAL_ERROR",
   "INVALID_RESPONSE",
   "SERVICE_NOT_READY",
+  // Track D2 intentional requests.
+  "TARGET_NOT_FOUND",
+  "NOT_SHORTLISTED",
+  "INTENTION_RATE_LIMIT",
+  "REQUEST_ALREADY_EXISTS",
+  "REQUEST_NOT_FOUND",
 ]);
 
 export const apiErrorSchema = z.object({

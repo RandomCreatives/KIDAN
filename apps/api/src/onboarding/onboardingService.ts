@@ -10,13 +10,16 @@ import {
   type PartialPublicOnboardingPayload,
   type PublicOnboardingPayload,
 } from "@kidan/contracts";
+import { PILOT_AGE_MAX, PILOT_AGE_MIN } from "@kidan/contracts";
 import type { CandidateReviewStatus, DataExportResponse } from "@kidan/contracts";
 import type { PersistenceRepository, DraftRecord, SubmissionConsent, VerificationPhotoRecord } from "../persistence/types.js";
 import { SubmissionStateError } from "../persistence/types.js";
 import { IdentityCipher } from "../security/crypto.js";
 
 const POLICY_VERSION = "2026-08-12.v1";
-const VERIFICATION_PHOTO_RETENTION_DAYS = 30;
+// Option A: after approval the full-res photo is replaced by a small thumbnail;
+// the retained copy (thumbnail) is wiped 14 days after approval (dispute window).
+const VERIFICATION_PHOTO_RETENTION_DAYS = 14;
 const ALLOWED_PHOTO_MEDIA = new Map<string, string>([
   ["jpeg", "image/jpeg"],
   ["png", "image/png"],
@@ -37,6 +40,8 @@ export class OnboardingService {
     private readonly repository: PersistenceRepository,
     private readonly identityCipher: IdentityCipher,
     private readonly realSubmissionsEnabledFlag: boolean,
+    /** Track E1 pilot admission valve: max candidates in the cohort. */
+    private readonly maxPilotCandidates: number = 100,
   ) {}
 
   /** Whether the deployment accepts real profile submissions (the pilot switch). */
@@ -142,12 +147,20 @@ export class OnboardingService {
     if (current?.submittedAt) throw new SubmissionStateError("DRAFT_ALREADY_SUBMITTED");
     const identity = privateIdentitySaveRequestSchema.parse(input);
     const birthDate = new Date(`${identity.dateOfBirth}T00:00:00.000Z`);
-    const adultCutoff = new Date(Date.UTC(
-      now.getUTCFullYear() - 18,
+    // Pilot eligibility window: aged 21–45 inclusive (PILOT_AGE_MIN..PILOT_AGE_MAX).
+    const youngerThanMin = new Date(Date.UTC(
+      now.getUTCFullYear() - PILOT_AGE_MIN,
       now.getUTCMonth(),
       now.getUTCDate(),
     ));
-    if (birthDate > adultCutoff) throw new SubmissionStateError("ADULT_ELIGIBILITY_REQUIRED");
+    const olderThanMax = new Date(Date.UTC(
+      now.getUTCFullYear() - PILOT_AGE_MAX - 1,
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    ));
+    if (birthDate > youngerThanMin || birthDate <= olderThanMax) {
+      throw new SubmissionStateError("ADULT_ELIGIBILITY_REQUIRED");
+    }
     const normalizedPhone = identity.phoneNumber.replace(/[\s()-]/g, "");
     await this.repository.savePrivateIdentity(userId, {
       legalNameCiphertext: this.identityCipher.encrypt(identity.fullName.trim(), `${userId}:legal-name`),
@@ -161,6 +174,20 @@ export class OnboardingService {
     if (!this.realSubmissionsEnabledFlag) throw new SubmissionStateError("REAL_SUBMISSIONS_DISABLED");
     const draft = await this.repository.getDraft(userId);
     if (!draft) throw new SubmissionStateError("DRAFT_NOT_FOUND");
+    // Track E1 admission valve: only block NEW admissions. A candidate is part
+    // of the cohort if they are already awaiting review/active (status
+    // profile_pending/active — counted in the cohort) OR have reached a review
+    // decision (review status set, e.g. changes_requested re-open). A brand-new
+    // candidate is held out when the controlled cohort is full.
+    const [status, reviewState] = await Promise.all([
+      this.repository.getUserStatus(userId),
+      this.repository.getCandidateReviewState(userId),
+    ]);
+    const alreadyAdmitted =
+      status === "profile_pending" || status === "active" || reviewState?.reviewStatus != null;
+    if (!alreadyAdmitted && (await this.repository.countAdmittedCandidates()) >= this.maxPilotCandidates) {
+      throw new SubmissionStateError("PILOT_CAPACITY_REACHED");
+    }
     publicOnboardingPayloadSchema.parse(draft.publicPayload);
     if (!(await this.repository.hasCompletePrivateIdentity(userId))) {
       throw new SubmissionStateError("IDENTITY_INCOMPLETE");

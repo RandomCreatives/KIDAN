@@ -111,7 +111,11 @@ describe("onboarding routes", () => {
             wantsChildren: "yes",
             values: ["active_faith", "honesty", "family_oriented"],
             bio: "A faithful and intentional life partner.",
-          },
+              hasGodfather: true,
+    isDeacon: false,
+    churchServiceActive: true,
+    hasDisability: false,
+},
         },
       } satisfies OnboardingProgressPatch,
     });
