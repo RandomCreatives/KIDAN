@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Kidan — Feedback &amp; help (preview)</title>
+<style>
+  :root { --ink:#20342c; --ink-soft:#6b7d74; --line:rgba(30,57,48,.14); --surface:#fff; --surface-2:#f6f3ed; --brand:#0f3d2e; --green:#2a5747; --red:#a4322c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--surface-2); color:var(--ink); display:flex; flex-wrap:wrap; gap:24px; justify-content:center; padding:24px; }
+  .switcher { width:100%; text-align:center; margin-bottom:4px; }
+  .switcher button { appearance:none; border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 16px; font:inherit; font-size:14px; font-weight:650; cursor:pointer; margin:0 6px; }
+  .switcher button.on { background:var(--brand); color:#f6efdd; border-color:var(--brand); }
+  .phone { width:360px; max-width:96vw; background:var(--surface); border-radius:18px; box-shadow:0 16px 40px rgba(0,0,0,.12); overflow:hidden; }
+  .topbar { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--brand); color:#f6efdd; }
+  .topbar .bx { font-size:18px; width:24px; text-align:center; }
+  .topbar .t { font-weight:700; }
+  .topbar .sub { font-size:11px; opacity:.85; }
+  .brand-cross { color:#e6b64c; }
+  .content { padding:16px; }
+  /* Candidate form */
+  .panel { background:#fff; border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .panel h2 { margin:0 0 10px; font-size:15px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { appearance:none; border:1px solid rgba(30,57,48,.2); background:transparent; border-radius:999px; padding:8px 13px; font:inherit; font-size:13px; font-weight:650; cursor:pointer; }
+  .chip.on { background:rgba(42,87,71,.12); border-color:rgba(42,87,71,.55); }
+  .box { width:100%; border:1px solid rgba(30,57,48,.15); border-radius:13px; padding:12px 13px; font:inherit; font-size:13px; line-height:1.55; resize:vertical; background:#fff; min-height:120px; }
+  .count { text-align:right; font-size:12px; color:#a2a6a3; margin-top:6px; }
+  .send { width:100%; min-height:48px; border-radius:99px; border:0; background:var(--green); color:#fff; font:inherit; font-size:13px; font-weight:700; cursor:pointer; box-shadow:0 10px 25px rgba(31,75,60,.2); }
+  /* Admin drawer */
+  .drawer { border-right:1px solid var(--line); min-height:520px; }
+  .dhead { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line); }
+  .dhead h2 { margin:0; font-size:16px; }
+  .badge { background:var(--green); color:#fff; border-radius:999px; font-size:11px; padding:1px 8px; }
+  .list { list-style:none; margin:0; padding:0; }
+  .item { padding:14px 16px; border-bottom:1px solid var(--line); }
+  .item.unread { background:rgba(15,61,46,.05); }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .kind { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; padding:2px 8px; border-radius:999px; background:rgba(15,61,46,.1); color:var(--brand); }
+  .code { font-weight:700; letter-spacing:.4px; font-size:12px; }
+  .date { font-size:11px; color:var(--ink-soft); margin-left:auto; }
+  .item p { margin:8px 0 0; font-size:13px; line-height:1.45; }
+  .mark { margin-top:8px; font-size:11px; color:var(--ink-soft); }
+  .mark a { font-size:12px; color:var(--green); font-weight:650; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="switcher">
+  <button id="sw1" class="on" onclick="show('cand')">Candidate: Feedback &amp; help</button>
+  <button id="sw2" onclick="show('admin')">Operator: Feedback drawer</button>
+</div>
+
+<!-- Candidate feedback form -->
+<div class="phone" id="candPane">
+  <div class="topbar">
+    <span class="bx">‹</span><span class="brand-cross">✦</span>
+    <div class="t">Feedback &amp; help</div>
+  </div>
+  <div class="content">
+    <div class="panel">
+      <h2>What's this about?</h2>
+      <div class="chips">
+        <button class="chip on" onclick="setKind('Feedback',this)">Feedback</button>
+        <button class="chip" onclick="setKind('Question',this)">Question</button>
+        <button class="chip" onclick="setKind('Report',this)">Report a concern</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Your message</h2>
+      <textarea class="box" id="msgBox" oninput="cnt()" placeholder="Tell us what's on your mind. This goes privately to the operator."></textarea>
+      <div class="count" id="cnt">0/4000</div>
+    </div>
+    <button class="send" onclick="send()">Send to operator</button>
+    <p id="sentMsg" style="text-align:center;color:#2a5747;font-weight:700;display:none;margin-top:14px">✓ Sent privately to the operator</p>
+  </div>
+</div>
+
+<!-- Admin feedback drawer -->
+<div class="phone drawer" id="adminPane" style="display:none">
+  <div class="topbar">
+    <span class="bx">☰</span><span class="brand-cross">✦</span>
+    <div class="t">Kidan <span class="sub">Review Console</span></div>
+  </div>
+  <div class="dhead"><h2>Feedback</h2><span class="badge" id="ub">2</span></div>
+  <ul class="list" id="list"></ul>
+</div>
+
+<script>
+let kind="Feedback";
+function setKind(k,el){kind=k;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));el.classList.add('on');}
+function cnt(){document.getElementById('cnt').textContent=document.getElementById('msgBox').value.length+'/4000';}
+function send(){document.getElementById('sentMsg').style.display='block';}
+function show(w){
+  document.getElementById('sw1').classList.toggle('on',w==='cand');
+  document.getElementById('sw2').classList.toggle('on',w==='admin');
+  document.getElementById('candPane').style.display=w==='cand'?'block':'none';
+  document.getElementById('adminPane').style.display=w==='admin'?'block':'none';
+}
+const items=[
+  {k:'Report',code:'KD-1F3K9',d:'Aug 10',b:'The verification photo upload kept failing on my phone. Can you help?',read:false},
+  {k:'Feedback',code:'KD-9B2QM',d:'Aug 9',b:'Really loving the thoughtful questions in onboarding. Felt respectful.',read:false},
+  {k:'Comment',code:'KD-4T7LP',d:'Aug 8',b:'How do I update my city after moving?',read:true},
+  {k:'Report',code:'KD-7W5RJ',d:'Aug 6',b:'A profile seemed to share contact details early.',read:true},
+];
+function render(){
+  let html='';
+  items.forEach((it,i)=>{
+    html+='<li class="item '+(it.read?'':'unread')+'"><div class="row"><span class="kind">'+it.k+'</span><span class="code">'+it.code+'</span><span class="date">'+it.d+'</span></div><p>'+it.b+'</p><div class="mark">'+(it.read?'Read':'<a onclick="mark('+i+')">Mark read</a>')+'</div></li>';
+  });
+  document.getElementById('list').innerHTML=html;
+  document.getElementById('ub').textContent=items.filter(x=>!x.read).length;
+}
+function mark(i){items[i].read=true;render();}
+render();
+</script>
+</body>
+</html>

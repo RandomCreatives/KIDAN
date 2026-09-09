@@ -40,14 +40,22 @@ backend).
 2. **Status = the user's own approval state** (approvals / rejections / in-review / changes).
 3. **Option A** — bot queries the backend for profile status to pick menu; enables `Status`.
 
-### Next phase (NOT yet built — needs decision)
-- **API `resolveTier` endpoint** (internal, bearer-gated) so the bot can pick the tier (Option A).
-  Reuse `getUserStatus` + `getCandidateReviewState` via `findUserByTelegramHash`.
-- **Concern-feed DB migration** + **admin hamburger** list (Report a concern lands with operator).
-  Reuse `telegramAdminNotifier` / admin-console bot.
-- **Bot hosting:** convert `@KidanAppBot` to serverless webhook (recommended) so it deploys from
-  `main` like the other services (scalable, maintainable, secure). Confirm hosting target +
-  register webhook + set `BOT_WEBHOOK_URL`/`BOT_WEBHOOK_SECRET` env. **Blocked on operator.
+### Feedback / concerns + real bot status — `[shipped: part 2]`
+**Shipped (PR #31, merge `87209bc`):** feedback feed (table 0008) + candidate
+`POST /v1/feedback` + admin `GET /v1/admin/feedback` (401 gated live) + admin
+hamburger drawer + mini-app Feedback & help screen + real bot tier via
+`/internal/bot-state`.
+Tests: routes 4, service 4, bot tier 4; api 165, bot 16, miniapp 137, admin 8.
+
+### Remaining (not yet done — needs decision/action)
+- **Bot hosting:** convert `@KidanAppBot` to serverless webhook (recommended) so it deploys
+  from `main` like the others. Confirm hosting target + register webhook + set
+  `BOT_WEBHOOK_URL`/`BOT_WEBHOOK_SECRET` env. **Blocked on operator.**
+- **Set `BOT_STATE_SECRET`** on the API env (API project) so `/internal/bot-state` registers
+  (without it the endpoint is intentionally 404). Then point the bot at
+  `BOT_API_URL` + `BOT_STATE_SECRET` to serve real tiers.
+- **Feedback→admin bot notification** (optional): fire the existing admin-console bot when a
+  new `report` lands, so the operator is nudged. (Currently the draw
 
 ---
 

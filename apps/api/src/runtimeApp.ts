@@ -150,7 +150,7 @@ export async function buildRuntimeApp(
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
     // Feedback / comments / concerns from candidates to the operator.
-    options.feedbackService = new FeedbackService(repository);
+    options.feedbackService = new FeedbackService(repository, adminNotifier);
 
     // Candidate-bot tier resolver (Option A). Resolves a Telegram user id to
     // 'active' (approved) or 'new' (not yet approved) using the stored profile
