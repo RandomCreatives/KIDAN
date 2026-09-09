@@ -6,7 +6,7 @@ interface FunnelPanelProps {
   client: AdminApiClient;
   onError: (message: string | null) => void;
   /** Opens a candidate's submission in the review detail panel. */
-  openSubmission?: (publicCode: string) => void;
+  openSubmission?: ((publicCode: string) => void) | undefined;
 }
 
 type TabId = "summary" | "submissions" | "requests" | "connections";
@@ -111,7 +111,7 @@ function SummaryView({ metrics }: { metrics: FunnelMetrics }) {
 function SubmissionsView({ metrics, roster, open }: {
   metrics: FunnelMetrics;
   roster: AdminQueueItem[] | null;
-  open?: (publicCode: string) => void;
+  open?: ((publicCode: string) => void) | undefined;
 }) {
   const pending = roster?.filter((r) => r.reviewStatus === "pending" || r.reviewStatus === "changes_requested").length ?? metrics.cohort.submitted - metrics.cohort.approved;
   const hasOpen = typeof open === "function";
