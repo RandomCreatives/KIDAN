@@ -1,0 +1,41 @@
+name: Apply database migrations
+
+# Prevents the schema drifting behind the deployed code. Tracks D2 introduced
+# migration 0007 (introduction_request + new connection statuses) which the
+# funnel metrics route reads; if it is not applied the query throws a 500
+# (INTERNAL_ERROR) on /v1/admin/metrics. This job applies every pending
+# migration to the deployment database whenever this branch lands.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-migrate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Fail fast if DATABASE_URL is not configured
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL GitHub secret is not set — cannot apply migrations."
+            exit 1
+          fi
+      - run: npm ci
+      - name: Apply pending migrations
+        run: npm run db:migrate -w @kidan/api

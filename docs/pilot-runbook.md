@@ -34,7 +34,18 @@ squash).
 
 ---
 
-## 3. Environment variables (API)
+## 3. Migrations (automatic)
+
+Schema migrations are applied automatically by the **`Apply database
+migrations`** GitHub Actions job on every merge to `main` (it runs
+`npm run db:migrate` against `DATABASE_URL` from a GitHub **repository secret**
+of the same name). Set the `DATABASE_URL` GitHub secret to the same value as the
+API's `DATABASE_URL` env var. **Keep the release branch's staging DB migrated** —
+if a migration is ever missing, `/v1/admin/metrics` and D2 paths fail with a 500
+(`INTERNAL_ERROR`). Have a developer run `npm run db:migrate -w @kidan/api`
+locally (with the staging `DATABASE_URL`) in the rare event you need it sooner.
+
+## 3b. Environment variables (API)
 
 Set in the Vercel API project. Missing optional ones are safe (features stay off).
 
@@ -66,7 +77,8 @@ pilot is not invite-only). In the admin console:
 
 1. Sign in. Refresh the queue.
 2. Open a submission, check the **private verification photo** and identity.
-3. **Approve** (starts the 30-day photo-retention clock), **Request changes**
+3. **Approve** (replaces the full-res photo with a ≤240px thumbnail and starts
+   the 14-day retention clock), **Request changes**
    (reopens the draft for the candidate), or **Reject** (requires a feedback
    note).
 4. Under **Connections**, act on pairs awaiting admin approval.
@@ -146,8 +158,9 @@ console shows this in the **Funnel (all-time)** panel.
 
 ## 7. Retention & deletion (no manual steps normally)
 
-- Verification photos are **deleted 30 days after approval** by the retention
-  cron (`/internal/retention`, daily 02:00).
+- Verification photos are **replaced by a ≤240px thumbnail at approval and
+  deleted 14 days after approval** by the retention cron (`/internal/retention`,
+  daily 02:00).
 - Unanswered introduction requests are **purged 72h** after creation; swipes and
   requests for a connected pair are **deleted at connect time**.
 - Self-serve export + full account deletion are available to candidates.
