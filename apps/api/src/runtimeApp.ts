@@ -5,6 +5,7 @@ import { AdminSessionService } from "./auth/adminSessionService.js";
 import { parseEnvironment, type RuntimeEnvironment } from "./config/environment.js";
 import { createDatabasePool } from "./database/pool.js";
 import { createSchemaReadinessCheck } from "./database/readiness.js";
+import { FeedbackService } from "./feedback/feedbackService.js";
 import { OnboardingService } from "./onboarding/onboardingService.js";
 import { AdminService } from "./admin/adminService.js";
 import { DiscoveryService } from "./discovery/discoveryService.js";
@@ -148,6 +149,28 @@ export async function buildRuntimeApp(
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
+    // Feedback / comments / concerns from candidates to the operator.
+    options.feedbackService = new FeedbackService(repository);
+
+    // Candidate-bot tier resolver (Option A). Resolves a Telegram user id to
+    // 'active' (approved) or 'new' (not yet approved) using the stored profile
+    // state, so @KidanAppBot can show the correct two-tier menu. Gated by a
+    // bearer secret so the bot resolves tiers without a session.
+    const botStateSecret = environment.BOT_STATE_SECRET;
+    if (botStateSecret) {
+      options.botStateSecret = botStateSecret;
+      options.botState = async (telegramUserId) => {
+        const lookupHash = identityCipher.lookupHash(`telegram:${telegramUserId}`);
+        const user = await repository.findUserByTelegramLookupHash(lookupHash);
+        if (!user) return "new";
+        // Approved/working users are "active"; anyone still onboarding or not
+        // yet approved is "new".
+        const status = await repository.getUserStatus(user.id);
+        const active = status === "active" || status === "paused" || status === "suspended";
+        return active ? "active" : "new";
+      };
+    }
+
     // Readiness proves a live connection AND that the schema migrations have
     // been applied (the auth/onboarding tables exist). A provisioned but
     // unmigrated database now reports 503 instead of failing logins with 500.

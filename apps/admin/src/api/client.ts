@@ -9,8 +9,11 @@ import {
   adminQueueResponseSchema,
   adminSessionSchema,
   adminSubmissionDetailSchema,
+  feedbackListResponseSchema,
   funnelMetricsSchema,
   type AdminConnectionDecisionResponse,
+  type FeedbackItem,
+  type FeedbackListResponse,
   type AdminDecisionRequest,
   type AdminPendingConnection,
   type AdminQueueItem,
@@ -163,6 +166,17 @@ export class AdminApiClient {
   async listIntroductions(): Promise<AdminIntroductionMessage[]> {
     const data = await this.request("GET", "/v1/admin/introductions");
     return adminIntroductionListSchema.parse(data).messages;
+  }
+
+  /** Feedback / comments / concerns from candidates, newest first. */
+  async listFeedback(): Promise<FeedbackListResponse> {
+    const data = await this.request("GET", "/v1/admin/feedback");
+    return feedbackListResponseSchema.parse(data);
+  }
+
+  /** Mark a feedback entry as read/triaged. */
+  async markFeedbackRead(id: string): Promise<void> {
+    await this.request("POST", `/v1/admin/feedback/${encodeURIComponent(id)}/read`, {}, true);
   }
 
   /** Hides an inappropriate introduction message from both participants. */

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Brand } from "./Brand";
-import { ChevronRightIcon, LockIcon, PauseIcon, ShieldCheckIcon, UserIcon } from "./Icons";
+import { ChevronRightIcon, LockIcon, MailIcon, PauseIcon, ShieldCheckIcon, UserIcon } from "./Icons";
 import { ReviewStatusCard } from "./ReviewStatusCard.js";
+import { FeedbackScreen } from "./FeedbackScreen.js";
 import { useAuth } from "../auth/useAuth.js";
 
 const settings = [
@@ -8,6 +10,7 @@ const settings = [
   { label: "Partner preferences", detail: "Age, location & intentions", icon: <ShieldCheckIcon size={19} /> },
   { label: "Privacy & consent", detail: "Control how your data is used", icon: <LockIcon size={19} /> },
   { label: "Pause discovery", detail: "Hide without deleting", icon: <PauseIcon size={19} /> },
+  { label: "Feedback & help", detail: "Send a comment or report", icon: <MailIcon size={19} /> },
 ];
 
 export function MyProfileScreen({
@@ -18,6 +21,12 @@ export function MyProfileScreen({
   onPrivacy: () => void;
 }) {
   const { realSubmissionsEnabled } = useAuth();
+  const [showFeedback, setShowFeedback] = useState(false);
+
+  if (showFeedback) {
+    return <FeedbackScreen onBack={() => setShowFeedback(false)} />;
+  }
+
   return (
     <main className="screen standard-screen">
       <header className="topbar"><Brand /><span className="header-label">Your profile</span></header>
@@ -38,7 +47,11 @@ export function MyProfileScreen({
             key={item.label}
             className="settings-row"
             type="button"
-            onClick={item.label === "Privacy & consent" ? onPrivacy : onPreviewOnboarding}
+            onClick={
+              item.label === "Privacy & consent" ? onPrivacy
+                : item.label === "Feedback & help" ? () => setShowFeedback(true)
+                : onPreviewOnboarding
+            }
           >
             <span className="settings-icon">{item.icon}</span>
             <span><strong>{item.label}</strong><small>{item.detail}</small></span>

@@ -10,17 +10,20 @@ import {
   adminQueueResponseSchema,
   adminSessionSchema,
   adminSubmissionDetailSchema,
+  feedbackListResponseSchema,
   funnelMetricsSchema,
 } from "@kidan/contracts";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { AdminSessionService } from "../auth/adminSessionService.js";
 import { AdminDecisionError, AdminService } from "../admin/adminService.js";
 import type { ConnectionService } from "../connections/connectionService.js";
+import type { FeedbackService } from "../feedback/feedbackService.js";
 
 interface AdminRouteOptions {
   adminSession: AdminSessionService;
   adminService: AdminService;
   connectionService?: ConnectionService;
+  feedbackService?: FeedbackService;
   cookieName: string;
   secureCookies: boolean;
 }
@@ -154,6 +157,43 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
       return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
     }
     return reply.send({ data: response.data });
+  });
+
+  // Feedback / comments / concerns from candidates, newest first.
+  app.get("/v1/admin/feedback", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!options.feedbackService) {
+      return reply.code(503).send({ error: { code: "FEEDBACK_NOT_CONFIGURED", requestId: request.id } });
+    }
+    const summary = await options.feedbackService.list();
+    const response = feedbackListResponseSchema.safeParse({
+      items: summary.items.map((item) => ({
+        id: item.id,
+        publicCode: item.publicCode,
+        kind: item.kind,
+        body: item.body,
+        createdAt: item.createdAt.toISOString(),
+        readAt: item.readAt ? item.readAt.toISOString() : null,
+      })),
+      unreadCount: summary.unreadCount,
+    });
+    if (!response.success) {
+      request.log.error({ msg: "admin feedback list failed contract validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
+  });
+
+  app.post<{ Params: { id: string } }>("/v1/admin/feedback/:id/read", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    if (!options.feedbackService) {
+      return reply.code(503).send({ error: { code: "FEEDBACK_NOT_CONFIGURED", requestId: request.id } });
+    }
+    const updated = await options.feedbackService.markRead(request.params.id);
+    if (!updated) {
+      return reply.code(404).send({ error: { code: "FEEDBACK_NOT_FOUND", requestId: request.id } });
+    }
+    return reply.send({ data: { ok: true } });
   });
 
   app.get<{ Params: { publicCode: string } }>("/v1/admin/submissions/:publicCode", async (request, reply) => {

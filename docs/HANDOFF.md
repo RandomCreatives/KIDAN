@@ -1,6 +1,6 @@
 # Kidan — Agent Handoff
 
-Updated: 2026-09-07 (Africa/Nairobi).
+Updated: 2026-09-10 (Africa/Nairobi). `main` HEAD: **`3dcb639`** (PR #30, bot menu part 1).
 
 ## Current position
 

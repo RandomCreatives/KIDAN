@@ -23,6 +23,7 @@ describe("PostgreSQL migrations", () => {
       "0005_admin_review_console.sql",
       "0006_restricted_introduction.sql",
       "0007_intentional_requests.sql",
+      "0008_feedback.sql",
     ]);
     for (const row of recorded.rows) {
       expect(row.checksum).toMatch(/^[0-9a-f]{64}$/);

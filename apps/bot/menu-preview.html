@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Kidan App Bot — menu preview</title>
+<style>
+  :root { --bg:#0e1621; --panel:#17212b; --btn:#2b5278; --btn-h:#1e4d7a; --text:#f5f5f5; --sub:#8fa3b3; --hero:#3390ec; --like:#3390ec; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--text); display:flex; justify-content:center; padding:16px 0 40px; }
+  .phone { width:360px; max-width:96vw; }
+  .chat { background:var(--panel); border-radius:18px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.5); padding:18px 14px 18px; }
+  .bot { display:flex; gap:10px; align-items:center; padding-bottom:14px; border-bottom:1px solid rgba(255,255,255,.08); }
+  .avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#3390ec,#5bbcff); display:grid; place-items:center; font-weight:800; color:#fff; }
+  .bot b { display:block; }
+  .bot span { color:var(--sub); font-size:.8rem; }
+  .row { margin:16px 6px 0; max-width:100%; }
+  .bubble { background:#182533; border-radius:16px; padding:10px 14px; display:inline-block; font-size:.92rem; line-height:1.35; }
+  .msg-right { text-align:right; }
+  .msg-right .bubble { background:var(--like); }
+  .time { display:block; text-align:right; color:var(--sub); font-size:.68rem; margin-top:3px; }
+  .kb { margin:12px 4px 0; }
+  .grid { display:grid; gap:6px; }
+  .btn { appearance:none; border:none; border-radius:9px; background:var(--btn); color:#fff; font:inherit; font-size:.9rem; font-weight:600; padding:11px 10px; cursor:pointer; transition:background .15s; display:flex; align-items:center; justify-content:center; gap:7px; }
+  .btn:hover { background:var(--btn-h); }
+  .btn.full { background:var(--hero); }
+  .btn.full:hover { background:#2b78c4; }
+  .btn .ic { width:16px; height:16px; }
+  .tiers { margin:26px 0 14px; display:flex; gap:8px; justify-content:center; }
+  .tiers button { appearance:none; border:1px solid rgba(255,255,255,.15); background:transparent; color:#cbd5e1; padding:6px 12px; border-radius:999px; font:inherit; font-size:.85rem; cursor:pointer; }
+  .tiers button.on { background:var(--hero); color:#fff; border-color:var(--hero); }
+  h4 { color:var(--sub); font-weight:600; font-size:.78rem; letter-spacing:.4px; text-transform:uppercase; margin:18px 0 0 6px; }
+  .back { margin-top:6px; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="chat">
+    <div class="bot">
+      <div class="avatar">K</div>
+      <div><b>KidanAppBot</b><span>bot</span></div>
+    </div>
+    <div class="row msg-right">
+      <div class="bubble">/start</div>
+      <span class="time">9:25 PM</span>
+    </div>
+    <div class="row">
+      <div class="bubble">
+        Welcome to Kidan — private, intentional Orthodox Christian
+        introductions. Your identity and profile details never appear here.<br /><br />
+        Choose below:
+      </div>
+    </div>
+    <div class="kb" id="kb"></div>
+    <div class="row" id="detail" style="margin-top:14px"></div>
+  </div>
+  <div class="tiers">
+    <button id="tNew" class="on" onclick="setTier('new')">New user</button>
+    <button id="tActive" onclick="setTier('active')">Active user</button>
+  </div>
+</div>
+
+<script>
+const IC = {
+  doc:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></svg>',
+  rules:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg>',
+  lock:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  q:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.8.3-1 .9-1 1.7M12 17h.01"/></svg>',
+  flag:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4M5 4h13l-2 4 2 4H5"/></svg>',
+  status:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v4l2 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/></svg>',
+  help:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13a8 8 0 0 1 16 0M3 13h18M12 21v-4"/></svg>',
+  launch:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+};
+function ic(n){return IC[n]||''}
+
+let tier = 'new';
+const NEW = [
+  [[{t:'How it works',i:'doc'}],[{t:'Rules',i:'rules'}],[{t:'Privacy notice',i:'lock'}],[{t:'FAQ',i:'q'}],[{t:'Report a concern',i:'flag'}]],
+  [[{t:'▶  Launch',i:'launch',full:true}]],
+];
+const ACTIVE = [
+  [[{t:'Status',i:'status'}],[{t:'Support',i:'help'}],[{t:'FAQ',i:'q'}],[{t:'Report a concern',i:'flag'}]],
+  [[{t:'Open Kidan',i:'launch',full:true}]],
+];
+function render(){
+  document.getElementById('tNew').classList.toggle('on',tier==='new');
+  document.getElementById('tActive').classList.toggle('on',tier==='active');
+  const kb=document.getElementById('kb'); kb.innerHTML='';
+  const rows = tier==='new'?NEW:ACTIVE;
+  const h=document.createElement('h4'); h.textContent= tier==='new'?'New user menu (not yet approved)':'Active user menu (approved)'; kb.appendChild(h);
+  const grid=document.createElement('div'); grid.className='grid'; grid.style.gridTemplateColumns='repeat(2,1fr)'; kb.appendChild(grid);
+  rows[0].forEach(b=>{ const btn=document.createElement('button'); btn.className='btn'; btn.innerHTML=ic(b.i)+' '+b.t; btn.onclick=()=>detail(b.t); grid.appendChild(btn); });
+  const full=document.createElement('div'); full.className='grid full'; full.style.marginTop='6px';
+  const hero=rows[1][0]; const hb=document.createElement('button'); hb.className='btn full'; hb.innerHTML=ic(hero.i)+' '+hero.t; hb.onclick=()=>detail(hero.t); full.appendChild(hb); kb.appendChild(full);
+}
+function detail(t){
+  const d=document.getElementById('detail');
+  const texts={
+    'How it works':"Be honest and respectful. Your identity and photos are private — only the operator sees them. Discovery shows values, no photos.",
+    'Rules':"One profile per person. Profiles are reviewed before appearing in discovery. Sharing contact details early is not allowed.",
+    'Privacy notice':"Your name, phone, DOB and verification photo are encrypted and shown only to the operator. Discovery is photo-less and name-less.",
+    'FAQ':"Q: Is this free? A: Yes, the pilot is free. Q: What about my photo? A: It is private and deleted/reduced after review.",
+    'Report a concern':"Describe your concern and the operator will handle it privately. This goes to the Kidan operator.",
+    'Status':"Your profile review state: Approved / In review / Changes needed / Rejected.",
+    'Support':"For help, open the app or reply here. The operator reviews messages privately.",
+    '▶  Launch':"Opens the Kidan Mini App to complete onboarding.",
+    'Open Kidan':"Opens the Kidan Mini App.",
+  };
+  d.innerHTML='<div class="bubble" style="background:#182533">'+ (texts[t]||'') +'</div>';
+}
+setTier('new');
+function setTier(x){tier=x;render();}
+</script>
+</body>
+</html>
