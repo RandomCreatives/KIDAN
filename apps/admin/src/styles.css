@@ -200,6 +200,11 @@ textarea { resize: vertical; }
   .layout { grid-template-columns: 1fr; }
 }
 
+/* Never let panels or cards force the page wider than the viewport. */
+.layout, .queue-panel, .detail-panel, .funnel-grid, .funnel-stat, .funnel-list {
+  min-width: 0;
+}
+
 /* ---------- Queue ---------- */
 .queue-panel, .detail-panel {
   background: var(--surface);
@@ -354,46 +359,57 @@ textarea { resize: vertical; }
 .funnel-panel { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
 .funnel-panel .queue-head h2 { display: flex; align-items: center; gap: 0.5rem; }
 .funnel-panel .queue-head h2 .funnel-icon { width: 18px; height: 18px; color: var(--brand); }
-.funnel-body { padding: 0.25rem 1rem 1rem; }
+/* Reserve room for the fixed bottom navigation. */
+.funnel-body { padding: 0.25rem 1rem 5.5rem; }
+/* Clearance so the fixed bar never overlaps the last content. */
+.console { padding-bottom: 0; }
 
+/* Fixed bottom tab navigation (phone-style): stays put while content scrolls. */
 .funnel-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  padding: 0.25rem 0 0.75rem;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 0.9rem;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  padding: 0.35rem 0.4rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
+  background: rgba(250, 248, 243, 0.96);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  margin: 0;
 }
 .funnel-tab {
   appearance: none;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  border: none;
+  background: transparent;
   color: var(--ink-soft);
-  border-radius: 9px;
-  padding: 0.4rem 0.7rem;
+  border-radius: 10px;
+  padding: 0.4rem 0.3rem;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.68rem;
   font-weight: 600;
   cursor: pointer;
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  gap: 0.2rem;
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.funnel-tab .funnel-icon { width: 15px; height: 15px; }
+.funnel-tab .funnel-icon { width: 20px; height: 20px; }
 .funnel-tab:hover { background: rgba(15, 61, 46, 0.06); }
 .funnel-tab.is-active {
-  background: var(--brand);
-  border-color: var(--brand);
-  color: #f6efdd;
+  color: var(--brand);
 }
+.funnel-tab.is-active .funnel-icon { color: var(--brand); }
 
 .funnel-content { min-height: 150px; }
-.funnel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; }
-.funnel-grid-compact { grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+.funnel-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }
+.funnel-grid-compact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.5rem; }
 @media (max-width: 700px) {
-  .funnel-grid { grid-template-columns: repeat(2, 1fr); }
-  .funnel-grid-compact { grid-template-columns: repeat(2, 1fr); }
+  .funnel-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .funnel-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .funnel-stat {
@@ -425,7 +441,7 @@ textarea { resize: vertical; }
 .funnel-stat-text { display: flex; flex-direction: column; min-width: 0; }
 .funnel-stat-value { font-size: 1.05rem; font-weight: 700; color: var(--ink); line-height: 1.1; }
 .funnel-stat.is-highlight .funnel-stat-value { color: var(--green); }
-.funnel-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+.funnel-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); line-height: 1.2; }
 .funnel-stat-hint { font-size: 0.66rem; color: var(--ink-soft); opacity: 0.85; }
 .funnel-note { margin: 0.7rem 0 0; font-size: 0.75rem; color: var(--ink-soft); }
 

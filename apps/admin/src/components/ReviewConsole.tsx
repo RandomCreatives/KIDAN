@@ -139,12 +139,7 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
               onDecided={handleDecided}
               onError={setError}
             />
-          ) : (
-            <div className="detail-placeholder">
-              <span className="brand-cross large">✦</span>
-              <p>Select a candidate to review their private details and verification photo.</p>
-            </div>
-          )}
+          ) : null}
         </section>
       </main>
     </div>
