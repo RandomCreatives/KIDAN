@@ -96,6 +96,36 @@ export class AdminService {
     return items;
   }
 
+  /** Roster of ALL submitted candidates (regardless of decision) for the funnel list. */
+  async listAll(now = new Date()): Promise<AdminQueueItem[]> {
+    const rows = await this.repository.listAllSubmissions();
+    const items: AdminQueueItem[] = [];
+    for (const row of rows) {
+      let age: number;
+      try {
+        const dob = this.decryptDateOfBirth(row.userId, row.dateOfBirthCiphertext);
+        age = this.computeAge(dob, now);
+      } catch {
+        age = 0;
+      }
+      const payload = (await this.repository.getDraft(row.userId))?.publicPayload as
+        | { publicProfile?: { gender?: string; city?: string } }
+        | undefined;
+      items.push({
+        publicCode: row.publicCode,
+        gender: (payload?.publicProfile?.gender === "male" ? "male" : "female") as "male" | "female",
+        city: payload?.publicProfile?.city ?? row.city,
+        age,
+        submittedAt: new Date(row.submittedAt).toISOString(),
+        reviewStatus: (["pending", "approved", "rejected", "changes_requested"].includes(row.reviewStatus)
+          ? row.reviewStatus
+          : "pending") as AdminQueueItem["reviewStatus"],
+        hasPhoto: row.hasPhoto,
+      });
+    }
+    return items;
+  }
+
   async getSubmission(publicCode: string): Promise<AdminSubmissionDetail | null> {
     const userId = await this.repository.findUserIdByPublicCode(publicCode);
     if (!userId) return null;

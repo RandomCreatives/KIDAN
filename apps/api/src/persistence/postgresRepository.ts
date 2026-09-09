@@ -547,6 +547,41 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     }));
   }
 
+  async listAllSubmissions(): Promise<AdminQueueRow[]> {
+    const result = await this.pool.query<{
+      user_id: string;
+      public_code: string;
+      gender: string;
+      city: string;
+      date_of_birth_ciphertext: Buffer;
+      submitted_at: Date;
+      review_status: string;
+      has_photo: boolean;
+    }>(`
+      SELECT u.id AS user_id, u.public_code, p.gender, p.city_code AS city,
+             v.date_of_birth_ciphertext, d.submitted_at,
+             p.review_status::text AS review_status,
+             (vp.user_id IS NOT NULL) AS has_photo
+      FROM discovery_profile p
+      JOIN app_user u ON u.id = p.user_id
+      JOIN onboarding_draft d ON d.user_id = p.user_id
+      JOIN identity_vault v ON v.user_id = p.user_id
+      LEFT JOIN verification_photo vp ON vp.user_id = p.user_id AND vp.deleted_at IS NULL
+      WHERE d.submitted_at IS NOT NULL
+      ORDER BY d.submitted_at DESC, u.public_code ASC
+    `);
+    return result.rows.map((row) => ({
+      userId: row.user_id,
+      publicCode: row.public_code,
+      gender: row.gender,
+      city: row.city,
+      dateOfBirthCiphertext: row.date_of_birth_ciphertext,
+      submittedAt: row.submitted_at,
+      reviewStatus: row.review_status,
+      hasPhoto: row.has_photo,
+    }));
+  }
+
   async findUserIdByPublicCode(publicCode: string): Promise<string | null> {
     const result = await this.pool.query<{ id: string }>(
       "SELECT id FROM app_user WHERE public_code = $1",

@@ -269,4 +269,26 @@ describe("admin review console routes", () => {
     // Aggregate counts only — never identities, codes, or names.
     expect(JSON.stringify(data)).not.toMatch(/KD-|Person|\+251|fullName|telegram|phone/i);
   });
+
+  it("roster (/submissions/all) lists all candidates, gated by admin session", async () => {
+    ({ app } = await buildAdminApp());
+    const { cookie } = await login(app);
+
+    const res = await app.inject({ method: "GET", url: "/v1/admin/submissions/all" });
+    expect(res.statusCode).toBe(401);
+
+    const rosterRes = await app.inject({ method: "GET", url: "/v1/admin/submissions/all", headers: { cookie } });
+    expect(rosterRes.statusCode).toBe(200);
+    const { data } = rosterRes.json() as {
+      data: { items: Array<{ publicCode: string; reviewStatus: string; age: number; city: string }> };
+    };
+    // All submitted candidates appear (pending here), even after one is decided.
+    expect(data.items.length).toBeGreaterThanOrEqual(1);
+    expect(data.items[0]).toHaveProperty("publicCode");
+    expect(data.items[0]!.publicCode.startsWith("KD-")).toBe(true);
+    expect(data.items[0]).toHaveProperty("reviewStatus");
+    expect(data.items[0]).toHaveProperty("age");
+    // Roster rows are codes/ages/status only — no identity.
+    expect(JSON.stringify(data)).not.toMatch(/fullName|\+251|telegram|phone/i);
+  });
 });

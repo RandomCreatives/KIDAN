@@ -109,6 +109,12 @@ export class AdminApiClient {
     return adminQueueResponseSchema.parse(data).items;
   }
 
+  /** Roster of ALL submitted candidates (regardless of decision). */
+  async listAll(): Promise<AdminQueueItem[]> {
+    const data = await this.request("GET", "/v1/admin/submissions/all");
+    return adminQueueResponseSchema.parse(data).items;
+  }
+
   /** Track E2: aggregate pilot funnel counts (no identity data). */
   async getFunnelMetrics(): Promise<FunnelMetrics> {
     const data = await this.request("GET", "/v1/admin/metrics");

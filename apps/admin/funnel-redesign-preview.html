@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Funnel redesign preview</title>
+<style>
+  :root { --bg:#f4f1ea; --surface:#fff; --surface-2:#faf8f3; --ink:#16202e; --ink-soft:#5b6675; --line:#e4ded2; --brand:#0f3d2e; --gold:#b98a2f; --green:#1e7a46; --amber:#9a6a12; --red:#a4322c; --radius:14px; --shadow:0 10px 30px rgba(20,30,45,.08); }
+  *{box-sizing:border-box;font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);}
+  body{margin:0;background:radial-gradient(1000px 400px at 50% -10%,rgba(15,61,46,.08),transparent),var(--bg);padding:2rem;}
+  .panel{max-width:560px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);}
+  .head{display:flex;align-items:center;gap:.7rem;padding:1rem 1.1rem;border-bottom:1px solid var(--line);}
+  .head h2{margin:0;font-size:1rem;flex:1;display:flex;align-items:center;gap:.5rem;}
+  .head h2 .ic{width:18px;height:18px;color:var(--brand);}
+  .refresh{appearance:none;border:1px solid var(--line);background:transparent;color:var(--ink-soft);border-radius:10px;padding:.35rem .7rem;font:inherit;font-weight:600;font-size:.82rem;cursor:pointer;}
+  .body{padding:.25rem 1rem 1rem;}
+  .tabs{display:flex;flex-wrap:wrap;gap:.35rem;padding:.25rem 0 .75rem;border-bottom:1px solid var(--line);margin-bottom:.9rem;}
+  .tab{appearance:none;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-soft);border-radius:9px;padding:.4rem .7rem;font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:.4rem;}
+  .tab .ic{width:15px;height:15px;}
+  .tab.on{background:var(--brand);border-color:var(--brand);color:#f6efdd;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;}
+  @media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);}}
+  .stat{display:flex;flex-direction:row;align-items:center;gap:.5rem;padding:.55rem .6rem;border:1px solid var(--line);border-radius:10px;background:var(--surface);}
+  .stat.hl{border-color:rgba(15,61,46,.35);background:rgba(15,61,46,.05);}
+  .stat-ic{flex:0 0 24px;width:24px;height:24px;display:grid;place-items:center;border-radius:8px;background:rgba(15,61,46,.08);color:var(--brand);}
+  .stat-ic .ic{width:14px;height:14px;}
+  .stat-t{display:flex;flex-direction:column;min-width:0;}
+  .stat-v{font-size:1.05rem;font-weight:700;line-height:1.1;}
+  .stat.hl .stat-v{color:var(--green);}
+  .stat-l{font-size:.72rem;font-weight:600;color:var(--ink-soft);white-space:nowrap;}
+  .note{margin:.7rem 0 0;font-size:.75rem;color:var(--ink-soft);}
+  .sub{display:flex;flex-direction:column;gap:.6rem;margin-top:.7rem;}
+  .lh{display:flex;align-items:baseline;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--ink-soft);}
+  .lh b{font-size:.72rem;font-weight:500;opacity:.8;}
+  .list{list-style:none;margin:0;padding:.25rem 0;max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);}
+  .item{width:100%;text-align:left;background:transparent;border:none;padding:.62rem .7rem;cursor:pointer;font:inherit;display:flex;align-items:center;gap:.55rem;border-bottom:1px solid var(--line);}
+  .list li:last-child .item{border-bottom:none;}
+  .item:hover{background:rgba(15,61,46,.05);}
+  .code{font-weight:700;letter-spacing:.4px;}
+  .age{font-size:.82rem;color:var(--ink-soft);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:.05rem .5rem;font-weight:600;}
+  .spacer{flex:1;}
+  .dot{font-size:.7rem;font-weight:700;border-radius:999px;padding:.08rem .5rem;text-transform:uppercase;letter-spacing:.3px;}
+  .dot.pending{background:rgba(185,138,47,.15);color:var(--amber);}
+  .dot.approved{background:rgba(30,122,70,.14);color:var(--green);}
+  .dot.rejected{background:rgba(164,50,44,.12);color:var(--red);}
+  .dot.changes{background:rgba(154,106,18,.14);color:var(--amber);}
+  .chev{width:16px;height:16px;color:var(--ink-soft);}
+  .conn{padding:.62rem .7rem;border-bottom:1px solid var(--line);}
+  .conn:last-child{border-bottom:none;}
+  .cline{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;}
+  .join{color:var(--brand);font-weight:700;padding:0 .25rem;}
+  .cact{display:flex;gap:.5rem;margin-top:.55rem;}
+  .btnp{appearance:none;border:none;border-radius:10px;padding:.5rem .9rem;font:inherit;font-weight:600;font-size:.85rem;cursor:pointer;background:var(--brand);color:#f6efdd;}
+  .btnq{appearance:none;border:1px solid var(--line);border-radius:10px;padding:.5rem .9rem;font:inherit;font-weight:600;font-size:.85rem;cursor:pointer;background:transparent;color:var(--red);}
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="head"><h2 id="title">Funnel</h2><button class="refresh" onclick="render()">Refresh</button></div>
+  <div class="body">
+    <div class="tabs" id="tabs"></div>
+    <div class="grid" id="grid"></div>
+    <div class="sub" id="sub"></div>
+    <p class="note">Aggregate counts only — no candidate identity is shown or logged.</p>
+  </div>
+</div>
+<script>
+const I={funnel:"M3 4h18l-7 8v6l-4 2v-8L3 4z",summary:"M4 6h16M4 12h16M4 18h10",submission:"M8 4v6m0 0-3-3m3 3 3-3M6 20h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2z",request:"M9 5h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM9 9h6M9 13h6",connection:"M20 7l-4 4M4 17l4-4m-4-6 4 4 6-6 2 4 4 2-6 6 4 4",check:"M5 13l4 4L19 7",heart:"M12 20s-7-4.6-9.5-8.6C1 8.8 2.6 5 6 5c2 0 3.2 1.1 4 2.4C10.8 6.1 12 5 14 5c3.4 0 5 3.8 3.5 6.4C19 15.4 12 20 12 20z",stack:"M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5M3 17l9 5 9-5",hourglass:"M7 4h10M7 20h10M7 4c0 5 2 6 5 7-3 1-5 2-5 7M17 4c0 5-2 6-5 7 3 1 5 2 5 7",pending:"M12 8v4l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",decline:"M6 6l12 12M18 6L6 18",expired:"M12 8v4l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",admin:"M12 3l8 4v6c0 5-3.5 7.5-8 8-4.5-.5-8-3-8-8V7l8-4z",reject:"M12 9v6M12 5v.01M12 15a9 9 0 1 0 0 0a9 9 0 0 0 0 0z",chevron:"M9 6l6 6-6 6"};
+function ic(n){return '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+I[n]+'"/></svg>';}
+const m={submitted:12,approved:8,shortlisted:23};
+const roster=[["KD-1F3K9",32,"pending"],["KD-9B2QM",28,"approved"],["KD-4T7LP",26,"pending"],["KD-7W5RJ",35,"changes"],["KD-2N8KD",29,"pending"],["KD-6C3ZX",31,"rejected"],["KD-8X4HV",27,"pending"],["KD-3P7TJ",30,"pending"]];
+const tabs=[["summary","summary","Summary"],["submissions","submission","Submissions"],["requests","request","Requests"],["connections","connection","Connections"]];
+let cur="submissions";
+function cardrow(c){return c.map(([icn,l,v,hl])=>`<div class="stat ${hl?'hl':''}"><span class="stat-ic">${ic(icn)}</span><span class="stat-t"><span class="stat-v">${v}</span><span class="stat-l">${l}</span></span></div>`).join('');}
+function render(){
+  document.getElementById("title").innerHTML=ic('funnel')+'  Funnel';
+  document.getElementById("tabs").innerHTML=tabs.map(([id,icn,l])=>`<button class="tab ${id===cur?'on':''}" onclick="cur='${id}';render()">${ic(icn)} ${l}</button>`).join('');
+  const g=document.getElementById("grid");
+  const s=document.getElementById("sub");
+  if(cur==='summary'){ g.innerHTML=cardrow([["submission","Submitted",m.submitted],["check","Approved",m.approved,1],["stack","Admission rate","67%"],["heart","Shortlisted",m.shortlisted]]); s.innerHTML=''; }
+  else if(cur==='submissions'){
+    g.style.display='grid'; g.innerHTML=cardrow([["submission","Submitted",m.submitted],["check","Approved",m.approved,1],["hourglass","In review",roster.filter(r=>r[2]==='pending'||r[2]==='changes').length]]);
+    s.innerHTML=`<div class="lh"><span>${roster.length} applicants</span><b>Tap to open &amp; review</b></div><ul class="list">${roster.map(([c,age,st])=>`<li><button class="item" onclick="alert('Open ${c} (demo)')"><span class="code">${c}</span><span class="age">${age}</span><span class="dot ${st}">${st==='approved'?'Approved':st==='rejected'?'Rejected':st==='changes'?'Changes':'Pending'}</span><span class="spacer"></span>${ic('chevron')}</button></li>`).join('')}</ul>`;
+  } else if(cur==='requests'){ g.innerHTML=cardrow([["pending","Pending",3],["check","Accepted",2,1],["decline","Declined",1],["expired","Expired",0]]); s.innerHTML=''; }
+  else {
+    g.innerHTML=cardrow([["admin","With admin",1,1],["check","Connected",2],["decline","Declined",0],["reject","Rejected",0]]);
+    const conns=[["KD-1F3K9",32,"KD-9B2QM",28],["KD-4T7LP",26,"KD-7W5RJ",35]];
+    s.innerHTML=`<div class="lh"><span>${conns.length} awaiting approval</span><b>Approve or reject below</b></div><ul class="list">${conns.map(([a,aa,b,ba])=>`<li><div class="conn"><div class="cline"><span class="code">${a}</span><span class="age">${aa}</span><span class="join">⇄</span><span class="code">${b}</span><span class="age">${ba}</span><span class="spacer"></span></div><div class="cact"><button class="btnp" onclick="alert('Approved (demo)')">Approve</button><button class="btnq" onclick="alert('Rejected (demo)')">Reject</button></div></div></li>`).join('')}</ul>`;
+  }
+}
+render();
+</script>
+</body>
+</html>

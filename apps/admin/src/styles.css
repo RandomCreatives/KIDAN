@@ -352,8 +352,162 @@ textarea { resize: vertical; }
 
 /* Track E2 funnel metrics */
 .funnel-panel { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
-.funnel-stages { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-bottom: 0.5rem; }
-.funnel-stat { padding: 0.6rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
-.funnel-stat strong { display: block; font-size: 1.15rem; color: var(--green); }
-.funnel-stat span { font-size: 0.72rem; color: var(--ink-soft); }
-.funnel-note { margin: 0.4rem 0 0; font-size: 0.75rem; color: var(--ink-soft); }
+.funnel-panel .queue-head h2 { display: flex; align-items: center; gap: 0.5rem; }
+.funnel-panel .queue-head h2 .funnel-icon { width: 18px; height: 18px; color: var(--brand); }
+.funnel-body { padding: 0.25rem 1rem 1rem; }
+
+.funnel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem 0 0.75rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.9rem;
+}
+.funnel-tab {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  border-radius: 9px;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.funnel-tab .funnel-icon { width: 15px; height: 15px; }
+.funnel-tab:hover { background: rgba(15, 61, 46, 0.06); }
+.funnel-tab.is-active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #f6efdd;
+}
+
+.funnel-content { min-height: 150px; }
+.funnel-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; }
+.funnel-grid-compact { grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+@media (max-width: 700px) {
+  .funnel-grid { grid-template-columns: repeat(2, 1fr); }
+  .funnel-grid-compact { grid-template-columns: repeat(2, 1fr); }
+}
+
+.funnel-stat {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.funnel-stat.is-highlight {
+  border-color: rgba(15, 61, 46, 0.35);
+  background: rgba(15, 61, 46, 0.05);
+}
+.funnel-stat-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(15, 61, 46, 0.08);
+  color: var(--brand);
+}
+.funnel-stat-icon .funnel-icon { width: 14px; height: 14px; }
+.funnel-stat-text { display: flex; flex-direction: column; min-width: 0; }
+.funnel-stat-value { font-size: 1.05rem; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.funnel-stat.is-highlight .funnel-stat-value { color: var(--green); }
+.funnel-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); white-space: nowrap; }
+.funnel-stat-hint { font-size: 0.66rem; color: var(--ink-soft); opacity: 0.85; }
+.funnel-note { margin: 0.7rem 0 0; font-size: 0.75rem; color: var(--ink-soft); }
+
+/* Actionable submissions list (scrolls for many applicants) */
+.funnel-submissions { display: flex; flex-direction: column; gap: 0.6rem; }
+.funnel-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.funnel-list-hint { font-size: 0.72rem; font-weight: 500; opacity: 0.8; }
+.funnel-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  padding: 1rem 0.25rem;
+}
+.funnel-empty .funnel-icon { width: 18px; height: 18px; color: var(--green); }
+.funnel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.funnel-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0.62rem 0.7rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  border-bottom: 1px solid var(--line);
+}
+.funnel-list li:last-child .funnel-item { border-bottom: none; }
+.funnel-item:hover { background: rgba(15, 61, 46, 0.05); }
+.funnel-item-code { font-weight: 700; letter-spacing: 0.4px; }
+.funnel-item-age {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-weight: 600;
+}
+.funnel-item-spacer { flex: 1; }
+.funnel-item .funnel-icon { width: 16px; height: 16px; color: var(--ink-soft); }
+.review-dot {
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.08rem 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.review-dot.is-pending { background: rgba(185, 138, 47, 0.15); color: var(--amber); }
+.review-dot.is-approved { background: rgba(30, 122, 70, 0.14); color: var(--green); }
+.review-dot.is-rejected { background: rgba(164, 50, 44, 0.12); color: var(--red); }
+.review-dot.is-changes { background: rgba(154, 106, 18, 0.14); color: var(--amber); }
+
+/* Actionable connections in the funnel */
+.funnel-connections { display: flex; flex-direction: column; gap: 0.6rem; }
+.funnel-connection { padding: 0.62rem 0.7rem; border-bottom: 1px solid var(--line); }
+.funnel-connection:last-child { border-bottom: none; }
+.funnel-connection-line { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+.funnel-connection-actions { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
+.funnel-connection-actions .btn { margin-top: 0; }
+.pair-join { color: var(--brand); font-weight: 700; padding: 0 0.25rem; }
+.muted.small { font-size: 0.8rem; margin: 0.2rem 0 0.6rem; }
