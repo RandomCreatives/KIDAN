@@ -55,6 +55,7 @@ Set in the Vercel API project. Missing optional ones are safe (features stay off
 | `PILOT_CAPACITY` | Cohort ceiling for new admissions | `100` |
 | `RETENTION_CRON_SECRET` | Bearer secret for `/internal/retention` purge | — |
 | `MONITOR_CRON_SECRET` | Bearer secret for `/internal/health` probe | — |
+| `BOT_STATE_SECRET` | Bearer secret for `/internal/bot-state` (Option A bot tier lookup) | — |
 | `ADMIN_CONSOLE_PASSWORD` | Enables the admin review console | — |
 | `ADMIN_ORIGIN` | Origin of the admin console (CORS) | staging console |
 | `MINI_APP_URL` | Deep-link base for bot notifications | — |
