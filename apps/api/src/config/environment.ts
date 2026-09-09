@@ -54,6 +54,8 @@ const environmentSchema = z.object({
   ADMIN_CONSOLE_URL: optionalNonEmpty,
   // Bearer secret for /internal/admin-notify-test (verifies the bot end-to-end).
   ADMIN_NOTIFY_TEST_SECRET: optionalNonEmpty,
+  // Bearer secret for /internal/bot-state (Option A tier lookup by the bot).
+  BOT_STATE_SECRET: optionalNonEmpty,
 }).superRefine((environment, context) => {
   const persistenceKeys = [
     "DATABASE_URL",

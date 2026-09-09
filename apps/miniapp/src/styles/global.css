@@ -480,3 +480,28 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .request-sheet h2 { margin: 6px 0 8px; font-size: 20px; color: var(--ink, #20342c); }
 .request-sheet p { font-size: 13px; line-height: 1.6; color: rgba(32,52,44,.78); }
 .request-sheet .quiet-copy { margin: 8px 0 14px; font-size: 11px; }
+
+/* ---------- Feedback / help ---------- */
+.feedback-form { display: flex; flex-direction: column; gap: 14px; }
+.feedback-form section { background: rgba(255,255,255,.82); border: 1px solid rgba(30,57,48,.12); border-radius: 16px; padding: 16px; }
+.feedback-form h2 { margin: 0 0 10px; font-size: 15px; color: var(--forest, #20342c); }
+.kind-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.kind-chip {
+  appearance: none; border: 1px solid rgba(30,57,48,.18); background: transparent;
+  border-radius: 999px; padding: 8px 13px; font: inherit; font-size: 13px; font-weight: 650;
+  color: var(--ink, #20342c); cursor: pointer; transition: background .15s, border-color .15s;
+}
+.kind-chip.is-active { background: rgba(31,75,60,.12); border-color: rgba(31,75,60,.55); }
+.feedback-form textarea {
+  width: 100%; border: 1px solid rgba(30,57,48,.15); border-radius: 13px; padding: 12px 13px;
+  font: inherit; font-size: 13px; line-height: 1.55; resize: vertical; background: rgba(255,255,255,.78); color: var(--ink, #20342c);
+}
+.feedback-form textarea:focus { border-color: rgba(31,75,60,.55); box-shadow: 0 0 0 3px rgba(31,75,60,.07); outline: none; }
+.char-count { margin: 6px 0 0; font-size: 12px; text-align: right; color: #a2a6a3; }
+.feedback-sent { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 40px 20px; }
+.feedback-sent .sent-mark {
+  width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 28px; color: #fff; background: var(--forest, #2a5747);
+}
+.feedback-sent h1 { margin: 4px 0 0; font-size: 22px; color: var(--ink, #20342c); }
+.feedback-sent p { margin: 0 0 8px; font-size: 13px; color: rgba(32,52,44,.78); max-width: 280px; }

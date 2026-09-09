@@ -8,7 +8,10 @@ Legend: `[idea]` proposed, `[planned]` scoped/confirmed, `[building]` in progres
 
 ---
 
-## Bot inline-keyboard menu (`@KidanAppBot`) — `[building]`
+## Bot inline-keyboard menu (`@KidanAppBot`) — `[shipped: part 1]`
+
+**Shipped (PR #30, merge `3dcb639`):** two-tier menu + serverless webhook adapter + Mini App deep-link.
+Bot tests 12/12; miniapp deep-link 3/3; all CI green; staging fast-forwarded & healthy.
 
 **Goal.** Make the bot friendly and familiar with a Telegram inline-keyboard menu
 (2-column button grid + full-width hero button + Back), like a typical store bot.
@@ -37,11 +40,14 @@ backend).
 2. **Status = the user's own approval state** (approvals / rejections / in-review / changes).
 3. **Option A** — bot queries the backend for profile status to pick menu; enables `Status`.
 
-### Notes / open items
-- Concern→operator path: reuse existing `telegramAdminNotifier` / admin-console bot.
-- Hamburger placement = **Admin Console** (operator view). Confirm which one (A vs B) — user
-  described "hamburger menu on top to see all listed"; interpreted as admin console.
-- Deep-link (start_param / `?tab=`) so app buttons land on the right screen — recommended.
+### Next phase (NOT yet built — needs decision)
+- **API `resolveTier` endpoint** (internal, bearer-gated) so the bot can pick the tier (Option A).
+  Reuse `getUserStatus` + `getCandidateReviewState` via `findUserByTelegramHash`.
+- **Concern-feed DB migration** + **admin hamburger** list (Report a concern lands with operator).
+  Reuse `telegramAdminNotifier` / admin-console bot.
+- **Bot hosting:** convert `@KidanAppBot` to serverless webhook (recommended) so it deploys from
+  `main` like the other services (scalable, maintainable, secure). Confirm hosting target +
+  register webhook + set `BOT_WEBHOOK_URL`/`BOT_WEBHOOK_SECRET` env. **Blocked on operator.
 
 ---
 

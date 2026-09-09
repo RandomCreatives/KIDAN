@@ -10,6 +10,7 @@ import type {
   DiscoveryCandidateRow,
   PersistenceRepository,
   DraftRecord,
+  FeedbackRow,
   IdentityUpdate,
   IntroductionMessageRow,
   IntroductionRequestRow,
@@ -58,6 +59,8 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   private readonly introductionRequests = new Map<string, MemoryIntroductionRequest>();
   /** Append-only operational events keyed by id (Track E3): { action, occurredAt }. */
   private readonly operationalEvents = new Map<string, { action: string; occurredAt: Date }>();
+  /** Feedback / comments / concerns keyed by id (candidate -> operator). */
+  private readonly feedbackEntries = new Map<string, FeedbackRow & { userId: string }>();
   private operationalEventCounter = 0;
 
   async findOrCreateUserByTelegram(input: {
@@ -78,6 +81,13 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     this.telegramUsers.set(lookup, user.id);
     this.telegramCiphertextByUser.set(user.id, Buffer.from(input.telegramCiphertext));
     return structuredClone(user);
+  }
+
+  async findUserByTelegramLookupHash(telegramLookupHash: Buffer): Promise<UserRecord | null> {
+    const id = this.telegramUsers.get(telegramLookupHash.toString("hex"));
+    if (!id) return null;
+    const user = this.users.get(id);
+    return user ? structuredClone(user) : null;
   }
 
   async createSession(input: {
@@ -1015,6 +1025,41 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
       if (this.decisions.delete(`${c.userBId}:${c.userAId}`)) deletedSwipes += 1;
     }
     return { expiredRequests, deletedRequests, deletedSwipes };
+  }
+
+  async createFeedback(input: {
+    userId: string;
+    publicCode: string;
+    kind: "report" | "feedback" | "comment";
+    body: string;
+    now: Date;
+  }): Promise<{ id: string; createdAt: Date }> {
+    const id = randomUUID();
+    this.feedbackEntries.set(id, {
+      id,
+      userId: input.userId,
+      publicCode: input.publicCode,
+      kind: input.kind,
+      body: input.body,
+      createdAt: input.now,
+      readAt: null,
+    });
+    return { id, createdAt: input.now };
+  }
+
+  async listFeedback(): Promise<{ items: FeedbackRow[]; unreadCount: number }> {
+    const items = [...this.feedbackEntries.values()]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map(({ userId: _userId, ...row }) => row);
+    const unreadCount = items.filter((item) => item.readAt === null).length;
+    return { items, unreadCount };
+  }
+
+  async markFeedbackRead(id: string, now: Date): Promise<boolean> {
+    const entry = this.feedbackEntries.get(id);
+    if (!entry) return false;
+    if (entry.readAt === null) entry.readAt = now;
+    return true;
   }
 }
 

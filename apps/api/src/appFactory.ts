@@ -20,6 +20,8 @@ import { connectionRoutes } from "./routes/connections.js";
 import { requestRoutes } from "./routes/requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
+import { feedbackRoutes } from "./routes/feedback.js";
+import type { FeedbackService } from "./feedback/feedbackService.js";
 
 export interface BuildAppOptions {
   botToken?: string;
@@ -55,6 +57,13 @@ export interface BuildAppOptions {
   connectionService?: ConnectionService;
   // Track D2: intentional introduction requests.
   requestService?: RequestService;
+  // Feedback / comments / concerns from candidates to the operator.
+  feedbackService?: FeedbackService;
+  /** Privacy-safe tier lookup for the candidate bot (Option A). Resolves a
+   *  Telegram user id to 'new'|'active' from the stored profile state. */
+  botState?: (telegramUserId: number) => Promise<"new" | "active">;
+  /** Bearer secret gating /internal/bot-state so the bot can resolve tiers. */
+  botStateSecret?: string;
   // Whether initData-rejection responses include the non-secret diagnostics
   // (configured bot id + live token probe). Always logged server-side; only
   // exposed to the client in non-production runtimes. Defaults to false so a
@@ -326,13 +335,51 @@ export async function buildApp(
     app.post("/v1/requests/:id/respond", requestsNotReady);
   }
 
+  if (options.sessionService && options.feedbackService) {
+    await app.register(feedbackRoutes, {
+      sessionService: options.sessionService,
+      feedbackService: options.feedbackService,
+      cookieName,
+    });
+  } else {
+    const feedbackNotReady = async (request: FastifyRequest, reply: FastifyReply) => {
+      await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
+    };
+    app.post("/v1/feedback", feedbackNotReady);
+  }
+
   if (options.adminSessionService && options.adminService) {
     await app.register(adminRoutes, {
       adminSession: options.adminSessionService,
       adminService: options.adminService,
       ...(options.connectionService ? { connectionService: options.connectionService } : {}),
+      ...(options.feedbackService ? { feedbackService: options.feedbackService } : {}),
       cookieName: "kidan_admin_session",
       secureCookies: options.secureCookies ?? false,
+    });
+  }
+
+  // Internal, bearer-gated tier lookup for the candidate bot (Option A). Lets
+  // the bot show the correct two-tier menu without touching user data itself.
+  if (options.botState && options.botStateSecret) {
+    const resolveBotState = options.botState;
+    app.get<{ Querystring: { telegramId?: string } }>("/internal/bot-state", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${options.botStateSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHORIZED", requestId: request.id } });
+      }
+      const telegramId = Number(request.query.telegramId);
+      if (!Number.isInteger(telegramId) || telegramId <= 0) {
+        return reply.code(400).send({ error: { code: "INVALID_REQUEST", requestId: request.id } });
+      }
+      try {
+        const tier = await resolveBotState(telegramId);
+        return reply.send({ data: { tier } });
+      } catch (error) {
+        request.log.error({ msg: "bot-state lookup failed", error: error instanceof Error ? error.message : "unknown" });
+        return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+      }
     });
   }
 

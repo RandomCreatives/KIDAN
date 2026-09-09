@@ -14,6 +14,7 @@ import type {
   CandidateReviewState,
   DiscoveryCandidateRow,
   DraftRecord,
+  FeedbackRow,
   UserConnectionRow,
   IdentityUpdate,
   PersistenceRepository,
@@ -61,6 +62,10 @@ function isUniqueViolation(error: unknown): boolean {
 
 export class PostgresPersistenceRepository implements PersistenceRepository {
   constructor(private readonly pool: Pool) {}
+
+  async findUserByTelegramLookupHash(hash: Buffer): Promise<UserRecord | null> {
+    return this.findUserByTelegramHash(hash);
+  }
 
   private async findUserByTelegramHash(hash: Buffer, client: Pool | PoolClient = this.pool): Promise<UserRecord | null> {
     const result = await client.query<UserRow>(`
@@ -1469,5 +1474,54 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
 
       return { expiredRequests, deletedRequests, deletedSwipes };
     });
+  }
+
+  async createFeedback(input: {
+    userId: string;
+    publicCode: string;
+    kind: "report" | "feedback" | "comment";
+    body: string;
+    now: Date;
+  }): Promise<{ id: string; createdAt: Date }> {
+    const result = await this.pool.query<{ id: string; created_at: Date }>(
+      `INSERT INTO feedback (user_id, public_code, kind, body, created_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, created_at`,
+      [input.userId, input.publicCode, input.kind, input.body, input.now],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("FEEDBACK_INSERT_FAILED");
+    return { id: row.id, createdAt: row.created_at };
+  }
+
+  async listFeedback(): Promise<{ items: FeedbackRow[]; unreadCount: number }> {
+    const result = await this.pool.query<{
+      id: string; public_code: string; kind: "report" | "feedback" | "comment";
+      body: string; created_at: Date; read_at: Date | null;
+    }>(
+      `SELECT id, public_code, kind, body, created_at, read_at
+       FROM feedback ORDER BY created_at DESC`,
+    );
+    const items = result.rows.map((row) => ({
+      id: row.id,
+      publicCode: row.public_code,
+      kind: row.kind,
+      body: row.body,
+      createdAt: row.created_at,
+      readAt: row.read_at ?? null,
+    }));
+    const unread = await this.pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM feedback WHERE read_at IS NULL`,
+    );
+    const unreadCount = unread.rows[0] ? Number(unread.rows[0].count) : 0;
+    return { items, unreadCount };
+  }
+
+  async markFeedbackRead(id: string, now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE feedback SET read_at = COALESCE(read_at, $2) WHERE id = $1`,
+      [id, now],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 }

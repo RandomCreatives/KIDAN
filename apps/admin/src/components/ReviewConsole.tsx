@@ -4,6 +4,7 @@ import { AdminApiClient, AdminApiError } from "../api/client.js";
 import { SubmissionDetail } from "./SubmissionDetail.js";
 import { ConnectionsPanel } from "./ConnectionsPanel.js";
 import { FunnelPanel } from "./FunnelPanel.js";
+import { FeedbackPanel } from "./FeedbackPanel.js";
 
 interface ReviewConsoleProps {
   client: AdminApiClient;
@@ -17,6 +18,7 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
   const [detail, setDetail] = useState<AdminSubmissionDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const refreshQueue = useCallback(async () => {
     setError(null);
@@ -64,6 +66,15 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
     <div className="console">
       <header className="topbar">
         <div className="topbar-brand">
+          <button
+            type="button"
+            className="btn btn-ghost btn-icon hamburger"
+            aria-label="Open feedback menu"
+            aria-expanded={showFeedback}
+            onClick={() => setShowFeedback((value) => !value)}
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
           <span className="brand-cross">✦</span>
           <div>
             <strong>Kidan</strong>
@@ -77,6 +88,8 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
           </button>
         </div>
       </header>
+
+      <FeedbackPanel client={client} open={showFeedback} onClose={() => setShowFeedback(false)} onError={setError} />
 
       <main className="layout">
         <section className="queue-panel">

@@ -15,6 +15,10 @@ import {
   type IntroductionThread,
   discoveryDecisionRequestSchema,
   discoveryFeedResponseSchema,
+  feedbackSubmitRequestSchema,
+  feedbackSubmitResponseSchema,
+  type FeedbackSubmitRequest,
+  type FeedbackSubmitResponse,
   type ConnectionConfirmResponse,
   type ConnectionListResponse,
   type DiscoveryFeedResponse,
@@ -183,6 +187,13 @@ export class KidanApiClient {
    * Throws ApiError with code INTENTION_RATE_LIMIT (429) when the daily cap is
    * reached, or REQUEST_ALREADY_EXISTS (409) for a duplicate live request.
    */
+  /** Submit feedback / comment / concern to the operator. */
+  async submitFeedback(input: FeedbackSubmitRequest, csrfToken: string): Promise<FeedbackSubmitResponse> {
+    const validated = feedbackSubmitRequestSchema.parse(input);
+    const data = await this.request("POST", "/v1/feedback", validated, csrfToken, 201);
+    return feedbackSubmitResponseSchema.parse(data);
+  }
+
   async sendIntroductionRequest(input: IntroductionRequestCreate, csrfToken: string) {
     const validated = introductionRequestCreateSchema.parse(input);
     const data = await this.request("POST", "/v1/discovery/request", validated, csrfToken);

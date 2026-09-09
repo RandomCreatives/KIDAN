@@ -123,6 +123,8 @@ export interface PersistenceRepository {
     telegramCiphertext: Buffer;
     createPublicCode: () => string;
   }): Promise<UserRecord>;
+  /** Resolve a user by their (already-hashed) Telegram id lookup hash; null if none. */
+  findUserByTelegramLookupHash(telegramLookupHash: Buffer): Promise<UserRecord | null>;
   createSession(input: {
     userId: string;
     tokenHash: Buffer;
@@ -355,9 +357,30 @@ export interface PersistenceRepository {
    * Returns counts for logging (no user-identifying data).
    */
   purgeExpiredIntroductionData(now: Date): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }>;
+  // --- Feedback / comments / concerns (candidate -> operator) ---
+  /** Stores a feedback entry authored by the user. Returns the stored id. */
+  createFeedback(input: {
+    userId: string;
+    publicCode: string;
+    kind: "report" | "feedback" | "comment";
+    body: string;
+    now: Date;
+  }): Promise<{ id: string; createdAt: Date }>;
+  /** Admin: all feedback newest-first, plus the count of unread items. */
+  listFeedback(): Promise<{ items: FeedbackRow[]; unreadCount: number }>;
+  /** Admin: mark a feedback entry read. Returns false when not found. */
+  markFeedbackRead(id: string, now: Date): Promise<boolean>;
 }
 
-/** An introduction request joined with the OTHER party's values-only profile. */
+/** Feedback row joined with the author's public code. */
+export interface FeedbackRow {
+  id: string;
+  publicCode: string;
+  kind: "report" | "feedback" | "comment";
+  body: string;
+  createdAt: Date;
+  readAt: Date | null;
+}
 export interface IntroductionRequestRow {
   id: string;
   status: string;
