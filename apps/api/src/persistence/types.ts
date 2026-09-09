@@ -201,6 +201,8 @@ export interface PersistenceRepository {
   // --- B3 admin review console ---
   /** Submitted profiles awaiting review (most recently submitted first). */
   listPendingSubmissions(): Promise<AdminQueueRow[]>;
+  /** ALL submitted profiles regardless of decision (roster for the funnel list). */
+  listAllSubmissions(): Promise<AdminQueueRow[]>;
   /** Full submission for the detail view, or null when the user has not submitted. */
   getSubmissionForAdmin(userId: string): Promise<AdminSubmissionRow | null>;
   /** Look up a submitted user by their public code (KD-XXXXXX); null if none. */

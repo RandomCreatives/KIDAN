@@ -359,6 +359,28 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return rows.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
   }
 
+  async listAllSubmissions(): Promise<AdminQueueRow[]> {
+    const rows: AdminQueueRow[] = [];
+    for (const [userId, draft] of this.drafts) {
+      if (!draft.submittedAt) continue;
+      const user = this.users.get(userId);
+      const identity = this.identities.get(userId);
+      const payload = draft.publicPayload as { publicProfile?: { gender?: string; city?: string } };
+      const photo = this.verificationPhotos.get(userId);
+      rows.push({
+        userId,
+        publicCode: user?.publicCode ?? "KD-UNKNOWN",
+        gender: payload.publicProfile?.gender ?? "female",
+        city: payload.publicProfile?.city ?? "",
+        dateOfBirthCiphertext: identity?.dateOfBirthCiphertext ?? Buffer.alloc(0),
+        submittedAt: new Date(draft.submittedAt),
+        reviewStatus: this.reviewStatus.get(userId) ?? "pending",
+        hasPhoto: Boolean(photo && photo.deletedAt === null),
+      });
+    }
+    return rows.sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+  }
+
   async findUserIdByPublicCode(publicCode: string): Promise<string | null> {
     for (const [id, user] of this.users) {
       if (user.publicCode === publicCode) return id;

@@ -130,6 +130,19 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
     return reply.send({ data: response.data });
   });
 
+  // Roster: ALL submitted candidates regardless of decision (for the funnel
+  // list). Privacy-safe — public code, age, city, status only; no identity.
+  app.get("/v1/admin/submissions/all", async (request, reply) => {
+    if (!(await requireAdmin(request, reply))) return;
+    const items = await options.adminService.listAll();
+    const response = adminQueueResponseSchema.safeParse({ items });
+    if (!response.success) {
+      request.log.error({ msg: "admin roster response failed contract validation", error: response.error.flatten() });
+      return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
+    }
+    return reply.send({ data: response.data });
+  });
+
   // Track E2: privacy-safe pilot funnel metrics — aggregate counts only, no
   // identities, no third-party analytics. Gated by the admin session.
   app.get("/v1/admin/metrics", async (request, reply) => {

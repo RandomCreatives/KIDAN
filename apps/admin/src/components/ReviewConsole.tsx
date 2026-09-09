@@ -125,7 +125,7 @@ export function ReviewConsole({ client, label, onLogout }: ReviewConsoleProps) {
 
           <ConnectionsPanel client={client} onError={setError} />
 
-          <FunnelPanel client={client} onError={setError} />
+          <FunnelPanel client={client} onError={setError} openSubmission={(code) => void openSubmission(code)} />
         </section>
 
         <section className="detail-panel">
