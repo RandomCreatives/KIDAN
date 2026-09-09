@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@kidan/contracts": "*",
     "grammy": "1.45.1"
   },
   "devDependencies": {
