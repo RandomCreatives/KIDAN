@@ -9,13 +9,22 @@ import { CompassIcon, ConnectionIcon, UserIcon } from "./components/Icons";
 import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
 import { PilotDisabledScreen } from "./PilotDisabledScreen";
+import { readTargetTabFromUrl } from "./lib/deepLink";
 
 type Tab = "discover" | "connections" | "profile";
 type Overlay = null | "requests";
 
+/** Initial tab chosen at boot from the bot's deep-link query (if any). */
+function initialTab(): Tab {
+  const target = readTargetTabFromUrl(window.location.href);
+  if (target === "connections" || target === "profile") return target;
+  if (target === "status") return "profile";
+  return "discover";
+}
+
 export function App() {
   const { isDemo, realSubmissionsEnabled } = useAuth();
-  const [tab, setTab] = useState<Tab>("discover");
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [draftSaved, setDraftSaved] = useState(false);
   const [approved, setApproved] = useState(false);
