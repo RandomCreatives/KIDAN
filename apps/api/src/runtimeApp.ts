@@ -109,9 +109,17 @@ export async function buildRuntimeApp(
     // with a one-tap "Open console" Telegram Mini App button. Enabled only when
     // the admin bot token, operator chat id, and admin console URL are all set;
     // otherwise the no-op notifier is used.
-    const adminNotifier = environment.ADMIN_BOT_TOKEN && environment.ADMIN_CHAT_ID && environment.ADMIN_CONSOLE_URL
-      ? new TelegramAdminNotifier(environment.ADMIN_BOT_TOKEN.trim(), environment.ADMIN_CHAT_ID.trim(), environment.ADMIN_CONSOLE_URL.trim())
+    const adminConsoleConfigured = Boolean(environment.ADMIN_BOT_TOKEN && environment.ADMIN_CHAT_ID && environment.ADMIN_CONSOLE_URL);
+    const adminNotifier = adminConsoleConfigured
+      ? new TelegramAdminNotifier(environment.ADMIN_BOT_TOKEN!.trim(), environment.ADMIN_CHAT_ID!.trim(), environment.ADMIN_CONSOLE_URL!.trim())
       : new NoopAdminNotifier();
+    // Startup diagnostics (booleans only — never the secret/token values).
+    console.info(
+      "[kidan-api] admin bot: "
+      + `token=${Boolean(environment.ADMIN_BOT_TOKEN)} chatId=${Boolean(environment.ADMIN_CHAT_ID)} `
+      + `consoleUrl=${Boolean(environment.ADMIN_CONSOLE_URL)} `
+      + `notifyTestSecret=${Boolean(environment.ADMIN_NOTIFY_TEST_SECRET)}`,
+    );
     const onboardingService = new OnboardingService(
       repository,
       identityCipher,
