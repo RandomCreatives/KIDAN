@@ -10,6 +10,7 @@
 
 import type { PersistenceRepository, FeedbackRow } from "../persistence/types.js";
 import type { FeedbackKind } from "@kidan/contracts";
+import type { AdminNotifier } from "../notifications/adminNotifier.js";
 
 export interface FeedbackSummary {
   items: FeedbackRow[];
@@ -17,7 +18,10 @@ export interface FeedbackSummary {
 }
 
 export class FeedbackService {
-  constructor(private readonly repository: PersistenceRepository) {}
+  constructor(
+    private readonly repository: PersistenceRepository,
+    private readonly notifier?: AdminNotifier,
+  ) {}
 
   /** Persist a candidate's feedback. Returns the new entry id/creation time. */
   async submit(input: {
@@ -30,13 +34,25 @@ export class FeedbackService {
     const body = input.body.trim();
     if (body.length < 1) throw new FeedbackError("EMPTY_FEEDBACK");
     if (body.length > 4000) throw new FeedbackError("FEEDBACK_TOO_LONG");
-    return this.repository.createFeedback({
+    const created = await this.repository.createFeedback({
       userId: input.userId,
       publicCode: input.publicCode,
       kind: input.kind,
       body,
       now: input.now ?? new Date(),
     });
+    // Nudge the operator for actionable reports. Privacy-safe: public code
+    // only, never identity. Fire-and-forget so feedback is never lost if the
+    // notifier is down.
+    if (input.kind === "report" && this.notifier) {
+      await this.notifier
+        .notify({
+          kind: "new_feedback",
+          message: `New concern from ${input.publicCode}: ${body.slice(0, 140)}`,
+        })
+        .catch(() => undefined);
+    }
+    return created;
   }
 
   /** All feedback newest-first, with the unread count. */

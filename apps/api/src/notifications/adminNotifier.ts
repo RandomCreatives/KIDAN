@@ -11,7 +11,8 @@
 export type AdminNotificationKind =
   | "new_submission"
   | "connection_pending_admin"
-  | "health_degraded";
+  | "health_degraded"
+  | "new_feedback";
 
 export interface AdminNotification {
   kind: AdminNotificationKind;
