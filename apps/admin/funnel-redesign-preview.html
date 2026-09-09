@@ -25,11 +25,11 @@
   .stat.hl{border-color:rgba(15,61,46,.35);background:rgba(15,61,46,.05);}
   .stat-ic{flex:0 0 24px;width:24px;height:24px;display:grid;place-items:center;border-radius:8px;background:rgba(15,61,46,.08);color:var(--brand);}
   .stat-ic .ic{width:14px;height:14px;}
-  .stat-t{display:flex;flex-direction:column;min-width:0;}
-  .stat-v{font-size:1.05rem;font-weight:700;line-height:1.1;}
+  .stat-t{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;min-width:0;}
+  .stat-v{font-size:1.15rem;font-weight:800;line-height:1.1;}
   .stat.hl .stat-v{color:var(--green);}
-  .stat-l{font-size:.72rem;font-weight:600;color:var(--ink-soft);white-space:nowrap;}
-  .note{margin:.7rem 0 0;font-size:.75rem;color:var(--ink-soft);}
+  .stat-l{font-size:.72rem;font-weight:600;color:var(--ink-soft);}
+  .stat-h{font-size:.62rem;color:var(--ink-soft);opacity:.9;}
   .sub{display:flex;flex-direction:column;gap:.6rem;margin-top:.7rem;}
   .lh{display:flex;align-items:baseline;justify-content:space-between;font-size:.8rem;font-weight:600;color:var(--ink-soft);}
   .lh b{font-size:.72rem;font-weight:500;opacity:.8;}
@@ -62,7 +62,6 @@
     <div class="tabs" id="tabs"></div>
     <div class="grid" id="grid"></div>
     <div class="sub" id="sub"></div>
-    <p class="note">Aggregate counts only — no candidate identity is shown or logged.</p>
   </div>
 </div>
 <script>
@@ -72,19 +71,19 @@ const m={submitted:12,approved:8,shortlisted:23};
 const roster=[["KD-1F3K9",32,"pending"],["KD-9B2QM",28,"approved"],["KD-4T7LP",26,"pending"],["KD-7W5RJ",35,"changes"],["KD-2N8KD",29,"pending"],["KD-6C3ZX",31,"rejected"],["KD-8X4HV",27,"pending"],["KD-3P7TJ",30,"pending"]];
 const tabs=[["summary","summary","Summary"],["submissions","submission","Submissions"],["requests","request","Requests"],["connections","connection","Connections"]];
 let cur="submissions";
-function cardrow(c){return c.map(([icn,l,v,hl])=>`<div class="stat ${hl?'hl':''}"><span class="stat-ic">${ic(icn)}</span><span class="stat-t"><span class="stat-v">${v}</span><span class="stat-l">${l}</span></span></div>`).join('');}
+function cardrow(c){return c.map(([icn,l,v,hl,h])=>`<div class="stat ${hl?'hl':''}"><span class="stat-ic">${ic(icn)}</span><span class="stat-t"><span class="stat-v">${v}</span><span class="stat-l">${l}</span>${h?`<span class="stat-h">${h}</span>`:''}</span></div>`).join('');}
 function render(){
   document.getElementById("title").innerHTML=ic('funnel')+'  Funnel';
   document.getElementById("tabs").innerHTML=tabs.map(([id,icn,l])=>`<button class="tab ${id===cur?'on':''}" onclick="cur='${id}';render()">${ic(icn)} ${l}</button>`).join('');
   const g=document.getElementById("grid");
   const s=document.getElementById("sub");
-  if(cur==='summary'){ g.innerHTML=cardrow([["submission","Submitted",m.submitted],["check","Approved",m.approved,1],["stack","Admission rate","67%"],["heart","Shortlisted",m.shortlisted]]); s.innerHTML=''; }
+  if(cur==='summary'){ g.innerHTML=cardrow([["submission","Submitted",m.submitted,0,"Total candidates"],["check","Approved",m.approved,1,"Active in cohort"],["stack","Admission rate","67%",0,"Approved / submitted"],["heart","Shortlisted",m.shortlisted,0,"Interest swipes"]]); s.innerHTML=''; }
   else if(cur==='submissions'){
-    g.style.display='grid'; g.innerHTML=cardrow([["submission","Submitted",m.submitted],["check","Approved",m.approved,1],["hourglass","In review",roster.filter(r=>r[2]==='pending'||r[2]==='changes').length]]);
+    g.style.display='grid'; g.innerHTML=cardrow([["submission","Submitted",m.submitted,0,"Total"],["check","Approved",m.approved,1,"Admitted"],["hourglass","In review",roster.filter(r=>r[2]==='pending'||r[2]==='changes').length,0,"Not yet decided"]]);
     s.innerHTML=`<div class="lh"><span>${roster.length} applicants</span><b>Tap to open &amp; review</b></div><ul class="list">${roster.map(([c,age,st])=>`<li><button class="item" onclick="alert('Open ${c} (demo)')"><span class="code">${c}</span><span class="age">${age}</span><span class="dot ${st}">${st==='approved'?'Approved':st==='rejected'?'Rejected':st==='changes'?'Changes':'Pending'}</span><span class="spacer"></span>${ic('chevron')}</button></li>`).join('')}</ul>`;
-  } else if(cur==='requests'){ g.innerHTML=cardrow([["pending","Pending",3],["check","Accepted",2,1],["decline","Declined",1],["expired","Expired",0]]); s.innerHTML=''; }
+  } else if(cur==='requests'){ g.innerHTML=cardrow([["pending","Pending",3,0,"Open requests"],["check","Accepted",2,1,"Reached connection"],["decline","Declined",1,0,"Declined by recipient"],["expired","Expired",0,0,"Past 72h window"]]); s.innerHTML=''; }
   else {
-    g.innerHTML=cardrow([["admin","With admin",1,1],["check","Connected",2],["decline","Declined",0],["reject","Rejected",0]]);
+    g.innerHTML=cardrow([["admin","With admin",1,1,"Awaiting approval"],["check","Connected",2,0,"Matched"],["decline","Declined",0,0,"A participant declined"],["reject","Rejected",0,0,"By administrator"]]);
     const conns=[["KD-1F3K9",32,"KD-9B2QM",28],["KD-4T7LP",26,"KD-7W5RJ",35]];
     s.innerHTML=`<div class="lh"><span>${conns.length} awaiting approval</span><b>Approve or reject below</b></div><ul class="list">${conns.map(([a,aa,b,ba])=>`<li><div class="conn"><div class="cline"><span class="code">${a}</span><span class="age">${aa}</span><span class="join">⇄</span><span class="code">${b}</span><span class="age">${ba}</span><span class="spacer"></span></div><div class="cact"><button class="btnp" onclick="alert('Approved (demo)')">Approve</button><button class="btnq" onclick="alert('Rejected (demo)')">Reject</button></div></div></li>`).join('')}</ul>`;
   }
