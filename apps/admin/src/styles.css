@@ -438,12 +438,11 @@ textarea { resize: vertical; }
   color: var(--brand);
 }
 .funnel-stat-icon .funnel-icon { width: 14px; height: 14px; }
-.funnel-stat-text { display: flex; flex-direction: column; min-width: 0; }
-.funnel-stat-value { font-size: 1.05rem; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.funnel-stat-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; min-width: 0; }
+.funnel-stat-value { font-size: 1.15rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
 .funnel-stat.is-highlight .funnel-stat-value { color: var(--green); }
 .funnel-stat-label { font-size: 0.72rem; font-weight: 600; color: var(--ink-soft); line-height: 1.2; }
-.funnel-stat-hint { font-size: 0.66rem; color: var(--ink-soft); opacity: 0.85; }
-.funnel-note { margin: 0.7rem 0 0; font-size: 0.75rem; color: var(--ink-soft); }
+.funnel-stat-hint { font-size: 0.62rem; color: var(--ink-soft); opacity: 0.9; line-height: 1.2; }
 
 /* Actionable submissions list (scrolls for many applicants) */
 .funnel-submissions { display: flex; flex-direction: column; gap: 0.6rem; }

@@ -83,8 +83,6 @@ export function FunnelPanel({ client, onError, openSubmission }: FunnelPanelProp
               <ConnectionsView metrics={metrics} pending={pendingConnections} busy={busyConnection} onDecide={decideConnection} />
             )}
           </div>
-
-          <p className="funnel-note">Aggregate counts only — no candidate identity is shown or logged.</p>
         </div>
       )}
     </section>
@@ -94,7 +92,6 @@ export function FunnelPanel({ client, onError, openSubmission }: FunnelPanelProp
 /* ---- views ---- */
 
 function SummaryView({ metrics }: { metrics: FunnelMetrics }) {
-  const total = metrics.cohort.submitted + metrics.cohort.approved;
   const admitRate = metrics.cohort.submitted > 0
     ? Math.round((metrics.cohort.approved / metrics.cohort.submitted) * 100)
     : 0;
@@ -103,7 +100,7 @@ function SummaryView({ metrics }: { metrics: FunnelMetrics }) {
       <StatCard icon="submission" label="Submitted" value={metrics.cohort.submitted} hint="Total candidates" />
       <StatCard icon="check" label="Approved" value={metrics.cohort.approved} hint="Active in cohort" highlight />
       <StatCard icon="heart" label="Shortlisted" value={metrics.discovery.shortlisted} hint="Interest swipes" />
-      <StatCard icon="stack" label="Admission rate" value={`${admitRate}%`} hint={total > 0 ? "Approved / submitted" : "Awaiting data"} />
+      <StatCard icon="stack" label="Admission rate" value={`${admitRate}%`} hint="Approved / submitted" />
     </div>
   );
 }
@@ -282,9 +279,11 @@ function StatCard({ icon, label, value, hint, highlight }: {
   return (
     <div className={`funnel-stat ${highlight ? "is-highlight" : ""}`}>
       <span className="funnel-stat-icon"><Icon name={icon} /></span>
-      <span className="funnel-stat-value">{value}</span>
-      <span className="funnel-stat-label">{label}</span>
-      {hint ? <span className="funnel-stat-hint">{hint}</span> : null}
+      <span className="funnel-stat-text">
+        <span className="funnel-stat-value">{value}</span>
+        <span className="funnel-stat-label">{label}</span>
+        {hint ? <span className="funnel-stat-hint">{hint}</span> : null}
+      </span>
     </div>
   );
 }
