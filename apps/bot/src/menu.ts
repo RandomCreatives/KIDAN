@@ -12,7 +12,7 @@
 export type MenuTier = "new" | "active" | "all";
 
 export type MenuAction =
-  | { kind: "content"; key: "how" | "rules" | "privacy" | "faq" | "status" }
+  | { kind: "content"; key: ContentKey }
   | { kind: "open"; target: "launch" | "home" | "status" }
   | { kind: "report" }
   | { kind: "support" }
@@ -30,7 +30,9 @@ interface Row {
   hero?: boolean;
 }
 
-export const CONTENT: Record<MenuAction & { kind: "content" }["key"], { title: string; body: string }> = {
+export type ContentKey = "how" | "rules" | "privacy" | "faq" | "status";
+
+export const CONTENT: Record<ContentKey, { title: string; body: string }> = {
   how: {
     title: "How it works",
     body:
