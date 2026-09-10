@@ -41,21 +41,21 @@ backend).
 3. **Option A** — bot queries the backend for profile status to pick menu; enables `Status`.
 
 ### Feedback / concerns + real bot status — `[shipped: part 2]`
-**Shipped (PR #31, merge `87209bc`):** feedback feed (table 0008) + candidate
-`POST /v1/feedback` + admin `GET /v1/admin/feedback` (401 gated live) + admin
-hamburger drawer + mini-app Feedback & help screen + real bot tier via
-`/internal/bot-state`.
-Tests: routes 4, service 4, bot tier 4; api 165, bot 16, miniapp 137, admin 8.
+**Shipped (PR #31, merge `87209bc` + PR #32, merge `0c20579`):** feedback feed
+(table 0008) + candidate `POST /v1/feedback` + admin `GET /v1/admin/feedback`
+(401 gated live) + admin hamburger drawer + mini-app Feedback & help screen +
+real bot tier via `/internal/bot-state` + **operator ping on new report** +
+**serverless webhook hosting** for `@KidanAppBot`.
+Tests: api 166, bot 16, miniapp 137, admin 8. All live & healthy.
 
-### Remaining (not yet done — needs decision/action)
-- **Bot hosting:** convert `@KidanAppBot` to serverless webhook (recommended) so it deploys
-  from `main` like the others. Confirm hosting target + register webhook + set
-  `BOT_WEBHOOK_URL`/`BOT_WEBHOOK_SECRET` env. **Blocked on operator.**
-- **Set `BOT_STATE_SECRET`** on the API env (API project) so `/internal/bot-state` registers
-  (without it the endpoint is intentionally 404). Then point the bot at
-  `BOT_API_URL` + `BOT_STATE_SECRET` to serve real tiers.
-- **Feedback→admin bot notification** (optional): fire the existing admin-console bot when a
-  new `report` lands, so the operator is nudged. (Currently the draw
+### Remaining (env/config actions — operator)
+- **Set `BOT_STATE_SECRET`** on the API env project (so `/internal/bot-state`
+  registers; without it the endpoint is intentionally 404).
+- **Create the bot Vercel project** and set `TELEGRAM_BOT_TOKEN`, `MINI_APP_URL`,
+  `BOT_API_URL`, `BOT_STATE_SECRET`, `BOT_WEBHOOK_URL`; then call `/api/register`
+  once to point Telegram at the webhook.
+- **Switch `@KidanAppBot` from long-polling to the webhook** (stop the always-on
+  host once the webhook is live) — recommended; only one should run at a time.
 
 ---
 
