@@ -1,6 +1,6 @@
 # Kidan — Agent Handoff
 
-Updated: 2026-09-10 (Africa/Nairobi). `main` HEAD: **`0c20579`** (PR #32, admin ping + webhook hosting).
+Updated: 2026-09-10 (Africa/Nairobi). `main` HEAD: **`21b754d`** (PR #33, bot `@kidan/contracts` dependency fix — unblocks the bot Vercel build).
 
 ## Current position
 
