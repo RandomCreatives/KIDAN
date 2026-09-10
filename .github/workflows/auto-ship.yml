@@ -1,0 +1,48 @@
+name: Auto-ship
+
+# Any branch pushed to ship/** is opened as a PR against main and set to
+# auto-merge. Pushes are made with a real credential (SSH deploy key), so:
+#   1. The push event runs CI on the branch head SHA (see ci.yml push trigger).
+#   2. This workflow opens the PR using GITHUB_TOKEN. GITHUB_TOKEN-sourced
+#      events do not trigger new workflow runs, which is fine: the required
+#      status checks already land on the head SHA from the push run, and
+#      branch protection evaluates checks on the SHA, not on the trigger.
+#   3. Auto-merge completes the merge once checks are green. No PAT involved.
+#
+# Requires repo settings (one-time):
+#   Settings -> General -> Pull Requests -> Allow auto-merge
+#   Settings -> Actions -> General -> Workflow permissions ->
+#     "Allow GitHub Actions to create and approve pull requests"
+
+on:
+  push:
+    branches: ["ship/**"]
+
+permissions:
+  contents: write        # needed to complete the merge
+  pull-requests: write   # needed to open + enable auto-merge
+
+concurrency:
+  group: auto-ship-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open-and-auto-merge:
+    name: Open PR + enable auto-merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BRANCH: ${{ github.ref_name }}
+    steps:
+      - name: Open PR (skip if one already exists)
+        run: |
+          if gh pr view "${BRANCH}" --repo RandomCreatives/KIDAN --json number --jq '.number' >/dev/null 2>&1; then
+            echo "PR already open for ${BRANCH}, continuing to auto-merge."
+          else
+            gh pr create --repo RandomCreatives/KIDAN --base main --head "${BRANCH}" \
+              --title "ship: ${BRANCH#ship/}" \
+              --body "Auto-shipped from \`${BRANCH}\`. Opened by the auto-ship workflow (GITHUB_TOKEN); the deploy key push already ran CI on this commit's SHA. Merges automatically when the required checks pass — no personal access token involved."
+          fi
+      - name: Enable auto-merge (merges once required checks are green)
+        run: gh pr merge "${BRANCH}" --repo RandomCreatives/KIDAN --auto --merge
