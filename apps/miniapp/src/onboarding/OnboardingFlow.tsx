@@ -26,6 +26,7 @@ import {
 } from "../components/Icons";
 import { haptic } from "../lib/telegram";
 import { ChoiceChips, Field, SegmentedChoice, StepHeading, ToggleCard, VisibilityPill } from "./FormControls";
+import { IntroScreens, type IntroStage } from "./IntroScreens";
 import { PublicPreview } from "./PublicPreview";
 import { cityOptions, marriageOptions, maritalOptions, valueOptions } from "./options";
 import { fileToVerificationPhotoDataUrl } from "./photoCapture";
@@ -37,6 +38,12 @@ interface OnboardingFlowProps {
   onExit: (saved?: boolean) => void;
   onComplete: (saved: boolean) => void;
 }
+
+/** "done" = pre-onboarding intro finished (or skipped for returning users). */
+type IntroPhase = IntroStage | "done";
+
+/** Splash auto-advance delay; a tap always advances instantly. */
+const SPLASH_DELAY_MS = 1500;
 
 const LABELS = [
   "Eligibility",
@@ -131,6 +138,35 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       initialHydrationRef.current = false;
     }
   }, [hydrated, resumedStep]);
+
+  // Pre-onboarding intro (splash → welcome → founding cohort) is for brand-new
+  // candidates only. A candidate with a server-persisted draft (version > 0) or
+  // an already-submitted profile skips it and lands straight on their step.
+  const [introPhase, setIntroPhase] = useState<IntroPhase>("splash");
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (persisted || draftSubmitted) setIntroPhase("done");
+  }, [hydrated, persisted, draftSubmitted]);
+
+  // Splash auto-advances after a short hold; unmount/stage change clears it.
+  useEffect(() => {
+    if (introPhase !== "splash") return;
+    const timer = window.setTimeout(() => setIntroPhase("welcome"), SPLASH_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [introPhase]);
+
+  const advanceIntro = useCallback(() => {
+    setIntroPhase((phase) =>
+      phase === "splash" ? "welcome" : phase === "welcome" ? "founding" : "done",
+    );
+    window.scrollTo({ top: 0 });
+  }, []);
+
+  const advanceIntroWithHaptic = useCallback(() => {
+    haptic("decision");
+    advanceIntro();
+  }, [advanceIntro]);
 
   const progress = useMemo(() => ((step + 1) / activeIndices.length) * 100, [step, activeIndices.length]);
   const controlsBusy = actionBusy || saving || reloading || submitting;
@@ -360,6 +396,18 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           )}
         </section>
       </main>
+    );
+  }
+
+  // Brand-new candidates get the intro sequence first; it never reappears for
+  // anyone with a saved draft, a submitted profile, or after a stage completes.
+  if (introPhase !== "done" && !submitted && !draftSubmitted) {
+    return (
+      <IntroScreens
+        stage={introPhase}
+        onNext={introPhase === "splash" ? advanceIntro : advanceIntroWithHaptic}
+        onExit={() => void requestExit(true)}
+      />
     );
   }
 

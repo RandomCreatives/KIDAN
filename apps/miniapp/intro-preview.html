@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kidan — Onboarding Intro Preview</title>
+<style>
+  :root {
+    --ink: #15241f; --ink-soft: #56625d; --ivory: #f6f3ed; --paper: #fffdf9;
+    --forest: #1f4b3c; --forest-deep: #15382e; --gold: #b58a47; --gold-soft: #efe4cf;
+    --line: rgba(30,57,48,.12);
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e8e6e0; color: var(--ink); }
+  .gallery-head { max-width: 1240px; margin: 0 auto; padding: 34px 22px 10px; }
+  .gallery-head h1 { margin: 0 0 6px; font-family: Georgia, serif; font-size: 26px; color: var(--forest-deep); }
+  .gallery-head p { margin: 0; font-size: 13px; color: var(--ink-soft); max-width: 70ch; }
+  .gallery { display: flex; flex-wrap: wrap; gap: 26px; justify-content: center; padding: 26px 22px 60px; }
+
+  .frame { width: 320px; }
+  .frame-label { margin: 10px 4px 0; font-size: 11px; color: var(--ink-soft); line-height: 1.5; }
+  .frame-label strong { display: block; font-size: 12px; color: var(--forest-deep); }
+  .phone {
+    height: 640px; border-radius: 38px; border: 8px solid #101c17;
+    overflow: hidden; position: relative; box-shadow: 0 24px 60px rgba(16,28,23,.28);
+  }
+  .screen { position: absolute; inset: 0; display: flex; flex-direction: column; }
+
+  /* --- brand mark (identical construction to production .brand-mark) --- */
+  .brand-mark { position: relative; width: 24px; height: 25px; display: inline-block;
+    border: 1px solid rgba(181,138,71,.45); border-radius: 50% 50% 45% 45%;
+    background: linear-gradient(145deg, #fff9e9, #e9d6ae); box-shadow: inset 0 0 0 3px rgba(255,255,255,.45); }
+  .brand-mark-v, .brand-mark-h { position: absolute; display: block; background: var(--forest); border-radius: 3px; }
+  .brand-mark-v { width: 2px; height: 12px; left: 10px; top: 6px; }
+  .brand-mark-h { height: 2px; width: 8px; left: 7px; top: 10px; }
+
+  /* --- production intro styles (mirrored from global.css) --- */
+  .intro-shell { min-height: 100%; display: flex; flex-direction: column; padding: 18px 22px 34px; background: var(--ivory); }
+  .intro-splash { background: linear-gradient(160deg, var(--forest-deep) 0%, #0d271f 100%); padding: 0; }
+  .intro-splash-tap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+  .intro-bloom { animation: intro-bloom .95s cubic-bezier(.22,.8,.3,1) both; }
+  .intro-brand-mark { transform: scale(3.2); transform-origin: center; }
+  .intro-wordmark { font-family: Georgia, "Times New Roman", serif; font-size: 40px; font-weight: 600; letter-spacing: -.6px; color: var(--ivory); }
+  .intro-tagline { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; color: var(--gold-soft); }
+  .intro-topline { display: flex; align-items: center; justify-content: space-between; }
+  .section-kicker { color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+  .icon-button { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: rgba(255,255,255,.7);
+    display: grid; place-items: center; color: var(--forest); font-size: 15px; }
+  .intro-center { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 10px; padding: 0 2px; }
+  .intro-title { margin: 0; max-width: 15ch; font-family: Georgia, serif; font-size: 36px; font-weight: 500; line-height: 1.12; color: var(--forest-deep); }
+  .intro-copy { margin: 2px 0 0; max-width: 30ch; font-size: 13px; line-height: 1.65; color: var(--ink-soft); }
+  .intro-badge { display: inline-block; margin-bottom: 6px; padding: 6px 12px; border: 1px solid rgba(181,138,71,.5);
+    border-radius: 99px; background: var(--gold-soft); color: #7c5a24; font-size: 9.5px; font-weight: 800;
+    letter-spacing: .12em; text-transform: uppercase; }
+  .intro-footer { padding-bottom: 4px; }
+  .primary-button { width: 100%; min-height: 49px; border: 0; border-radius: 99px; color: #fff; background: var(--forest);
+    font-size: 12px; font-weight: 700; box-shadow: 0 10px 25px rgba(31,75,60,.2); }
+  .intro-fade-up { animation: intro-fade-up .5s cubic-bezier(.22,.8,.3,1) both; }
+  @keyframes intro-bloom { 0% { opacity: 0; transform: scale(.7); } 60% { opacity: 1; } 100% { opacity: 1; transform: scale(1); } }
+  @keyframes intro-fade-up { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
+  .replay { margin: 18px auto 0; display: block; padding: 10px 22px; border: 1px solid var(--line); border-radius: 99px;
+    background: #fff; color: var(--forest); font-size: 12px; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="gallery-head">
+    <h1>Onboarding intro — preview</h1>
+    <p>Three screens shown to brand-new candidates before the eligibility step, in production styles.
+       The splash auto-advances after ~1.5 s (tap skips). Candidates with a saved draft never see these —
+       they resume straight at their step. Minimal tone per direction.</p>
+  </div>
+
+  <div class="gallery" id="gallery">
+    <div class="frame">
+      <div class="phone">
+        <div class="screen intro-shell intro-splash">
+          <div class="intro-splash-tap" role="button" aria-label="Continue to welcome" style="cursor:pointer">
+            <span class="intro-bloom">
+              <span class="brand-mark intro-brand-mark"><span class="brand-mark-v"></span><span class="brand-mark-h"></span></span>
+            </span>
+            <span class="intro-wordmark intro-fade-up" style="animation-delay:250ms">Kidan</span>
+            <span class="intro-tagline intro-fade-up" style="animation-delay:430ms">Marriage, on purpose.</span>
+          </div>
+        </div>
+      </div>
+      <p class="frame-label"><strong>1 · Splash (logo page)</strong>Auto-advances ~1.5 s; tap anywhere to skip. Deep-forest logo moment — no chrome, no buttons, one tagline.</p>
+    </div>
+
+    <div class="frame">
+      <div class="phone">
+        <div class="screen intro-shell">
+          <header class="intro-topline">
+            <span class="section-kicker">Welcome</span>
+            <span class="icon-button">✕</span>
+          </header>
+          <section class="intro-center">
+            <h1 class="intro-title intro-fade-up">Welcome to Kidan.</h1>
+            <p class="intro-copy intro-fade-up" style="animation-delay:90ms">A private, values-first path to intentional marriage.</p>
+          </section>
+          <div class="intro-footer intro-fade-up" style="animation-delay:180ms">
+            <button class="primary-button" type="button">Begin</button>
+          </div>
+        </div>
+      </div>
+      <p class="frame-label"><strong>2 · Welcome</strong>One greeting, one line, one CTA. ✕ exits without saving.</p>
+    </div>
+
+    <div class="frame">
+      <div class="phone">
+        <div class="screen intro-shell">
+          <header class="intro-topline">
+            <span class="section-kicker">Founding cohort</span>
+            <span class="icon-button">✕</span>
+          </header>
+          <section class="intro-center">
+            <span class="intro-badge intro-fade-up">Founding cohort</span>
+            <h1 class="intro-title intro-fade-up" style="animation-delay:70ms">You’re among our very first.</h1>
+            <p class="intro-copy intro-fade-up" style="animation-delay:150ms">This first circle shapes what Kidan becomes. Thank you for starting with us.</p>
+          </section>
+          <div class="intro-footer intro-fade-up" style="animation-delay:230ms">
+            <button class="primary-button" type="button">Start your profile</button>
+          </div>
+        </div>
+      </div>
+      <p class="frame-label"><strong>3 · Founding Cohort (1st-cohort special)</strong>Badge + first-circle framing. CTA lands on step 1 (Eligibility) of the existing flow.</p>
+    </div>
+  </div>
+
+  <button class="replay" type="button" onclick="document.querySelectorAll('.intro-fade-up,.intro-bloom').forEach(function(el){el.style.animation='none';void el.offsetWidth;el.style.animation='';})">↻ Replay animations</button>
+</body>
+</html>

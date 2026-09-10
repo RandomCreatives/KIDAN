@@ -505,3 +505,58 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 }
 .feedback-sent h1 { margin: 4px 0 0; font-size: 22px; color: var(--ink, #20342c); }
 .feedback-sent p { margin: 0 0 8px; font-size: 13px; color: rgba(32,52,44,.78); max-width: 280px; }
+
+/* ---------- Onboarding intro (splash / welcome / founding cohort) ---------- */
+.intro-shell {
+  min-height: 100vh; display: flex; flex-direction: column;
+  padding: max(18px, env(safe-area-inset-top)) 22px calc(34px + env(safe-area-inset-bottom));
+  background: var(--ivory);
+}
+.intro-splash { background: linear-gradient(160deg, var(--forest-deep) 0%, #0d271f 100%); padding: 0; }
+.intro-splash-tap {
+  appearance: none; flex: 1; width: 100%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 22px;
+  border: 0; background: transparent; cursor: pointer;
+  font: inherit; color: inherit;
+}
+.intro-splash-tap:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: -6px; }
+.intro-bloom { animation: intro-bloom .95s cubic-bezier(.22,.8,.3,1) both; }
+.intro-brand-mark { transform: scale(3.2); transform-origin: center; }
+.intro-wordmark {
+  font-family: Georgia, "Times New Roman", serif; font-size: 40px; font-weight: 600;
+  letter-spacing: -.6px; color: var(--ivory);
+}
+.intro-tagline { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; color: var(--gold-soft); }
+.intro-topline { display: flex; align-items: center; justify-content: space-between; }
+.intro-center {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  align-items: flex-start; text-align: left; gap: 10px; padding: 0 2px;
+}
+.intro-title {
+  margin: 0; max-width: 15ch;
+  font-family: Georgia, serif; font-size: 36px; font-weight: 500; line-height: 1.12;
+  color: var(--forest-deep);
+}
+.intro-copy { margin: 2px 0 0; max-width: 30ch; font-size: 13px; line-height: 1.65; color: var(--ink-soft); }
+.intro-badge {
+  display: inline-block; margin-bottom: 6px; padding: 6px 12px;
+  border: 1px solid rgba(181,138,71,.5); border-radius: 99px;
+  background: var(--gold-soft);
+  color: #7c5a24; font-size: 9.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+}
+.intro-footer { padding-bottom: 4px; }
+.intro-fade-up { animation: intro-fade-up .5s cubic-bezier(.22,.8,.3,1) both; }
+
+@keyframes intro-bloom {
+  0% { opacity: 0; transform: scale(.7); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes intro-fade-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-bloom, .intro-fade-up { animation: none; }
+}
