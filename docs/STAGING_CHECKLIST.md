@@ -76,6 +76,12 @@ For every bot message and every button label seen above, confirm **none** contai
 
 - [ ] Launch Mini App from the bot hero button → opens via Telegram (not a browser prompt)
 - [ ] Telegram login / session bootstrap succeeds (no "Session expired" loop)
+- [ ] **Intro (brand-new candidates only):** logo splash shows (brand mark + "Kidan" + "Marriage, on purpose."),
+      auto-advances after ~1.5 s, tap anywhere skips it
+- [ ] Welcome screen: "Welcome to Kidan." + one line + **Begin**; the ✕ exits without saving
+- [ ] **Founding cohort** screen: gold badge + first-circle message + **Start your profile** →
+      lands on step 1 (Eligibility) of the existing flow
+- [ ] Candidate with a saved draft does **not** see the intro — resumes straight at their step
 - [ ] Faith questions + **21–45 age gate** + marriage "either" branch all present
 - [ ] Onboarding draft saves and **resumes** after closing/reopening
 - [ ] Submit a real profile (behind `ENABLE_REAL_SUBMISSIONS=true`) → success state

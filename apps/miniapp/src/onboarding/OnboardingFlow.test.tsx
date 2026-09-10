@@ -22,6 +22,14 @@ function clickContinue(): void {
   fireEvent.click(button);
 }
 
+/** Tap through the fresh-user intro (splash → welcome → founding cohort). */
+async function passIntro(): Promise<void> {
+  const splash = await screen.findByRole("button", { name: /continue to welcome/i });
+  fireEvent.click(splash);
+  fireEvent.click(await screen.findByRole("button", { name: /^begin$/i }));
+  fireEvent.click(screen.getByRole("button", { name: /start your profile/i }));
+}
+
 function setTelegram(initData: string): void {
   (window as unknown as { Telegram: unknown }).Telegram = {
     WebApp: { initData, ready: () => undefined, expand: () => undefined },
@@ -214,6 +222,8 @@ describe("OnboardingFlow", () => {
       </AuthProvider>,
     );
 
+    await passIntro();
+
     // Step 1 — eligibility
     await screen.findByText(/1 of 7/);
     fireEvent.click(screen.getByRole("button", { name: /use synthetic sample/i }));
@@ -235,6 +245,111 @@ describe("OnboardingFlow", () => {
 
     await screen.findByText(/Your profile would now enter private review/i);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fresh real users see splash → welcome → founding cohort → step 1 (R7-01)", async () => {
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft")) return Promise.resolve(draftEmpty());
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+
+    // Splash: no chrome, just the mark, wordmark, and one tagline.
+    const splash = await screen.findByRole("button", { name: /continue to welcome/i });
+    expect(screen.getByText(/Marriage, on purpose\./)).toBeTruthy();
+    expect(splash.textContent).toContain("Kidan");
+    fireEvent.click(splash);
+
+    // Welcome: one greeting, one line, one CTA.
+    await screen.findByText(/Welcome to Kidan\./);
+    expect(screen.getByText(/values-first path to intentional marriage/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^begin$/i }));
+
+    // Founding cohort: badge + first-circle framing.
+    await screen.findByText(/among our very first\./);
+    const badge = document.querySelector(".intro-badge");
+    expect(badge?.textContent).toMatch(/founding cohort/i);
+    fireEvent.click(screen.getByRole("button", { name: /start your profile/i }));
+
+    // Lands on eligibility; the intro does not linger or reappear.
+    await screen.findByText(/1 of 5/);
+    expect(screen.queryByRole("button", { name: /continue to welcome/i })).toBeNull();
+    expect(screen.queryByText(/founding cohort/i)).toBeNull();
+  });
+
+  it("candidates with a saved draft skip the intro entirely (R7-02)", async () => {
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft")) {
+        return Promise.resolve(draftGet("faith_and_family", syntheticPublicPayload));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={() => undefined} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+
+    // Resumes straight at the server step; no splash/welcome/founding screens.
+    await screen.findByText(/3 of 5/);
+    expect(screen.queryByRole("button", { name: /continue to welcome/i })).toBeNull();
+    expect(screen.queryByText(/Welcome to Kidan\./i)).toBeNull();
+    expect(screen.queryByText(/founding cohort/i)).toBeNull();
+  });
+
+  it("splash auto-advances to welcome after the hold delay (R7-03)", () => {
+    (window as unknown as { Telegram?: unknown }).Telegram = undefined;
+    (globalThis as unknown as { fetch: typeof fetch }).fetch = vi.fn() as unknown as typeof fetch;
+    vi.useFakeTimers();
+    try {
+      render(
+        <AuthProvider>
+          <OnboardingFlow mode="demo" onExit={() => undefined} onComplete={() => undefined} />
+        </AuthProvider>,
+      );
+      expect(screen.getByRole("button", { name: /continue to welcome/i })).toBeTruthy();
+      act(() => {
+        vi.advanceTimersByTime(1600);
+      });
+      expect(screen.getByText(/Welcome to Kidan\./)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /continue to welcome/i })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("exiting from the intro calls onExit without saving (R7-04)", async () => {
+    const onExit = vi.fn();
+    const fetchImpl = vi.fn((input: string) => {
+      if (input.includes("/v1/session")) return Promise.resolve(sessionUnauthenticated());
+      if (input.includes("/v1/auth/telegram")) return Promise.resolve(telegramOk());
+      if (input.includes("/v1/onboarding/draft")) return Promise.resolve(draftEmpty());
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    });
+    globalThis.fetch = fetchImpl as unknown as typeof fetch;
+
+    render(
+      <AuthProvider>
+        <OnboardingFlow mode="real" onExit={onExit} onComplete={() => undefined} />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /continue to welcome/i }));
+    await screen.findByText(/Welcome to Kidan\./);
+    fireEvent.click(screen.getByRole("button", { name: /exit onboarding/i }));
+    await waitFor(() => expect(onExit).toHaveBeenCalledWith(false));
+    expect(screen.queryByRole("button", { name: /start your profile/i })).toBeNull();
   });
 
   it("real final Save draft sends a checkpoint PUT and reaches success (T3-01)", async () => {
@@ -554,6 +669,7 @@ describe("OnboardingFlow", () => {
         <OnboardingFlow mode="real" onExit={onExit} onComplete={() => undefined} />
       </AuthProvider>,
     );
+    await passIntro();
     await screen.findByText(/1 of 5/);
     fireEvent.click(screen.getByRole("button", { name: /I am aged 21–45/i }));
     fireEvent.click(screen.getByRole("button", { name: /I am Ethiopian Orthodox Tewahedo/i }));
