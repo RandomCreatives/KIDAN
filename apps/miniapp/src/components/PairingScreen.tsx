@@ -116,7 +116,7 @@ export function PairingScreen({ connectionId, onBack }: PairingScreenProps) {
       try {
         await fn();
       } catch (err) {
-        haptic("error");
+        haptic("warning");
         setError(
           err instanceof ApiError && err.code === "GATE_NOT_MET"
             ? "Not just yet — the bot will ask again soon."

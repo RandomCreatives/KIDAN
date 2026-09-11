@@ -169,7 +169,10 @@ export async function buildRuntimeApp(
     const completionService = new CompletionService(repository, identityCipher);
     options.completionService = completionService;
     const pairingNotifier = environment.TELEGRAM_BOT_TOKEN
-      ? new TelegramPairingNotifier(environment.TELEGRAM_BOT_TOKEN.trim())
+      ? new TelegramPairingNotifier(
+          environment.TELEGRAM_BOT_TOKEN.trim(),
+          environment.MINI_APP_URL?.trim() || undefined,
+        )
       : new NoopPairingNotifier();
     // Track D: admin-gated connections.
     options.connectionService = new ConnectionService(

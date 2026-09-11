@@ -97,12 +97,46 @@ export function pairingCallbackData(pulseId: string, answer: PairingPulseAnswer)
 }
 
 export class TelegramPairingNotifier implements PairingNotifier {
-  constructor(private readonly botToken: string) {}
+  constructor(
+    private readonly botToken: string,
+    /** Base Mini App URL; when present, journey pulses get a deep-link CTA row. */
+    private readonly miniAppUrl?: string,
+  ) {}
+
+  /** Deep link into the candidate's next-step screen for this connection. */
+  private journeyUrl(connectionId: string): string | null {
+    if (!this.miniAppUrl) return null;
+    try {
+      const url = new URL(this.miniAppUrl);
+      url.searchParams.set("tab", "pairing");
+      url.searchParams.set("connection", connectionId);
+      url.searchParams.set("from", "bot");
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
 
   async sendPulse(telegramUserId: bigint, notification: PairingPulseNotification): Promise<void> {
     const { text, buttons } = copyFor(notification);
     const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
     try {
+      const keyboard: { text: string; callback_data?: string; web_app?: { url: string } }[][] = buttons.map((b) => [
+        { text: b.text, callback_data: pairingCallbackData(notification.pulse.id, b.answer) },
+      ]);
+      // Journey-stage pulses (readiness/check-in/stall) get a deep link into
+      // the Mini App next-step screen. The closing follow-up deliberately
+      // does not: it closes over a path already decided.
+      const journeyUrl =
+        notification.pulse.kind === "closing_followup" ? null : this.journeyUrl(notification.pulse.connectionId);
+      if (journeyUrl) {
+        keyboard.push([
+          {
+            text: "🌱 Open your next step",
+            web_app: { url: journeyUrl },
+          },
+        ]);
+      }
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -110,11 +144,7 @@ export class TelegramPairingNotifier implements PairingNotifier {
           chat_id: telegramUserId.toString(),
           text,
           protect_content: true,
-          reply_markup: {
-            inline_keyboard: buttons.map((b) => [
-              { text: b.text, callback_data: pairingCallbackData(notification.pulse.id, b.answer) },
-            ]),
-          },
+          reply_markup: { inline_keyboard: keyboard },
         }),
       });
       if (!response.ok) {
