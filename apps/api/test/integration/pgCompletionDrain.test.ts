@@ -245,7 +245,7 @@ describe("PostgreSQL pairing journey lifecycle (miniapp surface)", () => {
     expect(earlyView.gate.gateMet).toBe(false);
     await expect(
       completion.answerReadiness(pair.connectionId, pair.man.id, "ready", t0),
-    ).rejects.toThrow("GATE_NOT_MET");
+    ).rejects.toMatchObject({ code: "GATE_NOT_MET" });
 
     // Cross the gate: 10 messages each way, check in like real usage.
     for (let i = 0; i < 10; i += 1) {
@@ -275,7 +275,7 @@ describe("PostgreSQL pairing journey lifecycle (miniapp surface)", () => {
       pair.connectionId, pair.man.id, new Date(t0.getTime() + 7 * DAY + 3 * 60_000),
     );
     expect(manConfirm.revealed).toBe(false);
-    await expect(completion.getRevealedCounterpart(pair.connectionId, pair.man.id)).rejects.toThrow("NOT_REVEALED");
+    await expect(completion.getRevealedCounterpart(pair.connectionId, pair.man.id)).rejects.toMatchObject({ code: "NOT_REVEALED" });
     const womanConfirm = await completion.confirmReveal(
       pair.connectionId, pair.woman.id, new Date(t0.getTime() + 7 * DAY + 4 * 60_000),
     );
