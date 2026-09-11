@@ -7,6 +7,7 @@ import type {
   AdminIntroductionMessageRow,
   AdminPendingConnectionRow,
   AdminReviewAuditRow,
+  ConnectionSummaryRow,
   IntroductionMessageRow,
   IntroductionRequestRow,
   IntroductionThreadRow,
@@ -15,6 +16,15 @@ import type {
   DiscoveryCandidateRow,
   DraftRecord,
   FeedbackRow,
+  PairingEventInit,
+  PairingEventRow,
+  PairingJourneyInit,
+  PairingJourneyPatch,
+  PairingJourneyRow,
+  PairingPulseAnswer,
+  PairingPulseInit,
+  PairingPulseKind,
+  PairingPulseRow,
   UserConnectionRow,
   IdentityUpdate,
   PersistenceRepository,
@@ -1524,4 +1534,284 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     );
     return (result.rowCount ?? 0) > 0;
   }
+
+  // --- Kidan Completion ---
+
+  async createPairingJourney(input: PairingJourneyInit): Promise<PairingJourneyRow> {
+    const result = await this.pool.query<PairingJourneyDbRow>(
+      `INSERT INTO pairing_journey (connection_id, user_a_id, user_b_id, matched_at, last_active_at_a, last_active_at_b)
+       VALUES ($1, $2, $3, $4, $4, $4)
+       ON CONFLICT (connection_id) DO UPDATE SET connection_id = EXCLUDED.connection_id
+       RETURNING *`,
+      [input.connectionId, input.userAId, input.userBId, input.matchedAt],
+    );
+    return mapPairingJourney(result.rows[0]!);
+  }
+
+  async getPairingJourney(connectionId: string): Promise<PairingJourneyRow | null> {
+    const result = await this.pool.query<PairingJourneyDbRow>(
+      `SELECT * FROM pairing_journey WHERE connection_id = $1`,
+      [connectionId],
+    );
+    return result.rows[0] ? mapPairingJourney(result.rows[0]) : null;
+  }
+
+  async updatePairingJourney(connectionId: string, patch: PairingJourneyPatch): Promise<PairingJourneyRow> {
+    const columnByField: Record<string, string> = {
+      stage: "stage",
+      matchedAt: "matched_at",
+      exchangeCount: "exchange_count",
+      lastMessageAt: "last_message_at",
+      revealGateUnlockedAt: "reveal_gate_unlocked_at",
+      lastReadyPromptAt: "last_ready_prompt_at",
+      revealReadyUserId: "reveal_ready_user_id",
+      revealReadyAt: "reveal_ready_at",
+      notYetCycleCount: "not_yet_cycle_count",
+      primerConfirmedA: "primer_confirmed_a",
+      primerConfirmedB: "primer_confirmed_b",
+      revealedAt: "revealed_at",
+      lastActiveAtA: "last_active_at_a",
+      lastActiveAtB: "last_active_at_b",
+      stallRemindDueAt: "stall_remind_due_at",
+      stallBlockedAt: "stall_blocked_at",
+      decoupledAt: "decoupled_at",
+      decoupledByUserId: "decoupled_by_user_id",
+      decoupleReason: "decouple_reason",
+      closingFollowupDueAt: "closing_followup_due_at",
+    };
+    const sets: string[] = [];
+    const values: unknown[] = [connectionId];
+    for (const [field, value] of Object.entries(patch)) {
+      if (value === undefined) continue;
+      const column = columnByField[field];
+      if (!column) throw new Error(`UNKNOWN_PAIRING_FIELD_${field}`);
+      const cast = column === "stage" ? "::pairing_stage" : "";
+      values.push(value);
+      sets.push(`${column} = $${values.length - 1 + 1}${cast}`);
+    }
+    if (sets.length === 0) {
+      const row = await this.getPairingJourney(connectionId);
+      if (!row) throw new Error("PAIRING_JOURNEY_NOT_FOUND");
+      return row;
+    }
+    sets.push("updated_at = now()");
+    const params = values;
+    const result = await this.pool.query<PairingJourneyDbRow>(
+      `UPDATE pairing_journey SET ${sets.join(", ")} WHERE connection_id = $1 RETURNING *`,
+      params,
+    );
+    const updated = result.rows[0];
+    if (!updated) throw new Error("PAIRING_JOURNEY_NOT_FOUND");
+    return mapPairingJourney(updated);
+  }
+
+  async listActivePairingJourneys(limit: number): Promise<PairingJourneyRow[]> {
+    const result = await this.pool.query<PairingJourneyDbRow>(
+      `SELECT * FROM pairing_journey WHERE stage IN ('chatting', 'revealed') ORDER BY updated_at ASC LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map(mapPairingJourney);
+  }
+
+  async hasBlockingStall(userId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `SELECT 1 FROM pairing_journey
+       WHERE stall_blocked_at IS NOT NULL
+         AND stage IN ('chatting', 'revealed')
+         AND (user_a_id = $1 OR user_b_id = $1)
+       LIMIT 1`,
+      [userId],
+    );
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async insertPairingPulse(input: PairingPulseInit): Promise<PairingPulseRow> {
+    const result = await this.pool.query<PairingPulseDbRow>(
+      `INSERT INTO pairing_pulse (connection_id, user_id, kind, due_at, context)
+       VALUES ($1, $2, $3::pairing_pulse_kind, $4, $5::jsonb) RETURNING *`,
+      [input.connectionId, input.userId, input.kind, input.dueAt, JSON.stringify(input.context ?? {})],
+    );
+    return mapPairingPulse(result.rows[0]!);
+  }
+
+  async answerPairingPulse(pulseId: string, answer: PairingPulseAnswer, now: Date): Promise<PairingPulseRow | null> {
+    const result = await this.pool.query<PairingPulseDbRow>(
+      `UPDATE pairing_pulse SET answered_at = $2, answer = $3 WHERE id = $1 AND answered_at IS NULL RETURNING *`,
+      [pulseId, now, answer],
+    );
+    return result.rows[0] ? mapPairingPulse(result.rows[0]) : null;
+  }
+
+  async listPairingPulses(input: { connectionId: string; userId: string; limit: number }): Promise<PairingPulseRow[]> {
+    const result = await this.pool.query<PairingPulseDbRow>(
+      `SELECT * FROM pairing_pulse WHERE connection_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3`,
+      [input.connectionId, input.userId, input.limit],
+    );
+    return result.rows.map(mapPairingPulse);
+  }
+
+  async listPendingPulseSends(limit: number): Promise<PairingPulseRow[]> {
+    const result = await this.pool.query<PairingPulseDbRow>(
+      `SELECT * FROM pairing_pulse WHERE sent_at IS NULL ORDER BY due_at ASC LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map(mapPairingPulse);
+  }
+
+  async markPulsesSent(ids: string[], now: Date): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await this.pool.query(
+      `UPDATE pairing_pulse SET sent_at = $2 WHERE id = ANY($1::uuid[]) AND sent_at IS NULL`,
+      [ids, now],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async insertPairingEvent(input: PairingEventInit): Promise<PairingEventRow> {
+    const result = await this.pool.query<PairingEventDbRow>(
+      `INSERT INTO pairing_event (connection_id, kind, actor_user_id, payload)
+       VALUES ($1, $2, $3, $4::jsonb) RETURNING *`,
+      [input.connectionId, input.kind, input.actorUserId ?? null, JSON.stringify(input.payload ?? {})],
+    );
+    return mapPairingEvent(result.rows[0]!);
+  }
+
+  async getConnectionSummary(connectionId: string): Promise<ConnectionSummaryRow | null> {
+    const result = await this.pool.query<{
+      id: string; status: string; user_a_id: string; user_b_id: string; user_a_code: string; user_b_code: string;
+    }>(
+      `SELECT c.id, c.status, c.user_a_id, c.user_b_id, a.public_code AS user_a_code, b.public_code AS user_b_code
+       FROM connection c
+       JOIN app_user a ON a.id = c.user_a_id
+       JOIN app_user b ON b.id = c.user_b_id
+       WHERE c.id = $1`,
+      [connectionId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      status: row.status,
+      userAId: row.user_a_id,
+      userBId: row.user_b_id,
+      userACode: row.user_a_code,
+      userBCode: row.user_b_code,
+    };
+  }
+
+  async closeConnection(connectionId: string, now: Date): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE connection SET status = 'closed', updated_at = $2 WHERE id = $1`,
+      [connectionId, now],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+}
+
+// --- Kidan Completion row mapping ---
+
+interface PairingJourneyDbRow {
+  connection_id: string;
+  user_a_id: string;
+  user_b_id: string;
+  stage: string;
+  matched_at: Date;
+  exchange_count: number;
+  last_message_at: Date | null;
+  reveal_gate_unlocked_at: Date | null;
+  last_ready_prompt_at: Date | null;
+  reveal_ready_user_id: string | null;
+  reveal_ready_at: Date | null;
+  not_yet_cycle_count: number;
+  primer_confirmed_a: boolean;
+  primer_confirmed_b: boolean;
+  revealed_at: Date | null;
+  last_active_at_a: Date;
+  last_active_at_b: Date;
+  stall_remind_due_at: Date | null;
+  stall_blocked_at: Date | null;
+  decoupled_at: Date | null;
+  decoupled_by_user_id: string | null;
+  decouple_reason: string | null;
+  closing_followup_due_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+function mapPairingJourney(row: PairingJourneyDbRow): PairingJourneyRow {
+  return {
+    connectionId: row.connection_id,
+    userAId: row.user_a_id,
+    userBId: row.user_b_id,
+    stage: row.stage as PairingJourneyRow["stage"],
+    matchedAt: row.matched_at,
+    exchangeCount: row.exchange_count,
+    lastMessageAt: row.last_message_at,
+    revealGateUnlockedAt: row.reveal_gate_unlocked_at,
+    lastReadyPromptAt: row.last_ready_prompt_at,
+    revealReadyUserId: row.reveal_ready_user_id,
+    revealReadyAt: row.reveal_ready_at,
+    notYetCycleCount: row.not_yet_cycle_count,
+    primerConfirmedA: row.primer_confirmed_a,
+    primerConfirmedB: row.primer_confirmed_b,
+    revealedAt: row.revealed_at,
+    lastActiveAtA: row.last_active_at_a,
+    lastActiveAtB: row.last_active_at_b,
+    stallRemindDueAt: row.stall_remind_due_at,
+    stallBlockedAt: row.stall_blocked_at,
+    decoupledAt: row.decoupled_at,
+    decoupledByUserId: row.decoupled_by_user_id,
+    decoupleReason: row.decouple_reason,
+    closingFollowupDueAt: row.closing_followup_due_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+interface PairingPulseDbRow {
+  id: string;
+  connection_id: string;
+  user_id: string;
+  kind: PairingPulseKind;
+  due_at: Date;
+  sent_at: Date | null;
+  answered_at: Date | null;
+  answer: PairingPulseAnswer | null;
+  context: Record<string, unknown>;
+  created_at: Date;
+}
+
+function mapPairingPulse(row: PairingPulseDbRow): PairingPulseRow {
+  return {
+    id: row.id,
+    connectionId: row.connection_id,
+    userId: row.user_id,
+    kind: row.kind,
+    dueAt: row.due_at,
+    sentAt: row.sent_at,
+    answeredAt: row.answered_at,
+    answer: row.answer,
+    context: row.context,
+    createdAt: row.created_at,
+  };
+}
+
+interface PairingEventDbRow {
+  id: number;
+  connection_id: string;
+  kind: string;
+  actor_user_id: string | null;
+  payload: Record<string, unknown>;
+  created_at: Date;
+}
+
+function mapPairingEvent(row: PairingEventDbRow): PairingEventRow {
+  return {
+    id: row.id,
+    connectionId: row.connection_id,
+    kind: row.kind,
+    actorUserId: row.actor_user_id,
+    payload: row.payload,
+    createdAt: row.created_at,
+  };
 }

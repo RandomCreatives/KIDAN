@@ -370,6 +370,31 @@ export interface PersistenceRepository {
   listFeedback(): Promise<{ items: FeedbackRow[]; unreadCount: number }>;
   /** Admin: mark a feedback entry read. Returns false when not found. */
   markFeedbackRead(id: string, now: Date): Promise<boolean>;
+
+  // --- Kidan Completion (pairing journeys, pulses, events) ---
+  /** Creates the journey when a connection turns 'connected'. Idempotent on connection_id. */
+  createPairingJourney(input: PairingJourneyInit): Promise<PairingJourneyRow>;
+  getPairingJourney(connectionId: string): Promise<PairingJourneyRow | null>;
+  /** Applies a sparse patch; updates updated_at. Returns the fresh row. */
+  updatePairingJourney(connectionId: string, patch: PairingJourneyPatch): Promise<PairingJourneyRow>;
+  /** Journeys in 'chatting' or 'revealed' — the scheduler's active set. */
+  listActivePairingJourneys(limit: number): Promise<PairingJourneyRow[]>;
+  /** Journeys where the user participates and a stall block is enforced. */
+  hasBlockingStall(userId: string): Promise<boolean>;
+  insertPairingPulse(input: PairingPulseInit): Promise<PairingPulseRow>;
+  /** Marks an open pulse answered. Returns null when unknown or already answered. */
+  answerPairingPulse(pulseId: string, answer: PairingPulseAnswer, now: Date): Promise<PairingPulseRow | null>;
+  /** The side's recent pulses, newest first, for senescence/stall checks. */
+  listPairingPulses(input: { connectionId: string; userId: string; limit: number }): Promise<PairingPulseRow[]>;
+  /** Any undelivered pulses (bot dispatch drain). */
+  listPendingPulseSends(limit: number): Promise<PairingPulseRow[]>;
+  /** Mark pulses dispatched by the bot layer. */
+  markPulsesSent(ids: string[], now: Date): Promise<number>;
+  insertPairingEvent(input: PairingEventInit): Promise<PairingEventRow>;
+  /** Minimal connection view needed by the completion service. */
+  getConnectionSummary(connectionId: string): Promise<ConnectionSummaryRow | null>;
+  /** Terminal close of the underlying connection (status 'closed'). */
+  closeConnection(connectionId: string, now: Date): Promise<boolean>;
 }
 
 /** Feedback row joined with the author's public code. */
@@ -514,4 +539,105 @@ export class SubmissionStateError extends Error {
     super(message);
     this.name = "SubmissionStateError";
   }
+}
+
+// --- Kidan Completion (docs/KIDAN_COMPLETION.md) ---
+
+export type PairingStage = "chatting" | "revealed" | "completed_together" | "decoupled";
+export type PairingPulseKind = "check_in" | "readiness" | "stall_probe" | "closing_followup";
+export type PairingPulseAnswer =
+  | "going_well"
+  | "slow"
+  | "drifted"
+  | "part"
+  | "guidance"
+  | "ready"
+  | "not_yet"
+  | "well_after_close"
+  | "grateful"
+  | "share_feedback";
+
+export interface PairingJourneyRow {
+  connectionId: string;
+  userAId: string;
+  userBId: string;
+  stage: PairingStage;
+  matchedAt: Date;
+  exchangeCount: number;
+  lastMessageAt: Date | null;
+  revealGateUnlockedAt: Date | null;
+  lastReadyPromptAt: Date | null;
+  revealReadyUserId: string | null;
+  revealReadyAt: Date | null;
+  notYetCycleCount: number;
+  primerConfirmedA: boolean;
+  primerConfirmedB: boolean;
+  revealedAt: Date | null;
+  lastActiveAtA: Date;
+  lastActiveAtB: Date;
+  stallRemindDueAt: Date | null;
+  stallBlockedAt: Date | null;
+  decoupledAt: Date | null;
+  decoupledByUserId: string | null;
+  decoupleReason: string | null;
+  closingFollowupDueAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type PairingJourneyPatch = Partial<
+  Omit<PairingJourneyRow, "connectionId" | "userAId" | "userBId" | "createdAt" | "updatedAt">
+>;
+
+export interface PairingJourneyInit {
+  connectionId: string;
+  userAId: string;
+  userBId: string;
+  matchedAt: Date;
+}
+
+export interface PairingPulseRow {
+  id: string;
+  connectionId: string;
+  userId: string;
+  kind: PairingPulseKind;
+  dueAt: Date;
+  sentAt: Date | null;
+  answeredAt: Date | null;
+  answer: PairingPulseAnswer | null;
+  context: Record<string, unknown>;
+  createdAt: Date;
+}
+
+export interface PairingPulseInit {
+  connectionId: string;
+  userId: string;
+  kind: PairingPulseKind;
+  dueAt: Date;
+  context?: Record<string, unknown>;
+}
+
+export interface PairingEventRow {
+  id: number;
+  connectionId: string;
+  kind: string;
+  actorUserId: string | null;
+  payload: Record<string, unknown>;
+  createdAt: Date;
+}
+
+export interface PairingEventInit {
+  connectionId: string;
+  kind: string;
+  actorUserId?: string | null;
+  payload?: Record<string, unknown>;
+}
+
+export interface ConnectionSummaryRow {
+  id: string;
+  status: string;
+  userAId: string;
+  userBId: string;
+  userACode: string;
+  userBCode: string;
 }
