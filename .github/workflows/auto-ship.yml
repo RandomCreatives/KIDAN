@@ -44,5 +44,20 @@ jobs:
               --title "ship: ${BRANCH#ship/}" \
               --body "Auto-shipped from \`${BRANCH}\`. Opened by the auto-ship workflow (GITHUB_TOKEN); the deploy key push already ran CI on this commit's SHA. Merges automatically when the required checks pass — no personal access token involved."
           fi
-      - name: Enable auto-merge (merges once required checks are green)
-        run: gh pr merge "${BRANCH}" --repo RandomCreatives/KIDAN --auto --merge
+      - name: Enable auto-merge (or poll-and-merge if auto-merge is off)
+        run: |
+          if gh pr merge "${BRANCH}" --repo RandomCreatives/KIDAN --auto --merge 2>/dev/null; then
+            echo "Auto-merge enabled; GitHub will merge once checks pass."
+            exit 0
+          fi
+          echo "Repo-level auto-merge unavailable; polling checks, then merging directly."
+          for i in $(seq 1 20); do
+            sleep 30
+            if gh pr merge "${BRANCH}" --repo RandomCreatives/KIDAN --merge; then
+              echo "Merged on attempt ${i}."
+              exit 0
+            fi
+            echo "attempt ${i}: not mergeable yet"
+          done
+          echo "Timed out waiting for checks; merge manually."
+          exit 1
