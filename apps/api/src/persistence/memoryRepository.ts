@@ -12,9 +12,18 @@ import type {
   DraftRecord,
   FeedbackRow,
   IdentityUpdate,
+  ConnectionSummaryRow,
   IntroductionMessageRow,
   IntroductionRequestRow,
   IntroductionThreadRow,
+  PairingEventInit,
+  PairingEventRow,
+  PairingJourneyInit,
+  PairingJourneyPatch,
+  PairingJourneyRow,
+  PairingPulseAnswer,
+  PairingPulseInit,
+  PairingPulseRow,
   SessionRecord,
   SubmissionConsent,
   SubmissionRecord,
@@ -1059,6 +1068,162 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     const entry = this.feedbackEntries.get(id);
     if (!entry) return false;
     if (entry.readAt === null) entry.readAt = now;
+    return true;
+  }
+
+  // --- Kidan Completion ---
+
+  private readonly journeys = new Map<string, PairingJourneyRow>();
+  private readonly pulses = new Map<string, PairingPulseRow>();
+  private readonly pairingEvents: PairingEventRow[] = [];
+
+  async createPairingJourney(input: PairingJourneyInit): Promise<PairingJourneyRow> {
+    const existing = this.journeys.get(input.connectionId);
+    if (existing) return existing;
+    const row: PairingJourneyRow = {
+      connectionId: input.connectionId,
+      userAId: input.userAId,
+      userBId: input.userBId,
+      stage: "chatting",
+      matchedAt: input.matchedAt,
+      exchangeCount: 0,
+      lastMessageAt: null,
+      revealGateUnlockedAt: null,
+      lastReadyPromptAt: null,
+      revealReadyUserId: null,
+      revealReadyAt: null,
+      notYetCycleCount: 0,
+      primerConfirmedA: false,
+      primerConfirmedB: false,
+      revealedAt: null,
+      lastActiveAtA: input.matchedAt,
+      lastActiveAtB: input.matchedAt,
+      stallRemindDueAt: null,
+      stallBlockedAt: null,
+      decoupledAt: null,
+      decoupledByUserId: null,
+      decoupleReason: null,
+      closingFollowupDueAt: null,
+      createdAt: input.matchedAt,
+      updatedAt: input.matchedAt,
+    };
+    this.journeys.set(input.connectionId, row);
+    return { ...row };
+  }
+
+  async getPairingJourney(connectionId: string): Promise<PairingJourneyRow | null> {
+    const row = this.journeys.get(connectionId);
+    return row ? { ...row } : null;
+  }
+
+  async updatePairingJourney(connectionId: string, patch: PairingJourneyPatch): Promise<PairingJourneyRow> {
+    const row = this.journeys.get(connectionId);
+    if (!row) throw new Error("PAIRING_JOURNEY_NOT_FOUND");
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === undefined) continue;
+      // @ts-expect-error sparse patch application across literal fields
+      row[key] = value;
+    }
+    row.updatedAt = new Date();
+    return { ...row };
+  }
+
+  async listActivePairingJourneys(limit: number): Promise<PairingJourneyRow[]> {
+    const rows = [...this.journeys.values()].filter((j) => j.stage === "chatting" || j.stage === "revealed");
+    return rows.slice(0, limit).map((j) => ({ ...j }));
+  }
+
+  async hasBlockingStall(userId: string): Promise<boolean> {
+    for (const j of this.journeys.values()) {
+      if (j.stallBlockedAt === null) continue;
+      if (j.stage !== "chatting" && j.stage !== "revealed") continue;
+      if (j.userAId === userId || j.userBId === userId) return true;
+    }
+    return false;
+  }
+
+  async insertPairingPulse(input: PairingPulseInit): Promise<PairingPulseRow> {
+    const row: PairingPulseRow = {
+      id: randomUUID(),
+      connectionId: input.connectionId,
+      userId: input.userId,
+      kind: input.kind,
+      dueAt: input.dueAt,
+      sentAt: null,
+      answeredAt: null,
+      answer: null,
+      context: input.context ?? {},
+      createdAt: new Date(),
+    };
+    this.pulses.set(row.id, row);
+    return { ...row };
+  }
+
+  async answerPairingPulse(pulseId: string, answer: PairingPulseAnswer, now: Date): Promise<PairingPulseRow | null> {
+    const row = this.pulses.get(pulseId);
+    if (!row || row.answeredAt !== null) return null;
+    row.answeredAt = now;
+    row.answer = answer;
+    return { ...row };
+  }
+
+  async listPairingPulses(input: { connectionId: string; userId: string; limit: number }): Promise<PairingPulseRow[]> {
+    const rows = [...this.pulses.values()]
+      .filter((p) => p.connectionId === input.connectionId && p.userId === input.userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return rows.slice(0, input.limit).map((p) => ({ ...p }));
+  }
+
+  async listPendingPulseSends(limit: number): Promise<PairingPulseRow[]> {
+    const rows = [...this.pulses.values()].filter((p) => p.sentAt === null).sort((a, b) => a.dueAt.getTime() - b.dueAt.getTime());
+    return rows.slice(0, limit).map((p) => ({ ...p }));
+  }
+
+  async markPulsesSent(ids: string[], now: Date): Promise<number> {
+    let marked = 0;
+    for (const id of ids) {
+      const row = this.pulses.get(id);
+      if (row && row.sentAt === null) {
+        row.sentAt = now;
+        marked += 1;
+      }
+    }
+    return marked;
+  }
+
+  async insertPairingEvent(input: PairingEventInit): Promise<PairingEventRow> {
+    const row: PairingEventRow = {
+      id: this.pairingEvents.length + 1,
+      connectionId: input.connectionId,
+      kind: input.kind,
+      actorUserId: input.actorUserId ?? null,
+      payload: input.payload ?? {},
+      createdAt: new Date(),
+    };
+    this.pairingEvents.push(row);
+    return { ...row };
+  }
+
+  async getConnectionSummary(connectionId: string): Promise<ConnectionSummaryRow | null> {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return null;
+    const userA = this.users.get(connection.userAId);
+    const userB = this.users.get(connection.userBId);
+    return {
+      id: connection.id,
+      status: connection.status,
+      userAId: connection.userAId,
+      userBId: connection.userBId,
+      userACode: userA?.publicCode ?? "K-??????",
+      userBCode: userB?.publicCode ?? "K-??????",
+    };
+  }
+
+  async closeConnection(connectionId: string, now: Date): Promise<boolean> {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return false;
+    connection.status = "closed";
+    connection.updatedAt = now;
     return true;
   }
 }
