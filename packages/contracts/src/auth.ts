@@ -64,6 +64,18 @@ export const apiErrorCodeSchema = z.enum([
   "INTENTION_RATE_LIMIT",
   "REQUEST_ALREADY_EXISTS",
   "REQUEST_NOT_FOUND",
+  // Kidan Completion pairing journey (Track: post-match journey).
+  "PAIRING_NOT_FOUND",
+  "GATE_NOT_MET",
+  "NOT_IN_READY_STAGE",
+  "STALLED",
+  "NOT_IN_PRIMER",
+  "NOT_REVEALED",
+  "ALREADY_CLOSED",
+  "JOURNOTRACKED",
+  "CONNECTION_NOT_FOUND",
+  "NOT_PARTICIPANT",
+  "PULSE_NOT_RESPONDABLE",
 ]);
 
 export const apiErrorSchema = z.object({

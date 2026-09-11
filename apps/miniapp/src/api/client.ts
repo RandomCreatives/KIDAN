@@ -43,6 +43,23 @@ import {
   onboardingProgressPatchSchema,
   onboardingSubmitRequestSchema,
   onboardingSubmitResponseSchema,
+  pairingCloseRequestSchema,
+  pairingCloseResultSchema,
+  pairingConfirmResultSchema,
+  pairingJourneyViewSchema,
+  pairingReadinessRequestSchema,
+  pairingReadinessResultSchema,
+  pairingRevealResultSchema,
+  pairingTogetherResultSchema,
+  revealedCounterpartSchema,
+  type PairingCloseResult,
+  type PairingConfirmResult,
+  type PairingJourneyView,
+  type PairingReadinessAnswer,
+  type PairingReadinessResult,
+  type PairingRevealResult,
+  type PairingTogetherResult,
+  type RevealedCounterpart,
   verificationPhotoUploadSchema,
   type OnboardingSubmitRequest,
   sessionStatusSchema,
@@ -252,6 +269,61 @@ export class KidanApiClient {
       csrfToken,
     );
     return this.parse(introductionPostResponseSchema, data).message;
+  }
+
+  /* ---- Kidan Completion: candidate-facing pairing journey ---- */
+
+  /** Journey snapshot behind the chat view's persistent "Next step" card. */
+  async getPairingJourney(connectionId: string): Promise<PairingJourneyView> {
+    const data = await this.request("GET", `/v1/pairings/${connectionId}`);
+    return this.parse(pairingJourneyViewSchema, data);
+  }
+
+  /** "Are you ready for the next step?" — the repeating readiness loop. */
+  async answerPairingReadiness(
+    connectionId: string,
+    answer: PairingReadinessAnswer,
+    csrfToken: string,
+  ): Promise<PairingReadinessResult> {
+    const payload = pairingReadinessRequestSchema.parse({ answer });
+    const data = await this.request("POST", `/v1/pairings/${connectionId}/readiness`, payload, csrfToken);
+    return this.parse(pairingReadinessResultSchema, data);
+  }
+
+  /**
+   * Primer confirm. The first confirmer waits ({ revealed: false }); the
+   * second simultaneous confirmer triggers the reveal ({ revealed: true,
+   * counterpart }).
+   */
+  async confirmPairingReveal(
+    connectionId: string,
+    csrfToken: string,
+  ): Promise<PairingConfirmResult | PairingRevealResult> {
+    const data = await this.request("POST", `/v1/pairings/${connectionId}/confirm`, {}, csrfToken);
+    return this.parse(z.union([pairingRevealResultSchema, pairingConfirmResultSchema]), data);
+  }
+
+  /** Re-read the unveiled identity after the reveal (success screen reload). */
+  async getRevealedCounterpart(
+    connectionId: string,
+    deliberateReturn: boolean,
+  ): Promise<RevealedCounterpart> {
+    void deliberateReturn; // the screen is always deliberate; parity hook with the spec
+    const data = await this.request("GET", `/v1/pairings/${connectionId}/reveal`);
+    return this.parse(revealedCounterpartSchema, data);
+  }
+
+  /** Respectful close — available at any stage; schedules the +3d follow-up. */
+  async closePairing(connectionId: string, reason: string | undefined, csrfToken: string): Promise<PairingCloseResult> {
+    const payload = pairingCloseRequestSchema.parse(reason ? { reason } : {});
+    const data = await this.request("POST", `/v1/pairings/${connectionId}/close`, payload, csrfToken);
+    return this.parse(pairingCloseResultSchema, data);
+  }
+
+  /** "Together" self-report — the post-reveal win state. */
+  async reportPairingTogether(connectionId: string, csrfToken: string): Promise<PairingTogetherResult> {
+    const data = await this.request("POST", `/v1/pairings/${connectionId}/together`, {}, csrfToken);
+    return this.parse(pairingTogetherResultSchema, data);
   }
 
   private parse<T>(schema: z.ZodType<T>, data: unknown): T {

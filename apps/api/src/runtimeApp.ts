@@ -167,6 +167,7 @@ export async function buildRuntimeApp(
     // defense, and schedules bot pulses. The notifier speaks to the candidate
     // bot (codes only, never names/phones); no-op when the token is absent.
     const completionService = new CompletionService(repository, identityCipher);
+    options.completionService = completionService;
     const pairingNotifier = environment.TELEGRAM_BOT_TOKEN
       ? new TelegramPairingNotifier(environment.TELEGRAM_BOT_TOKEN.trim())
       : new NoopPairingNotifier();

@@ -13,6 +13,8 @@ import type { AdminService } from "./admin/adminService.js";
 import type { DiscoveryService } from "./discovery/discoveryService.js";
 import type { ConnectionService } from "./connections/connectionService.js";
 import type { RequestService } from "./requests/requestService.js";
+import { pairingRoutes } from "./routes/pairings.js";
+import type { CompletionService } from "./completion/completionService.js";
 import { authRoutes } from "./routes/auth.js";
 import { adminRoutes } from "./routes/admin.js";
 import { discoveryRoutes } from "./routes/discovery.js";
@@ -66,6 +68,9 @@ export interface BuildAppOptions {
   connectionService?: ConnectionService;
   // Track D2: intentional introduction requests.
   requestService?: RequestService;
+  // Kidan Completion: the candidate-facing pairing journey (chat "Next step",
+  // primer/confirm, reveal, closing). See docs/KIDAN_COMPLETION.md §8.
+  completionService?: CompletionService;
   // Feedback / comments / concerns from candidates to the operator.
   feedbackService?: FeedbackService;
   /** Privacy-safe tier lookup for the candidate bot (Option A). Resolves a
@@ -394,6 +399,14 @@ export async function buildApp(
     app.get("/v1/requests/incoming", requestsNotReady);
     app.get("/v1/requests/outgoing", requestsNotReady);
     app.post("/v1/requests/:id/respond", requestsNotReady);
+  }
+
+  if (options.sessionService && options.completionService) {
+    await app.register(pairingRoutes, {
+      sessionService: options.sessionService,
+      completion: options.completionService,
+      cookieName,
+    });
   }
 
   if (options.sessionService && options.feedbackService) {
