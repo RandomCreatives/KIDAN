@@ -1133,6 +1133,19 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
     return rows.slice(0, limit).map((j) => ({ ...j }));
   }
 
+  async claimDueClosingFollowups(now: Date, limit: number): Promise<PairingJourneyRow[]> {
+    const claimed: PairingJourneyRow[] = [];
+    for (const j of this.journeys.values()) {
+      if (claimed.length >= limit) break;
+      if (j.stage !== "decoupled") continue;
+      if (j.closingFollowupDueAt === null || j.closingFollowupDueAt.getTime() > now.getTime()) continue;
+      j.closingFollowupDueAt = null; // claim: no double-dispatch
+      j.updatedAt = new Date();
+      claimed.push({ ...j });
+    }
+    return claimed;
+  }
+
   async hasBlockingStall(userId: string): Promise<boolean> {
     for (const j of this.journeys.values()) {
       if (j.stallBlockedAt === null) continue;

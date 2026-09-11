@@ -55,7 +55,8 @@ Set in the Vercel API project. Missing optional ones are safe (features stay off
 | `PILOT_CAPACITY` | Cohort ceiling for new admissions | `100` |
 | `RETENTION_CRON_SECRET` | Bearer secret for `/internal/retention` purge | — |
 | `MONITOR_CRON_SECRET` | Bearer secret for `/internal/health` probe | — |
-| `BOT_STATE_SECRET` | Bearer secret for `/internal/bot-state` (Option A bot tier lookup) | — |
+| `COMPLETION_CRON_SECRET` | Bearer secret for `/internal/completion/tick` scheduler | — |
+| `BOT_STATE_SECRET` | Bearer secret for `/internal/bot-state` (Option A bot tier lookup) and `/internal/pairing/answer` (pulse button bridge) | — |
 | `ADMIN_CONSOLE_PASSWORD` | Enables the admin review console | — |
 | `ADMIN_ORIGIN` | Origin of the admin console (CORS) | staging console |
 | `MINI_APP_URL` | Deep-link base for bot notifications | — |
@@ -165,6 +166,30 @@ console shows this in the **Funnel (all-time)** panel.
 - Unanswered introduction requests are **purged 72h** after creation; swipes and
   requests for a connected pair are **deleted at connect time**.
 - Self-serve export + full account deletion are available to candidates.
+
+---
+
+## 7b. Kidan Completion scheduler (pairing journeys)
+
+- The Vercel cron `GET /internal/completion/tick` (daily **06:00**, declared in
+  `apps/api/vercel.json`) advances every pairing journey: readiness re-asks,
+  weekly check-in pulses, stall reminders/blocks, and the **+3d closing
+  follow-up** after a decouple. It also drains the pending pulse queue to the
+  candidate bot in the same call.
+- Bearer auth: set **`COMPLETION_CRON_SECRET`** on the API project to a long
+  random value, and set **`CRON_SECRET` to the same value** (Vercel Cron sends
+  `Authorization: Bearer <CRON_SECRET>`). Unset `COMPLETION_CRON_SECRET` =
+  endpoint not registered (feature off, safe).
+- **Re-runs are safe.** The closing follow-up is claimed with an atomic
+  `UPDATE ... FROM (SELECT ... FOR UPDATE SKIP LOCKED)` against pg, so two
+  overlapping runs (accidental double cron, manual POST) can never notify the
+  same pair twice. In the file-backed store the claim holds the repo mutex.
+- Manual trigger: `curl -X POST -H "Authorization: Bearer $COMPLETION_CRON_SECRET" https://<api-host>/internal/completion/tick`
+  (POST is accepted alongside GET exactly for this).
+- Bot side needs **no new secrets**: pulse answer buttons (`pair:<pulseId>:<answer>`)
+  are forwarded to `/internal/pairing/answer` with the existing `BOT_API_URL` +
+  `BOT_STATE_SECRET` pair. The tick is the only job in this system — there is no
+  continuous worker.
 
 ---
 

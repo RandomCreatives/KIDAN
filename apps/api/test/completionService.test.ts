@@ -100,7 +100,7 @@ async function connectedPair(env: Awaited<ReturnType<typeof setup>>, manSeed = 6
   await env.connections.confirm(woman.userId, pair, true);
   await env.connections.decide(pair, true);
   const t0 = new Date("2026-09-01T10:00:00Z");
-  await env.completion.onConnected({ connectionId: pair, userAId: man.userId, userBId: woman.userId, now: t0 });
+  await env.completion.onConnected({ connectionId: pair, now: t0 });
   return { pair, man, woman, t0 };
 }
 
@@ -220,9 +220,15 @@ describe("Kidan Completion — stall machinery & closing", () => {
     expect(await env.completion.isNewPickBlocked(woman.userId)).toBe(true);
     expect(await env.completion.isNewPickBlocked(man.userId)).toBe(true); // path blocks both until closed or revived
     // a message from the silent side is what revives the path (activity resets in onMessage)
-    await chat(env, pair, woman.userId, "I am back, apologies", daysLater(t0, COMPLETION_CONFIG.staleDays + COMPLETION_CONFIG.stallBlockAfterRemindDays + 3));
+    const backAt = daysLater(t0, COMPLETION_CONFIG.staleDays + COMPLETION_CONFIG.stallBlockAfterRemindDays + 3);
+    await chat(env, pair, woman.userId, "I am back, apologies", backAt);
     journey = (await env.repository.getPairingJourney(pair))!;
-    expect(journey.lastActiveAtB.getTime() > journey.stallBlockedAt!.getTime()).toBe(true);
+    // revive clears the stall flags (A/B ordering is nondeterministic — assert per side)
+    expect(journey.stallRemindDueAt).toBeNull();
+    expect(journey.stallBlockedAt).toBeNull();
+    expect(await env.completion.isNewPickBlocked(woman.userId)).toBe(false);
+    const womanActive = journey.userAId === woman.userId ? journey.lastActiveAtA : journey.lastActiveAtB;
+    expect(womanActive.getTime()).toBe(backAt.getTime());
   });
 
   it("clean closing schedules a follow-up ~3 days out and closes the connection", async () => {
@@ -260,7 +266,8 @@ describe("Kidan Completion — pulses", () => {
     const result = await env.completion.answerPulse(pulse.id, man.userId, "going_well", daysLater(t0, 3.5));
     expect(result.applied).toBe("recorded");
     const journey = (await env.repository.getPairingJourney(pair))!;
-    expect(journey.lastActiveAtA.getTime()).toBeGreaterThan(t0.getTime());
+    const manActive = journey.userAId === man.userId ? journey.lastActiveAtA : journey.lastActiveAtB;
+    expect(manActive.getTime()).toBeGreaterThan(t0.getTime());
     const events = await env.repository.listPairingPulses({ connectionId: pair, userId: woman.userId, limit: 5 });
     expect(events[0]!.answeredAt).toBeNull();
   });

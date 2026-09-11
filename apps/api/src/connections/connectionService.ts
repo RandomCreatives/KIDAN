@@ -72,6 +72,22 @@ export function screenIntroductionBody(rawBody: string): string {
  * other party is represented by values-only fields (public code, age, city,
  * gender).
  */
+/** Kidan Completion lifecycle hooks. Injected when the completion service is
+ *  configured; defaults to inert so existing call sites/tests are unchanged.
+ *  Both hooks are invoked best-effort: a journey-tracking hiccup must never
+ *  break a connection decision or a chat message. */
+export interface PairingLifecycleHooks {
+  /** The connection just reached 'connected' (admin approval completed). */
+  onConnected(connectionId: string, now: Date): Promise<void>;
+  /** An accepted introduction message was posted. */
+  onIntroductionMessage(connectionId: string, senderUserId: string, now: Date): Promise<void>;
+}
+
+const INERT_PAIRING_HOOKS: PairingLifecycleHooks = {
+  async onConnected() {},
+  async onIntroductionMessage() {},
+};
+
 export class ConnectionService {
   constructor(
     private readonly repository: PersistenceRepository,
@@ -79,6 +95,8 @@ export class ConnectionService {
     private readonly realSubmissionsEnabled: boolean,
     /** Operator admin-console bot (privacy-safe notifications); no-op when absent. */
     private readonly adminNotifier: AdminNotifier = new NoopAdminNotifier(),
+    /** Post-match journey tracking (Kidan Completion); inert when absent. */
+    private readonly pairingHooks: PairingLifecycleHooks = INERT_PAIRING_HOOKS,
   ) {}
 
   private ageFrom(ciphertext: Buffer, userId: string, now: Date): number {
@@ -151,6 +169,13 @@ export class ConnectionService {
   async decide(connectionId: string, approve: boolean, now = new Date()): Promise<{ id: string; status: string }> {
     const status = await this.repository.decideConnection({ connectionId, approve, now });
     if (!status) throw new ConnectionStateError("CONNECTION_NOT_PENDING");
+    if (approve && status === "connected") {
+      try {
+        await this.pairingHooks.onConnected(connectionId, now);
+      } catch {
+        /* journey tracking is best-effort; the connection decision stands */
+      }
+    }
     return { id: connectionId, status };
   }
 
@@ -179,6 +204,11 @@ export class ConnectionService {
       body,
       now,
     });
+    try {
+      await this.pairingHooks.onIntroductionMessage(connectionId, userId, now);
+    } catch {
+      /* journey tracking is best-effort; the message is already delivered */
+    }
     return this.toMessage(saved, userId);
   }
 

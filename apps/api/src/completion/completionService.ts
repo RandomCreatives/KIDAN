@@ -89,14 +89,17 @@ export class CompletionService {
 
   // ---------------------------------------------------------------- lifecycle
 
-  /** Called when a connection first reaches 'connected' (both sides confirmed). */
-  async onConnected(input: { connectionId: string; userAId: string; userBId: string; now: Date }): Promise<PairingJourneyRow> {
+  /** Called when a connection first reaches 'connected' (both sides confirmed).
+   *  Idempotent: an existing journey is returned unchanged. */
+  async onConnected(input: { connectionId: string; now: Date }): Promise<PairingJourneyRow> {
     const existing = await this.repo.getPairingJourney(input.connectionId);
     if (existing) return existing;
+    const summary = await this.repo.getConnectionSummary(input.connectionId);
+    if (!summary) throw new CompletionStateError("CONNECTION_NOT_FOUND", "Connection summary missing.");
     const journey = await this.repo.createPairingJourney({
       connectionId: input.connectionId,
-      userAId: input.userAId,
-      userBId: input.userBId,
+      userAId: summary.userAId,
+      userBId: summary.userBId,
       matchedAt: input.now,
     });
     await this.event(input.connectionId, "matched", null);
@@ -116,10 +119,33 @@ export class CompletionService {
       lastMessageAt: input.now,
       ...(side === "a" ? { lastActiveAtA: input.now } : { lastActiveAtB: input.now }),
       ...(gateNowMet && !journey.revealGateUnlockedAt ? { revealGateUnlockedAt: input.now } : {}),
+      ...this.revivePatch(journey, side, input.now),
     });
     if (gateNowMet && !journey.revealGateUnlockedAt) {
       await this.event(input.connectionId, "gate_unlocked", null, { exchangeCount: nextCount });
     }
+    if (this.sideWasStale(journey, side, input.now) && (journey.stallRemindDueAt ?? journey.stallBlockedAt)) {
+      await this.event(input.connectionId, "revived", input.senderUserId, { via: "message" });
+    }
+  }
+
+  /** Owner rule: "activity revives". When a side that had gone silent (last
+   *  activity older than staleDays) acts again, any stall reminder/block on
+   *  the journey clears. If the OTHER side is still quiet, the next tick
+   *  starts a fresh reminder cycle for them. */
+  private revivePatch(
+    journey: PairingJourneyRow,
+    side: Side,
+    now: Date,
+  ): { stallRemindDueAt?: null; stallBlockedAt?: null } {
+    if (!journey.stallRemindDueAt && !journey.stallBlockedAt) return {};
+    if (!this.sideWasStale(journey, side, now)) return {};
+    return { stallRemindDueAt: null, stallBlockedAt: null };
+  }
+
+  private sideWasStale(journey: PairingJourneyRow, side: Side, now: Date): boolean {
+    const lastActive = side === "a" ? journey.lastActiveAtA : journey.lastActiveAtB;
+    return now.getTime() - lastActive.getTime() >= COMPLETION_CONFIG.staleDays * DAY;
   }
 
   // ------------------------------------------------------------- reveal loop
@@ -266,7 +292,17 @@ export class CompletionService {
         dispatches.push(...(await this.tickPulseCadence(journey, now, "check_in")));
       }
     }
-    // independent of stage: due closing follow-ups fire once after decoupling
+    // Independent of stage: the +3d closing follow-up fires exactly once per
+    // decoupled journey. The repository claim clears closingFollowupDueAt
+    // atomically, so concurrent/daily ticks can never double-send.
+    const dueFollowups = await this.repo.claimDueClosingFollowups(now, 200);
+    for (const journey of dueFollowups) {
+      for (const uid of [journey.userAId, journey.userBId]) {
+        await this.repo.insertPairingPulse({ connectionId: journey.connectionId, userId: uid, kind: "closing_followup", dueAt: now });
+        dispatches.push({ type: "pulse", connectionId: journey.connectionId, userId: uid, kind: "closing_followup" });
+      }
+      await this.event(journey.connectionId, "closing_followup_due", null);
+    }
     return dispatches;
   }
 
@@ -375,8 +411,13 @@ export class CompletionService {
     const side = this.sideOf(journey, userId);
     await this.repo.updatePairingJourney(pulse.connectionId, {
       ...(side === "a" ? { lastActiveAtA: now } : { lastActiveAtB: now }),
+      ...this.revivePatch(journey, side, now),
     });
     await this.event(pulse.connectionId, "pulse_answered", userId, { kind: pulse.kind, answer });
+
+    if (this.sideWasStale(journey, side, now) && (journey.stallRemindDueAt ?? journey.stallBlockedAt)) {
+      await this.event(pulse.connectionId, "revived", userId, { via: "pulse" });
+    }
 
     if (pulse.kind === "readiness" && (answer === "ready" || answer === "not_yet")) {
       await this.answerReadiness(pulse.connectionId, userId, answer, now);

@@ -128,3 +128,27 @@ STILL OPEN (2026-09-11 resolved): phone = registration phone (CONFIRMED).
 Pulses continue weekly post-reveal until Together/Parted (CONFIRMED) and are
 delivered via BOT check-ins (CONFIRMED owner choice). Together = self-report
 (assumed). "just dating"/bridge reading assumed correct. BUILD APPROVED.
+
+## 9. Ops (shipped)
+
+- **Scheduler:** single daily Vercel cron `GET /internal/completion/tick`
+  (06:00, in `apps/api/vercel.json`; POST also accepted for manual runs),
+  bearer-gated by `COMPLETION_CRON_SECRET` (set `CRON_SECRET` to the same
+  value for Vercel Cron auth). One tick computes ALL due dispatches: readiness
+  re-asks, weekly check-in pulses, stall reminder/block, closing follow-up —
+  then drains the pending pulse queue to the candidate bot.
+- **Exactly-once drains:** the +3d closing follow-up is claimed atomically
+  (pg: `UPDATE ... FROM (SELECT ... FOR UPDATE SKIP LOCKED)`; in-memory store:
+  repo mutex), so overlapping/manual runs can never double-send. Covered by
+  `apps/api/test/integration/pgCompletionDrain.test.ts` (claim-once under
+  concurrent ticks, due-order + batch limit).
+- **Bot bridge:** inline buttons carry `pair:<pulseId>:<answer>`; the bot
+  forwards to `POST /internal/pairing/answer` (existing `BOT_API_URL` +
+  `BOT_STATE_SECRET`, no new bot secrets) and replaces the message with the
+  API's privacy-safe acknowledgement. 409 (already answered) gets a friendly
+  static ack; any failure asks the user to answer again inside the miniapp.
+- **Caveat (accepted):** weekly cadence pulse insertion is service-enforced
+  ("one open pulse per kind per side"); two overlapping ticks could in theory
+  both see no open pulse and both insert. Single daily cron makes this a
+  non-issue in practice; do not schedule the tick more often without adding a
+  unique constraint or claim for cadence pulses.

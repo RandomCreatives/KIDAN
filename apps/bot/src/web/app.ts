@@ -10,6 +10,7 @@
 
 import { createBot } from "../botApp.js";
 import { createTierResolver } from "../tierResolver.js";
+import { createPairingAnswerer } from "../pairingCallbacks.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const miniAppUrl = process.env.MINI_APP_URL;
@@ -22,9 +23,11 @@ if (!token || !miniAppUrl) {
 
 const resolveTier =
   apiBaseUrl && botStateSecret ? createTierResolver({ apiBaseUrl, botStateSecret }) : async () => "new" as const;
+const answerPairing =
+  apiBaseUrl && botStateSecret ? createPairingAnswerer({ apiBaseUrl, botStateSecret }) : undefined;
 
 // NOTE: module scope runs once per warm function instance.
-const bot = createBot({ token, miniAppUrl, resolveTier });
+const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing });
 
 // grammY provides the raw Node req/res webhook handler.
 import { webhookCallback } from "grammy";

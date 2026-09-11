@@ -388,6 +388,10 @@ export interface PersistenceRepository {
   listPairingPulses(input: { connectionId: string; userId: string; limit: number }): Promise<PairingPulseRow[]>;
   /** Any undelivered pulses (bot dispatch drain). */
   listPendingPulseSends(limit: number): Promise<PairingPulseRow[]>;
+  /** Atomically claim decoupled journeys whose +3d closing follow-up is due:
+   *  returns the claimed journeys with closingFollowupDueAt already cleared,
+   *  so concurrent ticks can never double-dispatch. */
+  claimDueClosingFollowups(now: Date, limit: number): Promise<PairingJourneyRow[]>;
   /** Mark pulses dispatched by the bot layer. */
   markPulsesSent(ids: string[], now: Date): Promise<number>;
   insertPairingEvent(input: PairingEventInit): Promise<PairingEventRow>;

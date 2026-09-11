@@ -20,6 +20,10 @@
     {
       "path": "/internal/retention",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/internal/completion/tick",
+      "schedule": "0 6 * * *"
     }
   ]
 }
