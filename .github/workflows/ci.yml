@@ -4,6 +4,10 @@ on:
   push:
     branches: [main, "ship/**"]
   pull_request:
+    # ship/** PRs are GITHUB_TOKEN-opened; their pull_request runs come back
+    # pending ("action_required") for approval. Required checks for those PRs
+    # land on the SHA from the push trigger above, so skip this duplicate.
+    branches-ignore: ["ship/**"]
 
 permissions:
   contents: read
