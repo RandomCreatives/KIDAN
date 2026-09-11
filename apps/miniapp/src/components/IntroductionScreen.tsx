@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ConnectionItem, IntroductionMessage } from "@kidan/contracts";
+import type { ConnectionItem, IntroductionMessage, PairingJourneyView } from "@kidan/contracts";
 import { KidanApiClient } from "../api/client.js";
 import { useAuth } from "../auth/useAuth.js";
 import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { ArrowLeftIcon, LockIcon, ShieldCheckIcon } from "./Icons";
+import { PairingNextStepCard, PairingScreen } from "./PairingScreen";
 
 interface IntroductionScreenProps {
   connection: ConnectionItem;
@@ -30,6 +31,26 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [pairingJourney, setPairingJourney] = useState<PairingJourneyView | null>(null);
+  const [showPairing, setShowPairing] = useState(false);
+
+  const loadPairingJourney = useCallback(() => {
+    let cancelled = false;
+    void clientRef
+      .current!.getPairingJourney(connection.id)
+      .then((view) => {
+        if (!cancelled) setPairingJourney(view);
+      })
+      .catch(() => {
+        // Journey may not exist yet (pre-completion journeys) — the card stays hidden.
+        if (!cancelled) setPairingJourney(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connection.id]);
+
+  useEffect(() => loadPairingJourney(), [loadPairingJourney]);
 
   const load = useCallback(() => {
     let cancelled = false;
@@ -65,10 +86,23 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
       .then(() => {
         setDraft("");
         load();
+        loadPairingJourney();
       })
       .catch(() => setError("Your message could not be sent. Keep it free of contact details and try again."))
       .finally(() => setSending(false));
   }, [draft, sending, connection.id, csrfToken, load]);
+
+  if (showPairing) {
+    return (
+      <PairingScreen
+        connectionId={connection.id}
+        onBack={() => {
+          setShowPairing(false);
+          loadPairingJourney();
+        }}
+      />
+    );
+  }
 
   return (
     <main className="screen standard-screen introduction-screen">
@@ -94,6 +128,15 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
           {otherSummary?.bio && <p>{otherSummary.bio}</p>}
         </div>
       </section>
+
+      {pairingJourney && (
+        <PairingNextStepCard
+          connectionId={connection.id}
+          journey={pairingJourney}
+          onOpen={() => setShowPairing(true)}
+          onRefresh={loadPairingJourney}
+        />
+      )}
 
       <section className="introduction-thread" aria-live="polite">
         {messages === null ? (

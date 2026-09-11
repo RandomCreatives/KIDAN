@@ -4,6 +4,7 @@ export * from "./connection.js";
 export * from "./discovery.js";
 export * from "./feedback.js";
 export * from "./onboarding.js";
+export * from "./pairing.js";
 export * from "./privacy.js";
 export * from "./profile.js";
 export * from "./request.js";

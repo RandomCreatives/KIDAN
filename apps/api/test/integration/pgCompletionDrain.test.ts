@@ -227,3 +227,98 @@ describe("PostgreSQL completion drain (closing follow-up)", () => {
     expect((await repository.claimDueClosingFollowups(new Date(t0.getTime() + 3 * DAY), 10))).toHaveLength(0);
   });
 });
+
+/**
+ * The candidate-facing pairing journey on real Postgres (the same paths the
+ * miniapp routes in src/routes/pairings.ts call): readiness loop -> primer ->
+ * simultaneous reveal -> Together / clean close, plus the privacy partition —
+ * a non-participant must be indistinguishable from a missing pairing.
+ */
+describe("PostgreSQL pairing journey lifecycle (miniapp surface)", () => {
+  it("runs readiness -> primer -> reveal and unveils the counterpart to both sides", async () => {
+    const t0 = new Date("2026-09-05T08:00:00.000Z");
+    const pair = await connectedPair();
+    await completion.onConnected({ connectionId: pair.connectionId, now: t0 });
+
+    // The gate is closed before 7 days AND 20 combined messages.
+    const earlyView = await completion.getJourneyView(pair.connectionId, pair.man.id);
+    expect(earlyView.gate.gateMet).toBe(false);
+    await expect(
+      completion.answerReadiness(pair.connectionId, pair.man.id, "ready", t0),
+    ).rejects.toMatchObject({ code: "GATE_NOT_MET" });
+
+    // Cross the gate: 10 messages each way, check in like real usage.
+    for (let i = 0; i < 10; i += 1) {
+      const now = new Date(t0.getTime() + (i + 1) * 60_000);
+      await completion.onMessage({ connectionId: pair.connectionId, senderUserId: pair.man.id, now });
+      await completion.onMessage({ connectionId: pair.connectionId, senderUserId: pair.woman.id, now });
+    }
+    await completion.tick(new Date(t0.getTime() + 7 * DAY));
+    const unlocked = await completion.getJourneyView(pair.connectionId, pair.man.id);
+    expect(unlocked.gate).toEqual({ gateMet: true, daysRemaining: 0, messagesRemaining: 0 });
+
+    // One ready, one waiting: one-sided "K-XXXXXX is ready when you are".
+    const oneSided = await completion.answerReadiness(
+      pair.connectionId, pair.man.id, "ready", new Date(t0.getTime() + 7 * DAY + 60_000),
+    );
+    expect(oneSided.state).toBe("one_sided");
+    const womanView = await completion.getJourneyView(pair.connectionId, pair.woman.id);
+    expect(womanView.readiness.otherReady).toBe(true);
+    expect(womanView.readiness.selfReady).toBe(false);
+
+    // Both ready -> primer stage; first confirm waits, second confirm reveals.
+    const both = await completion.answerReadiness(
+      pair.connectionId, pair.woman.id, "ready", new Date(t0.getTime() + 7 * DAY + 2 * 60_000),
+    );
+    expect(both.state).toBe("both_ready");
+    const manConfirm = await completion.confirmReveal(
+      pair.connectionId, pair.man.id, new Date(t0.getTime() + 7 * DAY + 3 * 60_000),
+    );
+    expect(manConfirm.revealed).toBe(false);
+    await expect(completion.getRevealedCounterpart(pair.connectionId, pair.man.id)).rejects.toMatchObject({ code: "NOT_REVEALED" });
+    const womanConfirm = await completion.confirmReveal(
+      pair.connectionId, pair.woman.id, new Date(t0.getTime() + 7 * DAY + 4 * 60_000),
+    );
+    expect(womanConfirm.revealed).toBe(true);
+    expect(womanConfirm.counterpart).toMatchObject({ legalName: "Demo Candidate" });
+    // Read-back on both sides (the reveal success screen reload path).
+    const forMan = await completion.getRevealedCounterpart(pair.connectionId, pair.man.id);
+    expect(forMan.legalName).toBe("Demo Candidate");
+    const afterView = await completion.getJourneyView(pair.connectionId, pair.man.id);
+    expect(afterView.stage).toBe("revealed");
+
+    // Together self-report completes the journey.
+    await completion.reportTogether(pair.connectionId, pair.man.id, new Date(t0.getTime() + 8 * DAY));
+    expect((await completion.getJourneyView(pair.connectionId, pair.woman.id)).stage).toBe("completed_together");
+    // Closing after completion is a no-op transition, not a 500.
+    await expect(
+      completion.requestClose(pair.connectionId, pair.man.id, new Date(t0.getTime() + 8 * DAY)),
+    ).resolves.toBeTruthy();
+  });
+
+  it("keeps every route-facing call private: a non-participant gets the same error as a missing pairing", async () => {
+    const t0 = new Date("2026-09-05T09:00:00.000Z");
+    const pair = await connectedPair();
+    await completion.onConnected({ connectionId: pair.connectionId, now: t0 });
+    const outsider = (await approvedPair()).man;
+    for (const call of [
+      () => completion.getJourneyView(pair.connectionId, outsider.id),
+      () => completion.answerReadiness(pair.connectionId, outsider.id, "ready", t0),
+      () => completion.confirmReveal(pair.connectionId, outsider.id, t0),
+      () => completion.getRevealedCounterpart(pair.connectionId, outsider.id),
+      () => completion.requestClose(pair.connectionId, outsider.id, t0),
+      () => completion.reportTogether(pair.connectionId, outsider.id, t0),
+    ]) {
+      await expect(call()).rejects.toMatchObject({ code: "NOT_PARTICIPANT" });
+    }
+  });
+
+  it("the respectful close schedules the follow-up and a second close is ALREADY_CLOSED", async () => {
+    const t0 = new Date("2026-09-05T10:00:00.000Z");
+    const pair = await decoupledJourney(t0);
+    expect((await completion.getJourneyView(pair.connectionId, pair.woman.id)).stage).toBe("decoupled");
+    await expect(completion.requestClose(pair.connectionId, pair.woman.id, t0)).rejects.toMatchObject({
+      code: "ALREADY_CLOSED",
+    });
+  });
+});

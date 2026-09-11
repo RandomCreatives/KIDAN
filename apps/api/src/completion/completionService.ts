@@ -161,8 +161,8 @@ export class CompletionService {
     now: Date,
   ): Promise<{ state: "both_ready" | "one_sided" | "continue_chatting" | "zombie_reflection" }> {
     const journey = await this.requireJourney(connectionId);
-    if (journey.stage !== "chatting") throw new CompletionStateError("NOT_IN_READY_STAGE", "Reveal loop is not open.");
     this.sideOf(journey, userId);
+    if (journey.stage !== "chatting") throw new CompletionStateError("NOT_IN_READY_STAGE", "Reveal loop is not open.");
     if (!journey.revealGateUnlockedAt) throw new CompletionStateError("GATE_NOT_MET", "The next step unlocks with time and conversation.");
     if (journey.stallBlockedAt) throw new CompletionStateError("STALLED", "This path needs attention first.");
 
@@ -207,10 +207,10 @@ export class CompletionService {
    */
   async confirmReveal(connectionId: string, userId: string, now: Date): Promise<{ revealed: boolean; counterpart?: RevealResult["counterpart"] }> {
     const journey = await this.requireJourney(connectionId);
+    const side = this.sideOf(journey, userId);
     if (journey.stage !== "chatting" || !journey.revealReadyUserId || !journey.revealReadyAt) {
       throw new CompletionStateError("NOT_IN_PRIMER", "Both must be ready before the unveil.");
     }
-    const side = this.sideOf(journey, userId);
     const patch: Record<string, unknown> = side === "a" ? { primerConfirmedA: true } : { primerConfirmedB: true };
     await this.repo.updatePairingJourney(connectionId, patch as never);
     const fresh = (await this.requireJourney(connectionId)) as PairingJourneyRow;
@@ -230,6 +230,7 @@ export class CompletionService {
   /** Post-reveal: the OTHER side can also read the unveiled identity (on demand). */
   async getRevealedCounterpart(connectionId: string, userId: string): Promise<RevealResult["counterpart"]> {
     const journey = await this.requireJourney(connectionId);
+    this.sideOf(journey, userId);
     if (journey.stage !== "revealed" && journey.stage !== "completed_together") {
       throw new CompletionStateError("NOT_REVEALED", "Identities unveil together when both are ready.");
     }
@@ -308,6 +309,18 @@ export class CompletionService {
 
   private async tickChatting(journey: PairingJourneyRow, now: Date): Promise<TickDispatch[]> {
     const dispatches: TickDispatch[] = [];
+    // 0) gate: 7 days + 20 exchanges may be reached between messages — the cron
+    // tick must unlock it too, or a couple who chatted heavily early would wait
+    // forever for their next message to trip the gate inside onMessage.
+    if (
+      !journey.revealGateUnlockedAt &&
+      now.getTime() - journey.matchedAt.getTime() >= COMPLETION_CONFIG.gateDays * DAY &&
+      journey.exchangeCount >= COMPLETION_CONFIG.gateMessages
+    ) {
+      await this.repo.updatePairingJourney(journey.connectionId, { revealGateUnlockedAt: now });
+      await this.event(journey.connectionId, "gate_unlocked", null, { exchangeCount: journey.exchangeCount });
+      journey = { ...journey, revealGateUnlockedAt: now };
+    }
     // 1) readiness loop re-ask (gate met, ~weekly cadence, expire one-sided yes)
     if (journey.revealGateUnlockedAt) {
       const oneSidedExpired =
