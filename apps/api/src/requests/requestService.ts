@@ -37,6 +37,10 @@ export class RequestService {
     private readonly realSubmissionsEnabled: boolean,
     private readonly dailyCap: number = INTENTION_REQUEST_DAILY_CAP,
     private readonly ttlHours: number = INTENTION_REQUEST_TTL_HOURS,
+    /** Serial-dater gate (Kidan Completion): returns true when the sender has
+     *  an un-closed, long-silent pairing — new picks stay blocked until they
+     *  continue or close that path. Inert (never blocks) when absent. */
+    private readonly isNewPickBlocked?: (userId: string) => Promise<boolean>,
   ) {}
 
   private ageFrom(ciphertext: Buffer, userId: string, now: Date): number {
@@ -55,6 +59,11 @@ export class RequestService {
     now = new Date(),
   ): Promise<IntroductionRequestCreateResponse> {
     if (!this.realSubmissionsEnabled) throw new RequestStateError("REAL_SUBMISSIONS_DISABLED");
+    // Serial-dater defense (Kidan Completion): a long-silent, un-closed
+    // pairing hard-blocks new picks until the user continues or closes it.
+    if (this.isNewPickBlocked && (await this.isNewPickBlocked(senderUserId))) {
+      throw new RequestStateError("PAIRING_NEEDS_ATTENTION");
+    }
 
     const targetUserId = await this.repository.findUserIdByPublicCode(input.targetPublicCode);
     if (!targetUserId || targetUserId === senderUserId) {

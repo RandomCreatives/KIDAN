@@ -36,6 +36,10 @@ const environmentSchema = z.object({
   // candidates are held out at this size; raise it to grow the pilot.
   PILOT_CAPACITY: z.coerce.number().int().min(1).default(100),
   RETENTION_CRON_SECRET: optionalNonEmpty,
+  // Kidan Completion (Phase 2): bearer secret gating the daily pulse scheduler
+  // endpoint /internal/completion/tick (Vercel cron sends CRON_SECRET; set the
+  // same value here to authorize it).
+  COMPLETION_CRON_SECRET: optionalNonEmpty,
   // Track E3: bearer secret gating /internal/health (for alerting/cron).
   MONITOR_CRON_SECRET: optionalNonEmpty,
   // B3 admin review console. When set, the separate operator console and its

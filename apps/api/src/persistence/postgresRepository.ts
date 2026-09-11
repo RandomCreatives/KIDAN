@@ -1613,6 +1613,32 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     return result.rows.map(mapPairingJourney);
   }
 
+  async claimDueClosingFollowups(now: Date, limit: number): Promise<PairingJourneyRow[]> {
+    // Queue-claim pattern: the inner SELECT takes row locks with SKIP LOCKED so
+    // two overlapping cron ticks hand out DISJOINT batches. (A plain
+    // UPDATE ... WHERE id IN (SELECT ...) is NOT safe: after blocking on a
+    // rival tick's row lock, PostgreSQL's EPQ re-check reuses the materialized
+    // subquery result and re-claims a row that was just cleared — the loser
+    // would re-send the follow-up.)
+    const result = await this.pool.query<PairingJourneyDbRow>(
+      `UPDATE pairing_journey p
+         SET closing_followup_due_at = NULL, updated_at = now()
+        FROM (
+          SELECT connection_id FROM pairing_journey
+           WHERE stage = 'decoupled'
+             AND closing_followup_due_at IS NOT NULL
+             AND closing_followup_due_at <= $1
+           ORDER BY closing_followup_due_at ASC
+           LIMIT $2
+           FOR UPDATE SKIP LOCKED
+        ) due
+       WHERE p.connection_id = due.connection_id
+       RETURNING p.*`,
+      [now, limit],
+    );
+    return result.rows.map(mapPairingJourney);
+  }
+
   async hasBlockingStall(userId: string): Promise<boolean> {
     const result = await this.pool.query(
       `SELECT 1 FROM pairing_journey

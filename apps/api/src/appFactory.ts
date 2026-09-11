@@ -47,6 +47,15 @@ export interface BuildAppOptions {
   // 30-day verification-photo purge.
   retentionPurge?: () => Promise<string[]>;
   retentionSecret?: string;
+  // Kidan Completion (Phase 2): daily scheduler endpoint that computes due
+  // readiness prompts/pulses/stall probes/closing follow-ups and drains the
+  // bot-send queue. Registered when both are supplied; bearer-gated.
+  completionTick?: () => Promise<{ due: number; sent: number }>;
+  completionTickSecret?: string;
+  /** Bot callback bridge: applies an inline-button pulse answer on behalf of
+   *  a Telegram user and returns the acknowledgement text the bot shows.
+   *  Gated by botStateSecret (the bot already holds it). */
+  pairingAnswer?: (telegramUserId: number, pulseId: string, answer: string) => Promise<{ text: string }>;
   // B3: separate operator admin console. Enabled only when both are supplied;
   // its routes share the API origin but use a distinct cookie and password.
   adminSessionService?: AdminSessionService;
@@ -195,6 +204,58 @@ export async function buildApp(
       const purged = await options.retentionPurge!();
       request.log.info({ purgedCount: purged.length }, "verification photo retention purge");
       return reply.code(200).send({ data: { purged: purged.length } });
+    });
+  }
+
+  // Kidan Completion scheduler (Phase 2): computes due dispatches and drains
+  // the pairing-pulse send queue to the candidate bot. Idempotent by design;
+  // registered for GET (Vercel cron) and POST (manual/scheduler trigger).
+  if (options.completionTick && options.completionTickSecret) {
+    const tickHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${options.completionTickSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHENTICATED", requestId: request.id } });
+      }
+      const result = await options.completionTick!();
+      request.log.info({ due: result.due, sent: result.sent }, "completion tick drained");
+      return reply.send({ data: result });
+    };
+    app.get("/internal/completion/tick", tickHandler);
+    app.post("/internal/completion/tick", tickHandler);
+  }
+
+  // Candidate-bot inline-button bridge: the bot forwards `pair:` callbacks
+  // here so pulse answers land in the journey state machine. Bearer-gated
+  // with the same secret the bot uses for /internal/bot-state.
+  if (options.pairingAnswer && options.botStateSecret) {
+    app.post<{
+      Body: { telegramId?: unknown; pulseId?: unknown; answer?: unknown };
+    }>("/internal/pairing/answer", async (request, reply) => {
+      const authorization = request.headers.authorization;
+      const expected = `Bearer ${options.botStateSecret}`;
+      if (typeof authorization !== "string" || authorization !== expected) {
+        return reply.code(401).send({ error: { code: "UNAUTHORIZED", requestId: request.id } });
+      }
+      const { telegramId, pulseId, answer } = request.body ?? {};
+      if (
+        typeof telegramId !== "number" || !Number.isInteger(telegramId) || telegramId <= 0
+        || typeof pulseId !== "string" || pulseId.length === 0 || pulseId.length > 64
+        || typeof answer !== "string" || answer.length === 0 || answer.length > 40
+      ) {
+        return reply.code(400).send({ error: { code: "INVALID_REQUEST", requestId: request.id } });
+      }
+      try {
+        const result = await options.pairingAnswer!(telegramId, pulseId, answer);
+        return reply.send({ data: result });
+      } catch (error) {
+        // Service errors carry a stable machine code (CompletionStateError);
+        // map them to a client-visible 409 so the bot can ack gracefully.
+        const code = error instanceof Error && "code" in error && typeof (error as { code: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : "PAIRING_ANSWER_FAILED";
+        return reply.code(409).send({ error: { code, requestId: request.id } });
+      }
     });
   }
 

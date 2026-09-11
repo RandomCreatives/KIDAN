@@ -8,6 +8,7 @@
 
 import { createBot } from "./botApp.js";
 import { createTierResolver } from "./tierResolver.js";
+import { createPairingAnswerer } from "./pairingCallbacks.js";
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const miniAppUrl = process.env.MINI_APP_URL;
@@ -23,7 +24,9 @@ const resolveTier =
   apiBaseUrl && botStateSecret
     ? createTierResolver({ apiBaseUrl, botStateSecret })
     : async () => "new" as const;
+const answerPairing =
+  apiBaseUrl && botStateSecret ? createPairingAnswerer({ apiBaseUrl, botStateSecret }) : undefined;
 
-const bot = createBot({ token, miniAppUrl, resolveTier });
+const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing });
 
 bot.start({ onStart: () => console.info("Kidan bot started") });

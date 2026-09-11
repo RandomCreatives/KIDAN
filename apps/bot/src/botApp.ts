@@ -12,6 +12,7 @@
 
 import { Bot, InlineKeyboard } from "grammy";
 import { CONTENT, menuRows, START_TEXT, type MenuAction, type MenuTier } from "./menu.js";
+import { parsePairingCallback, GENERIC_ACK, type PairingAnswerer } from "./pairingCallbacks.js";
 
 export type TierResolver = (telegramUserId: number) => Promise<MenuTier>;
 
@@ -20,6 +21,9 @@ export interface BotConfig {
   miniAppUrl: string;
   /** Resolve a user's onboarding/approval tier. Injected so the bot stays DB-free. */
   resolveTier: TierResolver;
+  /** Kidan Completion: apply pairing pulse answers via the API. When absent,
+   *  pulse callbacks still clear gracefully with a generic ack. */
+  answerPairing?: PairingAnswerer | undefined;
 }
 
 /** Build the keyboard rows (as grammY InlineKeyboard) for a tier.
@@ -122,7 +126,22 @@ export function createBot(config: BotConfig): Bot {
   });
 
   bot.on("callback_query:data", async (context) => {
-    const resolved = parseAction(context.callbackQuery.data);
+    const data = context.callbackQuery.data;
+    // Kidan Completion: pairing pulse answers are forwarded to the API and the
+    // message is replaced by the (privacy-safe) acknowledgement. Omitting
+    // reply_markup removes the buttons so a tapped pulse cannot re-fire.
+    const pairing = parsePairingCallback(data);
+    if (pairing) {
+      await context.answerCallbackQuery();
+      const from = context.from;
+      const ack = from && config.answerPairing
+        ? await config.answerPairing(from.id, pairing.pulseId, pairing.answer)
+        : GENERIC_ACK;
+      await context.editMessageText(ack);
+      return;
+    }
+
+    const resolved = parseAction(data);
     // Always answer the callback so Telegram doesn't show a spinner.
     await context.answerCallbackQuery();
     if (!resolved) return;

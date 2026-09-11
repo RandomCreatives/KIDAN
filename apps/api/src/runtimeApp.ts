@@ -13,8 +13,34 @@ import { ConnectionService } from "./connections/connectionService.js";
 import { RequestService } from "./requests/requestService.js";
 import { NoopCandidateNotifier, TelegramCandidateNotifier } from "./notifications/telegramNotifier.js";
 import { NoopAdminNotifier, TelegramAdminNotifier } from "./notifications/telegramAdminNotifier.js";
+import { NoopPairingNotifier, TelegramPairingNotifier } from "./notifications/pairingNotifier.js";
+import { CompletionService } from "./completion/completionService.js";
+import type { PairingPulseAnswer } from "./persistence/types.js";
 import { PostgresPersistenceRepository } from "./persistence/postgresRepository.js";
 import { decodeBase64Key, IdentityCipher, SecretHasher } from "./security/crypto.js";
+
+/** Valid pulse answers (must mirror PairingPulseAnswer; validated at the
+ *  runtime boundary because bot callbacks are untrusted input). */
+const PAIRING_PULSE_ANSWERS = new Set<string>([
+  "going_well", "slow", "drifted", "part", "guidance",
+  "ready", "not_yet", "well_after_close", "grateful", "share_feedback",
+]);
+
+/** Privacy-safe acknowledgement copy shown by the bot after a button tap. */
+function pairingAckText(applied: string, answer: string): string {
+  if (applied === "readiness") {
+    return answer === "ready"
+      ? "🌱 Wonderful. When you are both ready, Kidan will guide the next step inside the app."
+      : "🕊 There is no hurry. Keep getting to know each other — Kidan will ask again later.";
+  }
+  if (applied === "routing_close") {
+    return "👋 Understood, with dignity. Open Kidan to close this path — it takes one tap.";
+  }
+  if (applied === "routing_guidance") {
+    return "🙏 Thank you for reaching out. Write to us here, or open Kidan — your words go privately to the Kidan operator.";
+  }
+  return "💛 Noted — thank you. Kidan is walking with you.";
+}
 
 function isENOENT(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error
@@ -136,18 +162,38 @@ export async function buildRuntimeApp(
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
     );
+    // Kidan Completion: the post-match journey. Tracks every connected pair,
+    // unlocks the reveal loop on the 7-day/20-message gate, runs the stall
+    // defense, and schedules bot pulses. The notifier speaks to the candidate
+    // bot (codes only, never names/phones); no-op when the token is absent.
+    const completionService = new CompletionService(repository, identityCipher);
+    const pairingNotifier = environment.TELEGRAM_BOT_TOKEN
+      ? new TelegramPairingNotifier(environment.TELEGRAM_BOT_TOKEN.trim())
+      : new NoopPairingNotifier();
     // Track D: admin-gated connections.
     options.connectionService = new ConnectionService(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
       adminNotifier,
+      {
+        onConnected: async (connectionId, now) => {
+          await completionService.onConnected({ connectionId, now });
+        },
+        onIntroductionMessage: async (connectionId, senderUserId, now) => {
+          await completionService.onMessage({ connectionId, senderUserId, now });
+        },
+      },
     );
     // Track D2: intentional introduction requests (rate-capped, 72h TTL).
+    // Serial-dater gate: a long-silent, un-closed pairing blocks new picks.
     options.requestService = new RequestService(
       repository,
       identityCipher,
       environment.ENABLE_REAL_SUBMISSIONS === "true",
+      undefined,
+      undefined,
+      (userId) => completionService.isNewPickBlocked(userId),
     );
     // Feedback / comments / concerns from candidates to the operator.
     options.feedbackService = new FeedbackService(repository, adminNotifier);
@@ -168,6 +214,52 @@ export async function buildRuntimeApp(
         const status = await repository.getUserStatus(user.id);
         const active = status === "active" || status === "paused" || status === "suspended";
         return active ? "active" : "new";
+      };
+      // Kidan Completion (Phase 2): the bot forwards `pair:` inline-button
+      // callbacks here; we resolve the Telegram user and apply the answer to
+      // the journey state machine, returning the ack text the bot displays.
+      options.pairingAnswer = async (telegramUserId, pulseId, answer) => {
+        if (!PAIRING_PULSE_ANSWERS.has(answer)) throw new Error("PAIRING_ANSWER_UNKNOWN");
+        const lookupHash = identityCipher.lookupHash(`telegram:${telegramUserId}`);
+        const user = await repository.findUserByTelegramLookupHash(lookupHash);
+        if (!user) throw new Error("PAIRING_USER_UNKNOWN");
+        const result = await completionService.answerPulse(pulseId, user.id, answer as PairingPulseAnswer, new Date());
+        return { text: pairingAckText(result.applied, answer) };
+      };
+    }
+
+    // Kidan Completion (Phase 2): daily scheduler. Computes due dispatches
+    // (readiness re-asks, pulses, stall probes, closing follow-ups) and drains
+    // the send queue through the candidate bot. Sends are best-effort: any
+    // failure leaves the pulse pending for the next run.
+    const completionTickSecret = environment.COMPLETION_CRON_SECRET;
+    if (completionTickSecret) {
+      options.completionTickSecret = completionTickSecret;
+      options.completionTick = async () => {
+        const now = new Date();
+        const dispatches = await completionService.tick(now);
+        const pending = await repository.listPendingPulseSends(500);
+        const sentIds: string[] = [];
+        for (const pulse of pending) {
+          try {
+            const ciphertext = await repository.getCandidateTelegramIdCiphertext(pulse.userId);
+            if (!ciphertext) {
+              sentIds.push(pulse.id); // no delivery channel; drop from queue
+              continue;
+            }
+            const telegramId = BigInt(identityCipher.decrypt(ciphertext, "telegram-id"));
+            const summary = await repository.getConnectionSummary(pulse.connectionId);
+            const counterpartCode = summary
+              ? summary.userAId === pulse.userId ? summary.userBCode : summary.userACode
+              : "K-??????";
+            await pairingNotifier.sendPulse(telegramId, { pulse, counterpartCode });
+            sentIds.push(pulse.id);
+          } catch {
+            /* leave pending; tomorrow's tick retries */
+          }
+        }
+        if (sentIds.length > 0) await repository.markPulsesSent(sentIds, now);
+        return { due: dispatches.length, sent: sentIds.length };
       };
     }
 
