@@ -11,6 +11,7 @@ import { useAuth } from "./auth/useAuth";
 import { OnboardingFlow } from "./onboarding/OnboardingFlow";
 import { PilotDisabledScreen } from "./PilotDisabledScreen";
 import { readPairingFocusFromUrl, readTargetTabFromUrl } from "./lib/deepLink";
+import { useT } from "./i18n/LanguageProvider";
 
 type Tab = "discover" | "connections" | "profile";
 type Overlay = null | "requests";
@@ -28,6 +29,7 @@ const initialPairingFocus: string | null =
   typeof window !== "undefined" ? readPairingFocusFromUrl(window.location.href) : null;
 
 export function App() {
+  const t = useT();
   const { isDemo, realSubmissionsEnabled } = useAuth();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [showOnboarding, setShowOnboarding] = useState(true);
@@ -92,15 +94,15 @@ export function App() {
                 </>
               )}
               {!showPrivacy && !overlay && !pairingFocus && (
-                <nav className="bottom-nav" aria-label="Primary navigation">
+                <nav className="bottom-nav" aria-label={t("Primary navigation")}>
                   <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>
-                    <CompassIcon /><span>Discover</span>
+                    <CompassIcon /><span>{t("Discover")}</span>
                   </button>
                   <button className={tab === "connections" ? "active" : ""} type="button" onClick={() => setTab("connections")}>
-                    <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>Connections</span>
+                    <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>{t("Connections")}</span>
                   </button>
                   <button className={tab === "profile" ? "active" : ""} type="button" onClick={() => setTab("profile")}>
-                    <UserIcon /><span>Profile</span>
+                    <UserIcon /><span>{t("Profile")}</span>
                   </button>
                 </nav>
               )}
@@ -139,15 +141,15 @@ export function App() {
         )}
 
         {!showPrivacy && !overlay && (
-          <nav className="bottom-nav" aria-label="Primary navigation">
+          <nav className="bottom-nav" aria-label={t("Primary navigation")}>
             <button className={tab === "discover" ? "active" : ""} type="button" onClick={() => setTab("discover")}>
-              <CompassIcon /><span>Discover</span>
+              <CompassIcon /><span>{t("Discover")}</span>
             </button>
             <button className={tab === "connections" ? "active" : ""} type="button" onClick={() => setTab("connections")}>
-              <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>Connections</span>
+              <span className="nav-icon-wrap"><ConnectionIcon /> <i /></span><span>{t("Connections")}</span>
             </button>
             <button className={tab === "profile" ? "active" : ""} type="button" onClick={() => setTab("profile")}>
-              <UserIcon /><span>Profile</span>
+              <UserIcon /><span>{t("Profile")}</span>
             </button>
           </nav>
         )}
