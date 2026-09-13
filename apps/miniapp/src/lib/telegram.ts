@@ -10,6 +10,12 @@ interface TelegramThemeParams {
 
 interface TelegramWebApp {
   initData: string;
+  /** Parsed initData; only the non-sensitive user language is read by the app. */
+  initDataUnsafe?: {
+    user?: {
+      language_code?: string;
+    };
+  };
   colorScheme: "light" | "dark";
   themeParams: TelegramThemeParams;
   ready: () => void;

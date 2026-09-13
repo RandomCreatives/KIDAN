@@ -2,6 +2,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { DemoProfile } from "../data/demoProfiles";
 import { haptic } from "../lib/telegram";
 import { HeartIcon, InfoIcon, ShieldCheckIcon, XIcon } from "./Icons";
+import { useT } from "../i18n/LanguageProvider";
 
 interface DiscoveryCardProps {
   profile: DemoProfile;
@@ -24,6 +25,7 @@ const valueLabels: Record<string, string> = {
 };
 
 export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen }: DiscoveryCardProps) {
+  const t = useT();
   const [dragX, setDragX] = useState(0);
   const [dragging, setDragging] = useState(false);
   const startX = useRef(0);
@@ -73,7 +75,7 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
     >
       {interactive && dragX !== 0 && (
         <div className={`swipe-stamp ${dragX > 0 ? "approve" : "pass"}`}>
-          {dragX > 0 ? "INTERESTED" : "PASS"}
+          {dragX > 0 ? t("INTERESTED") : t("PASS")}
         </div>
       )}
 
@@ -86,9 +88,9 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
         <div className="visual-grain" />
         <div className="privacy-medallion">
           <span>{profile.visual.monogram}</span>
-          <small>values first</small>
+          <small>{t("values first")}</small>
         </div>
-        <div className="verified-chip"><ShieldCheckIcon size={15} /> Admin verified</div>
+        <div className="verified-chip"><ShieldCheckIcon size={15} /> {t("Admin verified")}</div>
         <div className="visual-caption">
           <div className="profile-title-row">
             <h2>{profile.age}</h2>
@@ -105,7 +107,7 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
         <div className="card-eyebrow">{profile.occupationCategory} · {profile.educationLevel}</div>
         <p className="faith-note">{profile.faithNote}</p>
         <div className="value-list">
-          {profile.values.slice(0, 3).map((value) => <span key={value}>{valueLabels[value] ?? value}</span>)}
+          {profile.values.slice(0, 3).map((value) => <span key={value}>{t(valueLabels[value] ?? value)}</span>)}
         </div>
         <p className="profile-bio">{profile.bio}</p>
         <button className="text-button" type="button" onClick={onOpen}>
@@ -113,12 +115,12 @@ export function DiscoveryCard({ profile, depth, interactive, onDecision, onOpen 
         </button>
       </div>
 
-      <div className="card-actions" aria-label="Profile decisions">
-        <button className="action-button pass" type="button" onClick={() => decide("pass")} aria-label="Pass privately">
+      <div className="card-actions" aria-label={t("Profile decisions")}>
+        <button className="action-button pass" type="button" onClick={() => decide("pass")} aria-label={t("Pass privately")}>
           <XIcon size={25} />
         </button>
-        <span className="action-hint">Swipe or choose</span>
-        <button className="action-button interest" type="button" onClick={() => decide("interested")} aria-label="Express interest privately">
+        <span className="action-hint">{t("Swipe or choose")}</span>
+        <button className="action-button interest" type="button" onClick={() => decide("interested")} aria-label={t("Express interest privately")}>
           <HeartIcon size={24} />
         </button>
       </div>

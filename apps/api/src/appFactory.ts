@@ -21,6 +21,8 @@ import { discoveryRoutes } from "./routes/discovery.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { requestRoutes } from "./routes/requests.js";
 import { healthRoutes } from "./routes/health.js";
+import { notFoundPageHtml, registerPublicPages } from "./routes/publicPages.js";
+import { registerIpRateLimits } from "./security/ipRateLimit.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { feedbackRoutes } from "./routes/feedback.js";
 import type { FeedbackService } from "./feedback/feedbackService.js";
@@ -31,6 +33,8 @@ export interface BuildAppOptions {
   onboardingService?: OnboardingService;
   cookieName?: string;
   secureCookies?: boolean;
+  /** Transport-level IP rate limits; defaults on outside the test env. */
+  ipRateLimits?: boolean;
   allowedOrigin?: string;
   /** Browser origins permitted to make state-changing (non-GET) requests. The
    *  candidate Mini App and the operator admin console are served from
@@ -140,6 +144,11 @@ export async function buildApp(
 
   await app.register(cookie);
 
+  registerIpRateLimits(app, {
+    enabled: options.ipRateLimits ?? process.env.NODE_ENV !== "test",
+  });
+  registerPublicPages(app);
+
   const allowedOrigins = options.allowedOrigins
     ?? (options.allowedOrigin ? [options.allowedOrigin] : []);
   app.addHook("onRequest", async (request, reply) => {
@@ -157,6 +166,13 @@ export async function buildApp(
     reply.header("X-Content-Type-Options", "nosniff");
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Cache-Control", "no-store");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=()");
+    // TLS is terminated at the platform (Vercel/Telegram edge); once we know
+    // production cookies are Secure, advertise HSTS for the API host too.
+    if (options.secureCookies) {
+      reply.header("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+    }
     return payload;
   });
 
@@ -186,9 +202,15 @@ export async function buildApp(
     options.recordOperationalEvent?.("server_error", new Date());
     return reply.code(500).send({ error: { code: "INTERNAL_ERROR", requestId: request.id } });
   });
-  app.setNotFoundHandler((request, reply) =>
-    reply.code(404).send({ error: { code: "NOT_FOUND", requestId: request.id } }),
-  );
+  app.setNotFoundHandler((request, reply) => {
+    // Browsers wandering onto the API host get a branded, helpful page;
+    // API clients keep the stable JSON error contract.
+    const acceptsHtml = (request.headers.accept ?? "").includes("text/html");
+    if (request.method === "GET" && acceptsHtml && !request.url.startsWith("/v1")) {
+      return reply.type("text/html; charset=utf-8").code(404).send(notFoundPageHtml());
+    }
+    return reply.code(404).send({ error: { code: "NOT_FOUND", requestId: request.id } });
+  });
 
   if (options.onClose) app.addHook("onClose", options.onClose);
 

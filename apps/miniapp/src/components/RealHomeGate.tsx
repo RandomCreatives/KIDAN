@@ -3,6 +3,7 @@ import type { CandidateReviewStatus } from "@kidan/contracts";
 import { KidanApiClient } from "../api/client.js";
 import { Brand } from "./Brand";
 import { CheckIcon, LockIcon, ShieldCheckIcon } from "./Icons";
+import { useT } from "../i18n/LanguageProvider";
 
 type GateState =
   | { kind: "loading" }
@@ -27,6 +28,7 @@ export function RealHomeGate({
   onApproved: () => void;
   onResumeOnboarding: () => void;
 }) {
+  const t = useT();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
   const [state, setState] = useState<GateState>({ kind: "loading" });
@@ -74,7 +76,7 @@ export function RealHomeGate({
   if (state.kind === "loading") {
     return (
       <div className="centered">
-        <div className="spinner" aria-label="Loading" />
+        <div className="spinner" aria-label={t("Loading")} />
       </div>
     );
   }
@@ -84,16 +86,12 @@ export function RealHomeGate({
       <div className="onboarding-shell success-shell">
         <div className="gate-brand"><Brand /></div>
         <div className="success-mark review-tone-rejected"><ShieldCheckIcon size={30} /></div>
-        <span className="section-kicker">Review result</span>
-        <h1>Your profile could not be approved for this pilot</h1>
-        <p>
-          Your details remain hidden and are not published. You can review any
-          private note below, or delete your account and all data from Privacy
-          &amp; consent.
-        </p>
+        <span className="section-kicker">{t("Review result")}</span>
+        <h1>{t("Your profile could not be approved for this pilot")}</h1>
+        <p>{t("Your details remain hidden and are not published. You can review any private note below, or delete your account and all data from Privacy & consent.")}</p>
         {state.status.feedbackNote ? (
           <div className="review-note">
-            <span className="review-note-label">Private note</span>
+            <span className="review-note-label">{t("Private note")}</span>
             <p>{state.status.feedbackNote}</p>
           </div>
         ) : null}
@@ -107,17 +105,17 @@ export function RealHomeGate({
       <div className="onboarding-shell success-shell">
         <div className="gate-brand"><Brand /></div>
         <div className="success-mark review-tone-action"><CheckIcon size={30} /></div>
-        <span className="section-kicker">Update requested</span>
-        <h1>A small change is needed before your profile can be published</h1>
-        <p>Review the private note below, reopen your profile, make the change, and submit again.</p>
+        <span className="section-kicker">{t("Update requested")}</span>
+        <h1>{t("A small change is needed before your profile can be published")}</h1>
+        <p>{t("Review the private note below, reopen your profile, make the change, and submit again.")}</p>
         {note ? (
           <div className="review-note">
-            <span className="review-note-label">Private note</span>
+            <span className="review-note-label">{t("Private note")}</span>
             <p>{note}</p>
           </div>
         ) : null}
         <button className="primary-button onboarding-primary" type="button" onClick={onResumeOnboarding}>
-          Reopen profile
+          {t("Reopen profile")}
         </button>
       </div>
     );
@@ -128,19 +126,15 @@ export function RealHomeGate({
     <div className="onboarding-shell success-shell">
       <div className="gate-brand"><Brand /></div>
       <div className="success-mark"><ShieldCheckIcon size={30} /></div>
-      <span className="section-kicker">In private review</span>
-      <h1>Your profile is in for private review</h1>
-      <p>
-        An administrator is privately verifying your identity and reviewing your
-        public profile. You will be notified here when it is approved. Your
-        name, phone, photo, and contact details stay hidden throughout.
-      </p>
+      <span className="section-kicker">{t("In private review")}</span>
+      <h1>{t("Your profile is in for private review")}</h1>
+      <p>{t("An administrator is privately verifying your identity and reviewing your public profile. You will be notified here when it is approved. Your name, phone, photo, and contact details stay hidden throughout.")}</p>
       <div className="success-promise">
         <LockIcon size={18} />
-        <p>Your verification photo is admin-only and is deleted 30 days after approval.</p>
+        <p>{t("Your verification photo is admin-only and is deleted 30 days after approval.")}</p>
       </div>
       <button className="primary-button onboarding-primary" type="button" onClick={() => void load()}>
-        Refresh status
+        {t("Refresh status")}
       </button>
     </div>
   );

@@ -32,6 +32,7 @@ import { cityOptions, marriageOptions, maritalOptions, valueOptions } from "./op
 import { fileToVerificationPhotoDataUrl } from "./photoCapture";
 import { initialOnboardingState, syntheticOnboardingState, type OnboardingFormState } from "./types";
 import { useOnboardingDraft } from "./useOnboardingDraft";
+import { useT } from "../i18n/LanguageProvider";
 
 interface OnboardingFlowProps {
   mode: "demo" | "real";
@@ -83,6 +84,7 @@ function photoErrorMessage(error: unknown): string {
 }
 
 export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps) {
+  const t = useT();
   const isDemo = mode === "demo";
   const [draft, setDraft] = useState<OnboardingFormState>(initialOnboardingState);
   const [step, setStep] = useState(0);
@@ -198,13 +200,13 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         const { dataUrl } = await fileToVerificationPhotoDataUrl(file);
         const result = await uploadVerificationPhoto(dataUrl);
         if (!result.success) {
-          setError(result.message ?? "We couldn’t upload your photo. Retry.");
+          setError(t(result.message ?? "We couldn’t upload your photo. Retry."));
           window.scrollTo({ top: 0, behavior: "smooth" });
         } else {
           haptic("success");
         }
       } catch (error) {
-        setError(photoErrorMessage(error));
+        setError(t(photoErrorMessage(error)));
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     },
@@ -213,37 +215,37 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
   const validationMessage = (): string | null => {
     if (currentIndex === 0 && !eligibilitySchema.safeParse(draft.eligibility).success) {
-      return "Confirm all three eligibility requirements to continue.";
+      return t("Confirm all three eligibility requirements to continue.");
     }
     if (currentIndex === 1) {
-      if (!isPilotAge(draft.privateIdentity.dateOfBirth)) return "The pilot is open to candidates aged 21–45. Enter a valid date of birth.";
+      if (!isPilotAge(draft.privateIdentity.dateOfBirth)) return t("The pilot is open to candidates aged 21–45. Enter a valid date of birth.");
       const result = privateIdentityDraftSchema.safeParse({
         ...draft.privateIdentity,
         verificationPhotoStatus: "not_available_in_prototype",
       });
-      if (!result.success) return "Complete your full name, date of birth, and phone number.";
-      if (canSubmitForReview && !photoComplete) return "Upload your private verification photo to continue.";
+      if (!result.success) return t("Complete your full name, date of birth, and phone number.");
+      if (canSubmitForReview && !photoComplete) return t("Upload your private verification photo to continue.");
     }
     if (currentIndex === 2 && !publicProfileDraftSchema.safeParse(draft.publicProfile).success) {
-      return "Complete the required public-profile fields before continuing.";
+      return t("Complete the required public-profile fields before continuing.");
     }
     if (currentIndex === 3) {
       const result = faithAndFamilyDraftSchema.safeParse({
         faithTradition: "ethiopian_orthodox_tewahedo",
         ...draft.faithAndFamily,
       });
-      if (!result.success) return "Choose at least three values and write a short introduction of 20–280 characters.";
+      if (!result.success) return t("Choose at least three values and write a short introduction of 20–280 characters.");
     }
     if (currentIndex === 4) {
       if (/(@|https?:|t\.me|\+?\d[\d\s-]{7,})/i.test(draft.partnerPreferences.additionalPreferences)) {
-        return "Do not include phone numbers, usernames, or links in partner preferences.";
+        return t("Do not include phone numbers, usernames, or links in partner preferences.");
       }
       if (!partnerPreferencesDraftSchema.safeParse(draft.partnerPreferences).success) {
-        return "Review the age range and select at least one status, value, and marriage intention.";
+        return t("Review the age range and select at least one status, value, and marriage intention.");
       }
     }
     if (currentIndex === 6 && !consentDraftSchema.safeParse(draft.consent).success) {
-      return "Accept every required consent. Bot notifications remain optional.";
+      return t("Accept every required consent. Bot notifications remain optional.");
     }
     return null;
   };
@@ -266,14 +268,14 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       if (canSubmitForReview && currentIndex === 1) {
         const identity = await savePrivateIdentity(draft);
         if (!identity.success) {
-          setError(identity.message ?? "We couldn’t save your private details. Please retry.");
+          setError(t(identity.message ?? "We couldn’t save your private details. Please retry."));
           window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
       }
       const result = await saveProgress(currentIndex, draft);
       if (!result.success) {
-        setError(result.message ?? "We couldn’t save your progress. Please retry.");
+        setError(t(result.message ?? "We couldn’t save your progress. Please retry."));
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
@@ -282,7 +284,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         // Persist the consent step too, then perform the real submission.
         const submission = await submitDraft(draft);
         if (!submission.success) {
-          setError(submission.message ?? "We couldn’t submit your profile. Please retry.");
+          setError(t(submission.message ?? "We couldn’t submit your profile. Please retry."));
           window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
@@ -330,12 +332,12 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
         if (result.success) {
           onExit(result.persisted);
         } else {
-          setError(result.message ?? "We couldn’t save your progress. Please retry.");
+          setError(t(result.message ?? "We couldn’t save your progress. Please retry."));
           haptic("warning");
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
       } catch {
-        setError("We couldn’t save your progress. Please retry.");
+        setError(t("We couldn’t save your progress. Please retry."));
         haptic("warning");
         window.scrollTo({ top: 0, behavior: "smooth" });
       } finally {
@@ -374,15 +376,15 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
             className="icon-button"
             type="button"
             onClick={() => void requestExit(true)}
-            aria-label="Exit onboarding"
+            aria-label={t("Exit onboarding")}
             disabled={actionBusy}
           ><XIcon size={19} /></button>
         </header>
         <section className="page-intro">
-          <span className="section-kicker">Kidan</span>
+          <span className="section-kicker">{t("Kidan")}</span>
           <div role="status" aria-live="polite" aria-atomic="true">
-            <h1>{loadError ? "Could not load your draft" : "Loading your draft…"}</h1>
-            <p>{loadError ? "Check your connection and try again." : "Restoring your saved progress."}</p>
+            <h1>{loadError ? t("Could not load your draft") : t("Loading your draft…")}</h1>
+            <p>{loadError ? t("Check your connection and try again.") : t("Restoring your saved progress.")}</p>
           </div>
           {loadError && (
             <button
@@ -391,7 +393,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
               onClick={() => void handleRetryLoad()}
               disabled={actionBusy}
             >
-              {actionBusy ? "Retrying…" : "Retry"}
+              {actionBusy ? t("Retrying…") : t("Retry")}
             </button>
           )}
         </section>
@@ -416,42 +418,42 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
       <main className="onboarding-shell success-shell">
         <div className="success-mark"><CheckIcon size={34} /></div>
         <span className="section-kicker">
-          {isDemo ? "Prototype complete" : canSubmitForReview ? "Submitted" : "Draft saved"}
+          {isDemo ? t("Prototype complete") : canSubmitForReview ? t("Submitted") : t("Draft saved")}
         </span>
         <h1>
           {isDemo
-            ? "Your profile would now enter private review."
+            ? t("Your profile would now enter private review.")
             : canSubmitForReview
-              ? "Your profile is in for private review."
-              : "Your public draft is saved."}
+              ? t("Your profile is in for private review.")
+              : t("Your public draft is saved.")}
         </h1>
         <p>
           {isDemo
-            ? "No information was uploaded or saved. This prototype used in-memory draft data only."
+            ? t("No information was uploaded or saved. This prototype used in-memory draft data only.")
             : canSubmitForReview
-              ? "An administrator will privately verify your identity and review your public profile. You will be notified here. Your name, phone, photo, and contact details stay hidden throughout discovery."
-              : "In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled."}
+              ? t("An administrator will privately verify your identity and review your public profile. You will be notified here. Your name, phone, photo, and contact details stay hidden throughout discovery.")
+              : t("In this preview, only your public profile sections are saved. Submission, identity verification, and administrator review are not enabled.")}
         </p>
         <div className="review-status-card">
           <span><ShieldCheckIcon /></span>
           <div>
-            <strong>{isDemo ? "Profile review" : canSubmitForReview ? "Private review" : "Preview only"}</strong>
+            <strong>{isDemo ? t("Profile review") : canSubmitForReview ? t("Private review") : t("Preview only")}</strong>
             <small>
               {isDemo
-                ? "Pending administrator verification"
+                ? t("Pending administrator verification")
                 : canSubmitForReview
-                  ? "Pending administrator verification"
-                  : "Submission not enabled in this preview"}
+                  ? t("Pending administrator verification")
+                  : t("Submission not enabled in this preview")}
             </small>
           </div>
-          <i>{isDemo ? "Demo" : canSubmitForReview ? "Review" : "Preview"}</i>
+          <i>{isDemo ? t("Demo") : canSubmitForReview ? t("Review") : t("Preview")}</i>
         </div>
         <div className="success-promise">
           <LockIcon size={18} />
-          <p>Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.</p>
+          <p>{t("Your verification photo would remain admin-only and be scheduled for deletion 30 days after approval.")}</p>
         </div>
         <button className="primary-button onboarding-primary" type="button" onClick={() => onComplete(submittedPersisted || draftSubmitted)}>
-          {isDemo ? "Enter the demo app" : "Continue"}
+          {isDemo ? t("Enter the demo app") : t("Continue")}
         </button>
       </main>
     );
@@ -467,74 +469,74 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
           className="icon-button"
           type="button"
           onClick={() => void requestExit(true)}
-          aria-label="Exit onboarding"
+          aria-label={t("Exit onboarding")}
           disabled={controlsBusy}
         ><XIcon size={19} /></button>
       </header>
 
-      <div className="progress-meta"><span>{LABELS[currentIndex]}</span><strong>{step + 1} of {activeIndices.length}</strong></div>
+      <div className="progress-meta"><span>{t(LABELS[currentIndex] ?? "")}</span><strong>{t("{n} of {m}", { n: step + 1, m: activeIndices.length })}</strong></div>
       <div className="progress-track"><i style={{ width: `${progress}%` }} /></div>
 
       {(error ?? saveError) && <div className="form-error" role="alert">{error ?? saveError}</div>}
-      {saving && <div className="form-notice" role="status" aria-live="polite">Saving…</div>}
+      {saving && <div className="form-notice" role="status" aria-live="polite">{t("Saving…")}</div>}
       {(conflict || reloadError) && !isDemo && (
         <div className="form-error draft-conflict" role="alert" aria-live="assertive">
-          <span>{reloadError ? "Could not reload the latest draft. Try again." : "Your saved progress changed elsewhere. Reload the latest draft?"}</span>
-          <button type="button" className="sample-link" onClick={() => void handleReload()} disabled={controlsBusy}>Reload latest</button>
+          <span>{reloadError ? t("Could not reload the latest draft. Try again.") : t("Your saved progress changed elsewhere. Reload the latest draft?")}</span>
+          <button type="button" className="sample-link" onClick={() => void handleReload()} disabled={controlsBusy}>{t("Reload latest")}</button>
         </div>
       )}
       {!isDemo && !canSubmitForReview && (
-        <div className="preview-rule"><LockIcon size={17} /><p>This preview saves only your public profile sections. Identity, verification, and review are disabled.</p></div>
+        <div className="preview-rule"><LockIcon size={17} /><p>{t("This preview saves only your public profile sections. Identity, verification, and review are disabled.")}</p></div>
       )}
       {!isDemo && canSubmitForReview && (
-        <div className="preview-rule"><LockIcon size={17} /><p>Your private details are used only for administrator verification and never appear in discovery.</p></div>
+        <div className="preview-rule"><LockIcon size={17} /><p>{t("Your private details are used only for administrator verification and never appear in discovery.")}</p></div>
       )}
 
       <fieldset className="onboarding-content" disabled={controlsBusy || conflict || reloadError} aria-busy={controlsBusy ? "true" : undefined}>
         {currentIndex === 0 && (
           <>
-            <StepHeading eyebrow="Welcome to Kidan" title="A private path to intentional marriage." description="Before creating a profile, confirm that this community and its privacy model are right for you." />
+            <StepHeading eyebrow="Welcome to Kidan" title={t("A private path to intentional marriage.")} description="Before creating a profile, confirm that this community and its privacy model are right for you." />
             <section className="privacy-hero">
               <div className="privacy-hero-mark"><LockIcon size={24} /></div>
-              <div><strong>Private by default</strong><p>No names, phone numbers, Telegram accounts, or photos appear in discovery.</p></div>
+              <div><strong>{t("Private by default")}</strong><p>{t("No names, phone numbers, Telegram accounts, or photos appear in discovery.")}</p></div>
             </section>
             <div className="promise-grid">
-              <div><ShieldCheckIcon /><strong>Verified</strong><span>Every profile is privately reviewed.</span></div>
-              <div><EyeIcon /><strong>Anonymous</strong><span>Discovery is values-only.</span></div>
-              <div><SparkIcon /><strong>Intentional</strong><span>No contact before every approval.</span></div>
+              <div><ShieldCheckIcon /><strong>{t("Verified")}</strong><span>{t("Every profile is privately reviewed.")}</span></div>
+              <div><EyeIcon /><strong>{t("Anonymous")}</strong><span>{t("Discovery is values-only.")}</span></div>
+              <div><SparkIcon /><strong>{t("Intentional")}</strong><span>{t("No contact before every approval.")}</span></div>
             </div>
             <section className="form-section">
-              <h2>Eligibility</h2>
-              <ToggleCard checked={draft.eligibility.adultConfirmed} onChange={(value) => patch("eligibility", { adultConfirmed: value })} title="I am aged 21–45" description="Date of birth is verified privately and never displayed. The controlled pilot is open to adults aged 21–45." />
-              <ToggleCard checked={draft.eligibility.eotcConfirmed} onChange={(value) => patch("eligibility", { eotcConfirmed: value })} title="I am Ethiopian Orthodox Tewahedo" description="The first release is dedicated to the EOTC community." icon={<ChurchIcon size={20} />} />
-              <ToggleCard checked={draft.eligibility.marriageIntentConfirmed} onChange={(value) => patch("eligibility", { marriageIntentConfirmed: value })} title="I am seeking an intentional marriage" description="Kidan is not an open social or casual-chat platform." />
+              <h2>{t("Eligibility")}</h2>
+              <ToggleCard checked={draft.eligibility.adultConfirmed} onChange={(value) => patch("eligibility", { adultConfirmed: value })} title={t("I am aged 21–45")} description="Date of birth is verified privately and never displayed. The controlled pilot is open to adults aged 21–45." />
+              <ToggleCard checked={draft.eligibility.eotcConfirmed} onChange={(value) => patch("eligibility", { eotcConfirmed: value })} title={t("I am Ethiopian Orthodox Tewahedo")} description="The first release is dedicated to the EOTC community." icon={<ChurchIcon size={20} />} />
+              <ToggleCard checked={draft.eligibility.marriageIntentConfirmed} onChange={(value) => patch("eligibility", { marriageIntentConfirmed: value })} title={t("I am seeking an intentional marriage")} description="Kidan is not an open social or casual-chat platform." />
             </section>
             {showSample && (
-              <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>Use synthetic sample data for this prototype</button>
+              <button className="sample-link" type="button" onClick={() => setDraft(syntheticOnboardingState)}>{t("Use synthetic sample data for this prototype")}</button>
             )}
           </>
         )}
 
         {currentIndex === 1 && (
           <>
-            <StepHeading eyebrow="Private identity" title="Verify the person, protect the identity." description="Only authorized verification administrators can access this section." />
-            <div className="prototype-warning"><SparkIcon size={17} /><p>This is a local prototype. Use the synthetic sample—not real personal information.</p>{showSample && <button type="button" onClick={() => setDraft(syntheticOnboardingState)}>Fill sample</button>}</div>
+            <StepHeading eyebrow="Private identity" title={t("Verify the person, protect the identity.")} description="Only authorized verification administrators can access this section." />
+            <div className="prototype-warning"><SparkIcon size={17} /><p>{t("This is a local prototype. Use the synthetic sample—not real personal information.")}</p>{showSample && <button type="button" onClick={() => setDraft(syntheticOnboardingState)}>{t("Fill sample")}</button>}</div>
             <div className="form-stack">
               <Field label="Full legal name" visibility="admin" hint="Never used as your discovery name.">
-                <input value={draft.privateIdentity.fullName} onChange={(event) => patch("privateIdentity", { fullName: event.target.value })} placeholder="Admin verification only" autoComplete="off" />
+                <input value={draft.privateIdentity.fullName} onChange={(event) => patch("privateIdentity", { fullName: event.target.value })} placeholder={t("Admin verification only")} autoComplete="off" />
               </Field>
               <Field label="Date of birth" visibility="admin" hint="Others see only your calculated age.">
                 <input type="date" value={draft.privateIdentity.dateOfBirth} onChange={(event) => patch("privateIdentity", { dateOfBirth: event.target.value })} />
               </Field>
               <Field label="Phone number" visibility="admin" hint="Verification only; never sent in a bot notification.">
-                <input type="tel" value={draft.privateIdentity.phoneNumber} onChange={(event) => patch("privateIdentity", { phoneNumber: event.target.value })} placeholder="+251 …" autoComplete="off" />
+                <input type="tel" value={draft.privateIdentity.phoneNumber} onChange={(event) => patch("privateIdentity", { phoneNumber: event.target.value })} placeholder={t("+251 …")} autoComplete="off" />
               </Field>
             </div>
             <section className="photo-verification-card">
               <div className="photo-icon"><CameraIcon /></div>
               <div>
-                <span className="field-label-row"><strong>Candidate verification photo</strong><VisibilityPill visibility="admin" /></span>
-                <p>Used only to verify identity. It is never shown in discovery and is deleted 30&nbsp;days after approval.</p>
+                <span className="field-label-row"><strong>{t("Candidate verification photo")}</strong><VisibilityPill visibility="admin" /></span>
+                <p>{t("Used only to verify identity. It is never shown in discovery and is deleted 30 days after approval.")}</p>
               </div>
               {canSubmitForReview ? (
                 <>
@@ -544,7 +546,7 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
                     accept="image/*"
                     className="photo-file-input"
                     onChange={(event) => void handlePhotoSelected(event)}
-                    aria-label="Upload your private verification photo"
+                    aria-label={t("Upload your private verification photo")}
                   />
                   <button
                     type="button"
@@ -552,12 +554,12 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
                     onClick={() => photoInputRef.current?.click()}
                     disabled={uploadingPhoto || controlsBusy}
                   >
-                    {uploadingPhoto ? "Encrypting & uploading…" : photoComplete ? "✓ Photo uploaded — tap to replace" : "Upload verification photo"}
+                    {uploadingPhoto ? t("Encrypting & uploading…") : photoComplete ? t("✓ Photo uploaded — tap to replace") : t("Upload verification photo")}
                   </button>
                   {photoError && <p className="field-error" role="alert">{photoError}</p>}
                 </>
               ) : (
-                <button type="button" disabled>Secure photo upload is being prepared</button>
+                <button type="button" disabled>{t("Secure photo upload is being prepared")}</button>
               )}
             </section>
           </>
@@ -565,35 +567,35 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
         {currentIndex === 2 && (
           <>
-            <StepHeading eyebrow="Public profile" title="Share context, not your identity." description="These approved fields form your anonymous discovery card." />
-            <div className="visibility-banner"><EyeIcon size={17} /> Everything on this page may appear in discovery.</div>
+            <StepHeading eyebrow="Public profile" title={t("Share context, not your identity.")} description="These approved fields form your anonymous discovery card." />
+            <div className="visibility-banner"><EyeIcon size={17} /> {t("Everything on this page may appear in discovery.")}</div>
             <div className="form-stack">
               <Field label="Gender" visibility="public"><SegmentedChoice value={draft.publicProfile.gender} options={[{ value: "female", label: "Woman" }, { value: "male", label: "Man" }]} onChange={(gender) => patch("publicProfile", { gender })} /></Field>
               <Field label="Country and city" visibility="public">
-                <div className="two-fields"><select value={draft.publicProfile.countryCode} onChange={(event) => patch("publicProfile", { countryCode: event.target.value })}><option value="ET">Ethiopia</option><option value="OT">Other</option></select><input value={draft.publicProfile.city} onChange={(event) => patch("publicProfile", { city: event.target.value })} placeholder="City" /></div>
+                <div className="two-fields"><select value={draft.publicProfile.countryCode} onChange={(event) => patch("publicProfile", { countryCode: event.target.value })}><option value="ET">{t("Ethiopia")}</option><option value="OT">{t("Other")}</option></select><input value={draft.publicProfile.city} onChange={(event) => patch("publicProfile", { city: event.target.value })} placeholder={t("City")} /></div>
               </Field>
               <Field label="Education" visibility="public">
                 <select value={draft.publicProfile.educationLevel} onChange={(event) => patch("publicProfile", { educationLevel: event.target.value as OnboardingFormState["publicProfile"]["educationLevel"] })}>
-                  <option value="secondary">Secondary school</option><option value="certificate">Certificate</option><option value="diploma">Diploma</option><option value="bachelors">Bachelor’s degree</option><option value="masters">Master’s degree</option><option value="doctorate">Doctorate</option><option value="other">Other</option>
+                  <option value="secondary">{t("Secondary school")}</option><option value="certificate">{t("Certificate")}</option><option value="diploma">{t("Diploma")}</option><option value="bachelors">{t("Bachelor’s degree")}</option><option value="masters">{t("Master’s degree")}</option><option value="doctorate">{t("Doctorate")}</option><option value="other">{t("Other")}</option>
                 </select>
               </Field>
-              <Field label="Field of study" visibility="public" hint="Optional broad category only."><input value={draft.publicProfile.fieldOfStudy} onChange={(event) => patch("publicProfile", { fieldOfStudy: event.target.value })} placeholder="e.g. Public health" /></Field>
+              <Field label="Field of study" visibility="public" hint="Optional broad category only."><input value={draft.publicProfile.fieldOfStudy} onChange={(event) => patch("publicProfile", { fieldOfStudy: event.target.value })} placeholder={t("e.g. Public health")} /></Field>
               <Field label="Employment" visibility="public">
-                <div className="two-fields"><select value={draft.publicProfile.employmentStatus} onChange={(event) => patch("publicProfile", { employmentStatus: event.target.value as OnboardingFormState["publicProfile"]["employmentStatus"] })}><option value="employed">Employed</option><option value="self_employed">Self-employed</option><option value="student">Student</option><option value="seeking_work">Seeking work</option><option value="not_working">Not working</option><option value="other">Other</option></select><input value={draft.publicProfile.occupationCategory} onChange={(event) => patch("publicProfile", { occupationCategory: event.target.value })} placeholder="Broad field" /></div>
+                <div className="two-fields"><select value={draft.publicProfile.employmentStatus} onChange={(event) => patch("publicProfile", { employmentStatus: event.target.value as OnboardingFormState["publicProfile"]["employmentStatus"] })}><option value="employed">{t("Employed")}</option><option value="self_employed">{t("Self-employed")}</option><option value="student">{t("Student")}</option><option value="seeking_work">{t("Seeking work")}</option><option value="not_working">{t("Not working")}</option><option value="other">{t("Other")}</option></select><input value={draft.publicProfile.occupationCategory} onChange={(event) => patch("publicProfile", { occupationCategory: event.target.value })} placeholder={t("Broad field")} /></div>
               </Field>
-              <Field label="Marital status" visibility="public"><select value={draft.publicProfile.maritalStatus} onChange={(event) => patch("publicProfile", { maritalStatus: event.target.value as MaritalStatus })}>{maritalOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+              <Field label="Marital status" visibility="public"><select value={draft.publicProfile.maritalStatus} onChange={(event) => patch("publicProfile", { maritalStatus: event.target.value as MaritalStatus })}>{maritalOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></Field>
               <Field label="Children" visibility="public"><SegmentedChoice value={draft.publicProfile.hasChildren ? "yes" : "no"} options={[{ value: "no", label: "No children" }, { value: "yes", label: "Has children" }]} onChange={(value) => patch("publicProfile", { hasChildren: value === "yes" })} /></Field>
-              <Field label="Height" visibility="public" hint="Optional. Health and complexion are intentionally not collected."><div className="unit-input"><input type="number" min="120" max="230" value={draft.publicProfile.heightCm ?? ""} onChange={(event) => patch("publicProfile", { heightCm: event.target.value ? Number(event.target.value) : null })} placeholder="165" /><span>cm</span></div></Field>
+              <Field label="Height" visibility="public" hint="Optional. Health and complexion are intentionally not collected."><div className="unit-input"><input type="number" min="120" max="230" value={draft.publicProfile.heightCm ?? ""} onChange={(event) => patch("publicProfile", { heightCm: event.target.value ? Number(event.target.value) : null })} placeholder={t("165")} /><span>cm</span></div></Field>
             </div>
           </>
         )}
 
         {currentIndex === 3 && (
           <>
-            <StepHeading eyebrow="Faith & family" title="Describe the life you hope to build." description="Kidan supports faith-centered introductions without scoring anyone’s spiritual worth." />
-            <section className="fixed-faith-card"><ChurchIcon /><div><small>Community</small><strong>Ethiopian Orthodox Tewahedo</strong></div><CheckIcon size={18} /></section>
+            <StepHeading eyebrow="Faith & family" title={t("Describe the life you hope to build.")} description="Kidan supports faith-centered introductions without scoring anyone’s spiritual worth." />
+            <section className="fixed-faith-card"><ChurchIcon /><div><small>{t("Community")}</small><strong>{t("Ethiopian Orthodox Tewahedo")}</strong></div><CheckIcon size={18} /></section>
             <div className="form-stack">
-              <Field label="Church marriage intention" visibility="public"><select value={draft.faithAndFamily.marriageIntention} onChange={(event) => patch("faithAndFamily", { marriageIntention: event.target.value as MarriageIntention })}>{marriageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></Field>
+              <Field label="Church marriage intention" visibility="public"><select value={draft.faithAndFamily.marriageIntention} onChange={(event) => patch("faithAndFamily", { marriageIntention: event.target.value as MarriageIntention })}>{marriageOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></Field>
               <Field label="Do you have a godfather (abiyat/godparent)?" visibility="public">
                 <SegmentedChoice
                   value={draft.faithAndFamily.hasGodfather ? "yes" : "no"}
@@ -632,55 +634,55 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
                   onChange={(value) => patch("faithAndFamily", { hasDisability: value === "yes" })}
                 />
               </Field>
-              <Field label="Future children" visibility="public"><select value={draft.faithAndFamily.wantsChildren} onChange={(event) => patch("faithAndFamily", { wantsChildren: event.target.value as OnboardingFormState["faithAndFamily"]["wantsChildren"] })}><option value="yes">Would like children</option><option value="no">Does not plan to have children</option><option value="open_to_discussion">Open to discussion</option></select></Field>
+              <Field label="Future children" visibility="public"><select value={draft.faithAndFamily.wantsChildren} onChange={(event) => patch("faithAndFamily", { wantsChildren: event.target.value as OnboardingFormState["faithAndFamily"]["wantsChildren"] })}><option value="yes">{t("Would like children")}</option><option value="no">{t("Does not plan to have children")}</option><option value="open_to_discussion">{t("Open to discussion")}</option></select></Field>
               <Field label="Values that describe you" visibility="public" hint={`${draft.faithAndFamily.values.length}/6 selected · choose at least 3`}><ChoiceChips values={draft.faithAndFamily.values} options={valueOptions} max={6} onChange={(values: ValueTag[]) => patch("faithAndFamily", { values })} /></Field>
-              <Field label="A short introduction" visibility="public" hint={`${draft.faithAndFamily.bio.length}/280 · no names, contacts, employer, address, or parish`}><textarea rows={5} maxLength={280} value={draft.faithAndFamily.bio} onChange={(event) => patch("faithAndFamily", { bio: event.target.value })} placeholder="Share your character, family intentions, and what a faithful partnership means to you." /></Field>
+              <Field label="A short introduction" visibility="public" hint={`${draft.faithAndFamily.bio.length}/280 · no names, contacts, employer, address, or parish`}><textarea rows={5} maxLength={280} value={draft.faithAndFamily.bio} onChange={(event) => patch("faithAndFamily", { bio: event.target.value })} placeholder={t("Share your character, family intentions, and what a faithful partnership means to you.")} /></Field>
             </div>
           </>
         )}
 
         {currentIndex === 4 && (
           <>
-            <StepHeading eyebrow="Partner preferences" title="Choose compatibility, not a ranking." description="Hard preferences are reciprocal. Optional preferences do not make one person more valuable than another." />
+            <StepHeading eyebrow="Partner preferences" title={t("Choose compatibility, not a ranking.")} description="Hard preferences are reciprocal. Optional preferences do not make one person more valuable than another." />
             <div className="form-stack">
               <Field label="Preferred age range"><div className="range-inputs"><input type="number" min="18" max="90" value={draft.partnerPreferences.ageMin} onChange={(event) => patch("partnerPreferences", { ageMin: Number(event.target.value) })} /><span>to</span><input type="number" min="18" max="90" value={draft.partnerPreferences.ageMax} onChange={(event) => patch("partnerPreferences", { ageMax: Number(event.target.value) })} /></div></Field>
               <Field label="Preferred cities" hint="Select any that apply."><ChoiceChips values={draft.partnerPreferences.preferredCities} options={cityOptions.map((city) => ({ value: city, label: city }))} onChange={(preferredCities: string[]) => patch("partnerPreferences", { preferredCities })} /></Field>
-              <ToggleCard checked={draft.partnerPreferences.openToAbroad} onChange={(openToAbroad) => patch("partnerPreferences", { openToAbroad })} title="Open to someone living abroad" description="This can be changed whenever your profile is active." />
+              <ToggleCard checked={draft.partnerPreferences.openToAbroad} onChange={(openToAbroad) => patch("partnerPreferences", { openToAbroad })} title={t("Open to someone living abroad")} description="This can be changed whenever your profile is active." />
               <Field label="Accepted marital status"><ChoiceChips values={draft.partnerPreferences.acceptedMaritalStatuses} options={maritalOptions} onChange={(acceptedMaritalStatuses: MaritalStatus[]) => patch("partnerPreferences", { acceptedMaritalStatuses })} /></Field>
-              <ToggleCard checked={draft.partnerPreferences.acceptsPartnerWithChildren} onChange={(acceptsPartnerWithChildren) => patch("partnerPreferences", { acceptsPartnerWithChildren })} title="Open to a partner with children" description="Shown only as a matching preference." />
+              <ToggleCard checked={draft.partnerPreferences.acceptsPartnerWithChildren} onChange={(acceptsPartnerWithChildren) => patch("partnerPreferences", { acceptsPartnerWithChildren })} title={t("Open to a partner with children")} description="Shown only as a matching preference." />
               <Field label="Values you hope to share" hint="Choose up to 6."><ChoiceChips values={draft.partnerPreferences.desiredValues} options={valueOptions} max={6} onChange={(desiredValues: ValueTag[]) => patch("partnerPreferences", { desiredValues })} /></Field>
               <Field label="Accepted marriage intentions"><ChoiceChips values={draft.partnerPreferences.acceptedMarriageIntentions} options={marriageOptions} onChange={(acceptedMarriageIntentions: MarriageIntention[]) => patch("partnerPreferences", { acceptedMarriageIntentions })} /></Field>
-              <Field label="Additional preferences" hint={`${draft.partnerPreferences.additionalPreferences.length}/400 · reviewed before publication`}><textarea rows={4} maxLength={400} value={draft.partnerPreferences.additionalPreferences} onChange={(event) => patch("partnerPreferences", { additionalPreferences: event.target.value })} placeholder="Optional. Do not add phone numbers, usernames, links, or identifying details." /></Field>
+              <Field label="Additional preferences" hint={`${draft.partnerPreferences.additionalPreferences.length}/400 · reviewed before publication`}><textarea rows={4} maxLength={400} value={draft.partnerPreferences.additionalPreferences} onChange={(event) => patch("partnerPreferences", { additionalPreferences: event.target.value })} placeholder={t("Optional. Do not add phone numbers, usernames, links, or identifying details.")} /></Field>
             </div>
           </>
         )}
 
         {currentIndex === 5 && (
           <>
-            <StepHeading eyebrow="Public preview" title="Know exactly what others can see." description={canSubmitForReview ? "Review the discovery projection before you submit. Only this values-only view may ever appear in discovery." : "Review the discovery projection. Submission for administrator approval is not enabled in this preview."} />
+            <StepHeading eyebrow="Public preview" title={t("Know exactly what others can see.")} description={canSubmitForReview ? "Review the discovery projection before you submit. Only this values-only view may ever appear in discovery." : "Review the discovery projection. Submission for administrator approval is not enabled in this preview."} />
             <PublicPreview draft={draft} mode={mode} />
-            <div className="preview-rule"><LockIcon size={17} /><p>The private verification photo cannot later become a discovery photo without a separate upload and a new consent.</p></div>
+            <div className="preview-rule"><LockIcon size={17} /><p>{t("The private verification photo cannot later become a discovery photo without a separate upload and a new consent.")}</p></div>
           </>
         )}
 
         {currentIndex === 6 && (
           <>
-            <StepHeading eyebrow="Consent & submission" title="Your information, your choices." description="Required purposes are separated. Notifications remain optional and can be changed later." />
+            <StepHeading eyebrow="Consent & submission" title={t("Your information, your choices.")} description="Required purposes are separated. Notifications remain optional and can be changed later." />
             <section className="consent-group">
-              <ToggleCard checked={draft.consent.informationAccurate} onChange={(informationAccurate) => patch("consent", { informationAccurate })} title="The information is accurate" description="I understand that misleading profiles may be rejected." />
-              <ToggleCard checked={draft.consent.identityProcessing} onChange={(identityProcessing) => patch("consent", { identityProcessing })} title="Private identity processing" description="Admin-only name, birth date, phone, and Telegram mapping." icon={<LockIcon size={19} />} />
-              <ToggleCard checked={draft.consent.faithDataProcessing} onChange={(faithDataProcessing) => patch("consent", { faithDataProcessing })} title="Faith-data processing" description="My EOTC and marriage-intention information may be used for this service." icon={<ChurchIcon size={19} />} />
-              <ToggleCard checked={draft.consent.discoveryPublication} onChange={(discoveryPublication) => patch("consent", { discoveryPublication })} title="Anonymous discovery publication" description="Only the exact public preview may be shown to approved users." icon={<EyeIcon size={19} />} />
-              <ToggleCard checked={draft.consent.verificationPhotoRetention} onChange={(verificationPhotoRetention) => patch("consent", { verificationPhotoRetention })} title="Verification-photo processing" description="Admin-only; scheduled for deletion 30 days after approval." icon={<CameraIcon size={19} />} />
-              <ToggleCard checked={draft.consent.communityRules} onChange={(communityRules) => patch("consent", { communityRules })} title="Community and safety rules" description="I agree to respectful conduct, blocking, reporting, and administrator review." icon={<ShieldCheckIcon size={19} />} />
+              <ToggleCard checked={draft.consent.informationAccurate} onChange={(informationAccurate) => patch("consent", { informationAccurate })} title={t("The information is accurate")} description="I understand that misleading profiles may be rejected." />
+              <ToggleCard checked={draft.consent.identityProcessing} onChange={(identityProcessing) => patch("consent", { identityProcessing })} title={t("Private identity processing")} description="Admin-only name, birth date, phone, and Telegram mapping." icon={<LockIcon size={19} />} />
+              <ToggleCard checked={draft.consent.faithDataProcessing} onChange={(faithDataProcessing) => patch("consent", { faithDataProcessing })} title={t("Faith-data processing")} description="My EOTC and marriage-intention information may be used for this service." icon={<ChurchIcon size={19} />} />
+              <ToggleCard checked={draft.consent.discoveryPublication} onChange={(discoveryPublication) => patch("consent", { discoveryPublication })} title={t("Anonymous discovery publication")} description="Only the exact public preview may be shown to approved users." icon={<EyeIcon size={19} />} />
+              <ToggleCard checked={draft.consent.verificationPhotoRetention} onChange={(verificationPhotoRetention) => patch("consent", { verificationPhotoRetention })} title={t("Verification-photo processing")} description="Admin-only; scheduled for deletion 30 days after approval." icon={<CameraIcon size={19} />} />
+              <ToggleCard checked={draft.consent.communityRules} onChange={(communityRules) => patch("consent", { communityRules })} title={t("Community and safety rules")} description="I agree to respectful conduct, blocking, reporting, and administrator review." icon={<ShieldCheckIcon size={19} />} />
             </section>
             <section className="optional-consent">
-              <ToggleCard checked={draft.consent.botNotifications} onChange={(botNotifications) => patch("consent", { botNotifications })} title="Generic bot notifications" description="Optional. Bot messages contain no names, profiles, or contact information." icon={<BellIcon size={19} />} />
+              <ToggleCard checked={draft.consent.botNotifications} onChange={(botNotifications) => patch("consent", { botNotifications })} title={t("Generic bot notifications")} description="Optional. Bot messages contain no names, profiles, or contact information." icon={<BellIcon size={19} />} />
             </section>
             {canSubmitForReview ? (
-              <div className="prototype-submit-note"><ShieldCheckIcon size={17} /><p>Submitting sends your public profile and consent for private administrator review. Your name, phone, photo, and contact details stay hidden and are never shown in discovery.</p></div>
+              <div className="prototype-submit-note"><ShieldCheckIcon size={17} /><p>{t("Submitting sends your public profile and consent for private administrator review. Your name, phone, photo, and contact details stay hidden and are never shown in discovery.")}</p></div>
             ) : (
-              <div className="prototype-submit-note"><SparkIcon size={17} /><p>Prototype mode: submitting will not upload, persist, or transmit any information.</p></div>
+              <div className="prototype-submit-note"><SparkIcon size={17} /><p>{t("Prototype mode: submitting will not upload, persist, or transmit any information.")}</p></div>
             )}
           </>
         )}
@@ -688,9 +690,9 @@ export function OnboardingFlow({ mode, onExit, onComplete }: OnboardingFlowProps
 
       <footer className="onboarding-footer">
         {step > 0 ? (
-          <button className="back-button" type="button" onClick={() => void goBack()} disabled={controlsBusy || conflict || reloadError}><ArrowLeftIcon size={18} /> Back</button>
+          <button className="back-button" type="button" onClick={() => void goBack()} disabled={controlsBusy || conflict || reloadError}><ArrowLeftIcon size={18} /> {t("Back")}</button>
         ) : (
-          <button className="back-button" type="button" onClick={() => void requestExit(false)} disabled={controlsBusy || conflict || reloadError}>{isDemo ? "Explore demo" : "Exit"}</button>
+          <button className="back-button" type="button" onClick={() => void requestExit(false)} disabled={controlsBusy || conflict || reloadError}>{isDemo ? t("Explore demo") : t("Exit")}</button>
         )}
         <button className="continue-button" type="button" onClick={() => void continueFlow()} disabled={controlsBusy || conflict || reloadError}>
           {step === activeIndices.length - 1
