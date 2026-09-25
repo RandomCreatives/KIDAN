@@ -5,6 +5,7 @@ import { useAuth } from "../auth/useAuth.js";
 import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { CheckIcon, ChevronLeftIcon, ClockIcon, LockIcon, ShieldCheckIcon, XIcon } from "./Icons";
+import { useT } from "../i18n/LanguageProvider";
 
 /**
  * Track D2 — intentional introduction requests.
@@ -19,6 +20,7 @@ import { CheckIcon, ChevronLeftIcon, ClockIcon, LockIcon, ShieldCheckIcon, XIcon
  * and expiring requests simply disappear — no rejection signal.
  */
 export function RequestsScreen({ onBack }: { onBack: () => void }) {
+  const t = useT();
   const { realSubmissionsEnabled, csrfToken } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
@@ -65,12 +67,12 @@ export function RequestsScreen({ onBack }: { onBack: () => void }) {
       void clientRef
         .current!.respondToRequest(requestId, accept, csrfToken ?? "")
         .then(() => {
-          setToast(accept ? "Introduction accepted — confirm with them next." : "Request declined quietly.");
+          setToast(accept ? t("Introduction accepted — confirm with them next.") : t("Request declined quietly."));
           window.setTimeout(() => setToast(null), 2600);
           load();
         })
         .catch(() => {
-          setToast("That request is no longer available.");
+          setToast(t("That request is no longer available."));
           window.setTimeout(() => setToast(null), 2600);
           load();
         })
@@ -84,54 +86,54 @@ export function RequestsScreen({ onBack }: { onBack: () => void }) {
   return (
     <main className="screen standard-screen">
       <header className="topbar">
-        <button type="button" className="back-button" aria-label="Back" onClick={onBack}><ChevronLeftIcon size={22} /></button>
-        <span className="header-label" style={{ flex: 1, textAlign: "center" }}>Introductions</span>
+        <button type="button" className="back-button" aria-label={t("Back")} onClick={onBack}><ChevronLeftIcon size={22} /></button>
+        <span className="header-label" style={{ flex: 1, textAlign: "center" }}>{t("Introductions")}</span>
         <span style={{ width: 36 }} />
       </header>
 
       <section className="page-intro">
-        <span className="section-kicker">Intentional, not endless</span>
-        <h1>Introductions</h1>
-        <p>A request is a deliberate step from your private shortlist. You can send up to {dailyCap} a day. Requests expire after 72 hours, and no one is told if they are declined.</p>
+        <span className="section-kicker">{t("Intentional, not endless")}</span>
+        <h1>{t("Introductions")}</h1>
+        <p>{t("A request is a deliberate step from your private shortlist. You can send up to {cap} a day. Requests expire after 72 hours, and no one is told if they are declined.", { cap: dailyCap })}</p>
       </section>
 
       <div className="privacy-strip" style={{ marginBottom: 16 }}>
-        <ShieldCheckIcon size={16} /><span>{remaining} of {dailyCap} requests left today</span>
+        <ShieldCheckIcon size={16} /><span>{t("{left} of {cap} requests left today", { left: remaining, cap: dailyCap })}</span>
       </div>
 
       {loading ? (
-        <section className="status-card pending-card" aria-label="Loading requests">
+        <section className="status-card pending-card" aria-label={t("Loading requests")}>
           <div className="status-icon amber"><ClockIcon /></div>
-          <div className="status-copy"><span>Loading</span><strong>Checking your introductions…</strong></div>
+          <div className="status-copy"><span>{t("Loading")}</span><strong>{t("Checking your introductions…")}</strong></div>
         </section>
       ) : (
         <>
-          <h2 className="list-heading">Incoming requests</h2>
+          <h2 className="list-heading">{t("Incoming requests")}</h2>
           {incoming.length === 0 ? (
             <section className="process-card">
-              <p className="quiet-copy">No pending requests. When someone sends you an introduction, their values-only summary appears here — never their name, photo, or contact details.</p>
+              <p className="quiet-copy">{t("No pending requests. When someone sends you an introduction, their values-only summary appears here — never their name, photo, or contact details.")}</p>
             </section>
           ) : (
             incoming.map((req) => (
               <section key={req.requestId} className="request-card status-card pending-card">
                 <div className="request-summary">
                   <div className="summary-chips">
-                    <span>{req.profile.age} yrs</span>
-                    <span>{req.profile.city || "Ethiopia"}</span>
-                    <span>{req.profile.gender === "male" ? "Brother" : "Sister"}</span>
+                    <span>{t("{n} yrs", { n: req.profile.age })}</span>
+                    <span>{req.profile.city || t("Ethiopia")}</span>
+                    <span>{req.profile.gender === "male" ? t("Brother") : t("Sister")}</span>
                     <span className="code-chip">{req.profile.publicCode}</span>
                   </div>
                   <ul className="summary-basics">
-                    <li><strong>Marriage goal</strong><span>{marriageLabel(req.profile.marriageIntention)}</span></li>
-                    <li><strong>Education</strong><span>{req.profile.educationLevel ? req.profile.educationLevel.replaceAll("_", " ") : "—"}</span></li>
-                    <li><strong>Work</strong><span>{req.profile.occupationCategory || "—"}</span></li>
-                    <li><strong>Godfather</strong><span>{req.profile.hasGodfather ? "Yes" : "No"}</span></li>
-                    <li><strong>Deacon</strong><span>{deaconLabel(req.profile.isDeacon)}</span></li>
-                    <li><strong>Active in church service</strong><span>{req.profile.churchServiceActive ? "Yes" : "No"}</span></li>
+                    <li><strong>{t("Marriage goal")}</strong><span>{t(marriageLabel(req.profile.marriageIntention))}</span></li>
+                    <li><strong>{t("Education")}</strong><span>{req.profile.educationLevel ? t(req.profile.educationLevel.replaceAll("_", " ")) : "—"}</span></li>
+                    <li><strong>{t("Work")}</strong><span>{req.profile.occupationCategory ? t(req.profile.occupationCategory) : "—"}</span></li>
+                    <li><strong>{t("Godfather")}</strong><span>{req.profile.hasGodfather ? t("Yes") : t("No")}</span></li>
+                    <li><strong>{t("Deacon")}</strong><span>{t(deaconLabel(req.profile.isDeacon))}</span></li>
+                    <li><strong>{t("Active in church service")}</strong><span>{req.profile.churchServiceActive ? t("Yes") : t("No")}</span></li>
                   </ul>
                   {req.profile.bio && <p className="summary-bio">“{req.profile.bio}”</p>}
                   <div className="summary-values">
-                    {req.profile.values.map((value) => <span key={value} className="value-pill">{value.replaceAll("_", " ")}</span>)}
+                    {req.profile.values.map((value) => <span key={value} className="value-pill">{t(value.replaceAll("_", " "))}</span>)}
                   </div>
                 </div>
                 <div className="connection-actions">
@@ -141,40 +143,40 @@ export function RequestsScreen({ onBack }: { onBack: () => void }) {
                     disabled={busy === req.requestId}
                     onClick={() => respond(req.requestId, true)}
                   >
-                    <CheckIcon size={16} /> Accept
+                    <CheckIcon size={16} /> {t("Accept")}
                   </button>
                   <button
                     type="button"
                     className="secondary-button connection-button"
                     disabled={busy === req.requestId}
                     onClick={() => respond(req.requestId, false)}
-                    aria-label="Decline request quietly"
+                    aria-label={t("Decline request quietly")}
                   >
-                    <XIcon size={16} /> Decline
+                    <XIcon size={16} /> {t("Decline")}
                   </button>
                 </div>
                 <p className="quiet-note" style={{ margin: "10px 0 0" }}>
-                  <LockIcon size={15} /> <span>Declining is silent — they simply won’t hear back. Accepting lets both of you confirm before an administrator reviews.</span>
+                  <LockIcon size={15} /> <span>{t("Declining is silent — they simply won’t hear back. Accepting lets both of you confirm before an administrator reviews.")}</span>
                 </p>
               </section>
             ))
           )}
 
-          <h2 className="list-heading">Your shortlist · sent requests</h2>
+          <h2 className="list-heading">{t("Your shortlist · sent requests")}</h2>
           {outgoing.length === 0 ? (
             <section className="process-card">
-              <p className="quiet-copy">You haven’t sent any introduction requests yet. Right-swipe someone on Discover to add them to your private shortlist, then send a request from there.</p>
+              <p className="quiet-copy">{t("You haven’t sent any introduction requests yet. Right-swipe someone on Discover to add them to your private shortlist, then send a request from there.")}</p>
             </section>
           ) : (
             outgoing.map((req) => (
               <section key={req.requestId} className="status-card pending-card outgoing-card">
                 <div className="status-icon amber"><ClockIcon /></div>
                 <div className="status-copy">
-                  <span>{req.status === "accepted" ? "Accepted — waiting on confirmations" : "Request sent"}</span>
-                  <strong>{req.recipient.age} • {req.recipient.city || "Ethiopia"} • {req.recipient.publicCode}</strong>
+                  <span>{req.status === "accepted" ? t("Accepted — waiting on confirmations") : t("Request sent")}</span>
+                  <strong>{req.recipient.age} • {req.recipient.city || t("Ethiopia")} • {req.recipient.publicCode}</strong>
                   <p>{req.status === "accepted"
-                    ? "They accepted. Both of you confirm next, then an administrator approves."
-                    : "They can review your values-only summary. You’ll see it here if they accept — otherwise it quietly expires."}</p>
+                    ? t("They accepted. Both of you confirm next, then an administrator approves.")
+                    : t("They can review your values-only summary. You’ll see it here if they accept — otherwise it quietly expires.")}</p>
                 </div>
               </section>
             ))
@@ -182,7 +184,7 @@ export function RequestsScreen({ onBack }: { onBack: () => void }) {
         </>
       )}
 
-      <div className="quiet-note"><LockIcon size={17} /><p>Your shortlist is private. Kidan never notifies anyone from a swipe, and never reveals a decline.</p></div>
+      <div className="quiet-note"><LockIcon size={17} /><p>{t("Your shortlist is private. Kidan never notifies anyone from a swipe, and never reveals a decline.")}</p></div>
 
       {toast && <div className="toast" role="status"><ShieldCheckIcon size={17} /> {toast}</div>}
     </main>

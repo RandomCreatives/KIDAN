@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { KidanApiClient } from "../api/client.js";
 import type { CandidateReviewStatus } from "@kidan/contracts";
+import { useT } from "../i18n/LanguageProvider";
 
 interface ReviewStatusCardProps {
   /**
@@ -44,6 +45,7 @@ const copy: Record<
 };
 
 export function ReviewStatusCard({ enabled, refreshKey = 0 }: ReviewStatusCardProps) {
+  const t = useT();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
   const [state, setState] = useState<State>({ kind: enabled ? "loading" : "hidden" });
@@ -80,17 +82,17 @@ export function ReviewStatusCard({ enabled, refreshKey = 0 }: ReviewStatusCardPr
     <section className={`review-status-card review-tone-${view.tone}`} aria-live="polite">
       <div className="review-status-head">
         <span className={`review-dot review-dot-${view.tone}`} aria-hidden="true" />
-        <strong>{view.title}</strong>
+        <strong>{t(view.title)}</strong>
       </div>
-      <p className="review-status-body">{view.body}</p>
+      <p className="review-status-body">{t(view.body)}</p>
       {status.feedbackNote ? (
         <div className="review-note">
-          <span className="review-note-label">Private note</span>
+          <span className="review-note-label">{t("Private note")}</span>
           <p>{status.feedbackNote}</p>
         </div>
       ) : null}
       {status.status === "changes_requested" ? (
-        <p className="review-hint">Reopen your profile below, make the change, and submit again.</p>
+        <p className="review-hint">{t("Reopen your profile below, make the change, and submit again.")}</p>
       ) : null}
     </section>
   );

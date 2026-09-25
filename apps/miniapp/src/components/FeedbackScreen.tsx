@@ -4,6 +4,7 @@ import { useAuth } from "../auth/useAuth.js";
 import { Brand } from "./Brand.js";
 import { ArrowLeftIcon } from "./Icons.js";
 import { haptic } from "../lib/telegram.js";
+import { useT } from "../i18n/LanguageProvider";
 
 type FeedbackKind = "feedback" | "comment" | "report";
 
@@ -19,7 +20,8 @@ const KIND_OPTIONS: { value: FeedbackKind; label: string }[] = [
  * body is the candidate's own words and goes straight to the operator console.
  */
 export function FeedbackScreen({ onBack }: { onBack: () => void }) {
-  const { csrfToken } = useAuth();
+  const t = useT();
+  const { csrfToken, isDemo } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
 
@@ -34,17 +36,24 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
     setError(null);
     const trimmed = body.trim();
     if (trimmed.length < 1) {
-      setError("Please write a short message.");
+      setError(t("Please write a short message."));
       return;
     }
     setBusy(true);
     try {
-      await clientRef.current!.submitFeedback({ kind, body: trimmed }, csrfToken ?? "");
+      if (isDemo) {
+        // Browser-demo preview: honour the "no data is sent or saved" promise —
+        // simulate the send locally instead of hitting the API without a
+        // Telegram session (which would 401 and dead-end the visitor).
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      } else {
+        await clientRef.current!.submitFeedback({ kind, body: trimmed }, csrfToken ?? "");
+      }
       haptic("success");
       setSent(true);
     } catch (caught) {
       haptic("warning");
-      setError(caught instanceof Error ? caught.message : "Could not send. Try again.");
+      setError(caught instanceof Error ? caught.message : t("Could not send. Try again."));
     } finally {
       setBusy(false);
     }
@@ -53,27 +62,27 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
   return (
     <main className="screen standard-screen">
       <header className="topbar">
-        <button type="button" className="icon-button" onClick={onBack} aria-label="Back">
+        <button type="button" className="icon-button" onClick={onBack} aria-label={t("Back")}>
           <ArrowLeftIcon />
         </button>
         <Brand />
-        <span className="header-label">Feedback &amp; help</span>
+        <span className="header-label">{t("Feedback & help")}</span>
       </header>
 
       {sent ? (
         <section className="feedback-sent" aria-live="polite">
           <span className="sent-mark">✓</span>
-          <h1>Thanks — got it</h1>
-          <p>Your message was sent privately to the Kidan operator.</p>
+          <h1>{t("Thanks — got it")}</h1>
+          <p>{t("Your message was sent privately to the Kidan operator.")}</p>
           <button type="button" className="primary-button" onClick={onBack}>
-            Back
+            {t("Back")}
           </button>
         </section>
       ) : (
         <form onSubmit={submit} className="feedback-form">
           <section className="panel">
-            <h2>What\u2019s this about?</h2>
-            <div className="kind-picker" role="radiogroup" aria-label="Message type">
+            <h2>{t("What\\u2019s this about?")}</h2>
+            <div className="kind-picker" role="radiogroup" aria-label={t("Message type")}>
               {KIND_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -83,29 +92,29 @@ export function FeedbackScreen({ onBack }: { onBack: () => void }) {
                   className={`kind-chip ${kind === option.value ? "is-active" : ""}`}
                   onClick={() => setKind(option.value)}
                 >
-                  {option.label}
+                  {t(option.label)}
                 </button>
               ))}
             </div>
           </section>
 
           <section className="panel">
-            <h2>Your message</h2>
+            <h2>{t("Your message")}</h2>
             <textarea
               value={body}
               onChange={(event) => setBody(event.target.value)}
-              placeholder="Tell us what\u2019s on your mind. This goes privately to the operator."
+              placeholder={t("Tell us what\\u2019s on your mind. This goes privately to the operator.")}
               maxLength={4000}
               rows={6}
-              aria-label="Message"
+              aria-label={t("Message")}
             />
             <p className="char-count">{body.length}/4000</p>
           </section>
 
-          {error ? <p className="form-error" role="alert">{error}</p> : null}
+          {error ? <p className="form-error" role="alert">{t(error)}</p> : null}
 
           <button type="submit" className="primary-button" disabled={busy}>
-            {busy ? "Sending…" : "Send to operator"}
+            {busy ? t("Sending…") : t("Send to operator")}
           </button>
         </form>
       )}

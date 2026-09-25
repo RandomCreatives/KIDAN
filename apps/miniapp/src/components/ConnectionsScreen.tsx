@@ -6,6 +6,7 @@ import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { IntroductionScreen } from "./IntroductionScreen";
 import { CheckIcon, ChevronRightIcon, ClockIcon, LockIcon, MailIcon, ShieldCheckIcon, XIcon } from "./Icons";
+import { useT } from "../i18n/LanguageProvider";
 
 const STATUS_COPY: Record<string, { title: string; detail: string }> = {
   request_accepted_pending_confirmation: {
@@ -31,6 +32,7 @@ const STATUS_COPY: Record<string, { title: string; detail: string }> = {
 };
 
 export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => void } = {}) {
+  const t = useT();
   const { realSubmissionsEnabled, csrfToken } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
@@ -84,20 +86,20 @@ export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => v
 
   return (
     <main className="screen standard-screen">
-      <header className="topbar"><Brand /><span className="header-label">Connections</span></header>
+      <header className="topbar"><Brand /><span className="header-label">{t("Connections")}</span></header>
       <section className="page-intro">
-        <span className="section-kicker">Private by design</span>
-        <h1>Your connections</h1>
-        <p>Only accepted introductions reach here. One-sided decisions are never shown, and no identity is shared until everyone confirms and an administrator approves.</p>
+        <span className="section-kicker">{t("Private by design")}</span>
+        <h1>{t("Your connections")}</h1>
+        <p>{t("Only accepted introductions reach here. One-sided decisions are never shown, and no identity is shared until everyone confirms and an administrator approves.")}</p>
       </section>
 
       {realSubmissionsEnabled && (
         <button type="button" className="status-card pending-card requests-entry" onClick={onOpenRequests}>
           <div className="status-icon amber"><MailIcon /></div>
           <div className="status-copy">
-            <span>Introductions</span>
-            <strong>Review incoming requests &amp; your shortlist</strong>
-            <p>Send up to 5 deliberate requests a day. Declines are silent and requests expire after 72 hours.</p>
+            <span>{t("Introductions")}</span>
+            <strong>{t("Review incoming requests & your shortlist")}</strong>
+            <p>{t("Send up to 5 deliberate requests a day. Declines are silent and requests expire after 72 hours.")}</p>
           </div>
           <ChevronRightIcon size={19} />
         </button>
@@ -105,14 +107,14 @@ export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => v
 
       {realSubmissionsEnabled ? (
         connections === null ? (
-          <section className="status-card pending-card" aria-label="Loading connections">
+          <section className="status-card pending-card" aria-label={t("Loading connections")}>
             <div className="status-icon amber"><ClockIcon /></div>
-            <div className="status-copy"><span>Loading</span><strong>Checking your introductions…</strong></div>
+            <div className="status-copy"><span>{t("Loading")}</span><strong>{t("Checking your introductions…")}</strong></div>
           </section>
         ) : connections.length === 0 ? (
           <section className="process-card">
-            <h2>No introductions yet</h2>
-            <p className="quiet-copy">When two people independently choose each other and an administrator approves, the introduction appears here. Names and contact details remain private throughout.</p>
+            <h2>{t("No introductions yet")}</h2>
+            <p className="quiet-copy">{t("When two people independently choose each other and an administrator approves, the introduction appears here. Names and contact details remain private throughout.")}</p>
           </section>
         ) : (
           connections.map((connection) => {
@@ -131,9 +133,9 @@ export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => v
                   {connection.status === "connected" ? <ShieldCheckIcon /> : <ClockIcon />}
                 </div>
                 <div className="status-copy">
-                  <span>{copy.title}</span>
-                  <strong>{labelFor(connection)}</strong>
-                  <p>{copy.detail}</p>
+                  <span>{t(copy.title)}</span>
+                  <strong>{labelFor(connection, t)}</strong>
+                  <p>{t(copy.detail)}</p>
                 </div>
                 {confirmable(connection.status) && !connection.iConfirmed && (
                   <div className="connection-actions">
@@ -143,21 +145,21 @@ export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => v
                       disabled={busy === connection.id}
                       onClick={() => respond(connection.id, true)}
                     >
-                      <CheckIcon size={16} /> Confirm
+                      <CheckIcon size={16} /> {t("Confirm")}
                     </button>
                     <button
                       type="button"
                       className="secondary-button connection-button"
                       disabled={busy === connection.id}
                       onClick={() => respond(connection.id, false)}
-                      aria-label="Decline introduction"
+                      aria-label={t("Decline introduction")}
                     >
                       <XIcon size={16} />
                     </button>
                   </div>
                 )}
                 {confirmable(connection.status) && connection.iConfirmed && (
-                  <div className="status-copy"><span className="waiting-note">Waiting for their confirmation</span></div>
+                  <div className="status-copy"><span className="waiting-note">{t("Waiting for their confirmation")}</span></div>
                 )}
                 {connection.status === "connected" && <ChevronRightIcon size={19} />}
               </section>
@@ -168,23 +170,23 @@ export function ConnectionsScreen({ onOpenRequests }: { onOpenRequests?: () => v
         <>
           <section className="status-card pending-card">
             <div className="status-icon amber"><ClockIcon /></div>
-            <div className="status-copy"><span>Pending review</span><strong>One introduction is with the admin</strong><p>No identity or contact information has been shared.</p></div>
+            <div className="status-copy"><span>{t("Pending review")}</span><strong>{t("One introduction is with the admin")}</strong><p>{t("No identity or contact information has been shared.")}</p></div>
             <ChevronRightIcon size={19} />
           </section>
         </>
       )}
 
       <section className="process-card">
-        <h2>How a connection opens</h2>
+        <h2>{t("How a connection opens")}</h2>
         <ol className="process-list">
-          <li className="complete"><span><ShieldCheckIcon size={17} /></span><div><strong>Mutual interest</strong><p>Both people choose independently.</p></div></li>
-          <li><span>2</span><div><strong>Private admin review</strong><p>Eligibility and safety checks.</p></div></li>
-          <li><span>3</span><div><strong>Final confirmation</strong><p>Both people choose to proceed again.</p></div></li>
-          <li><span><LockIcon size={16} /></span><div><strong>Restricted introduction</strong><p>An in-app introduction opens first — never a name, phone, or Telegram link.</p></div></li>
+          <li className="complete"><span><ShieldCheckIcon size={17} /></span><div><strong>{t("Mutual interest")}</strong><p>{t("Both people choose independently.")}</p></div></li>
+          <li><span>2</span><div><strong>{t("Private admin review")}</strong><p>{t("Eligibility and safety checks.")}</p></div></li>
+          <li><span>3</span><div><strong>{t("Final confirmation")}</strong><p>{t("Both people choose to proceed again.")}</p></div></li>
+          <li><span><LockIcon size={16} /></span><div><strong>{t("Restricted introduction")}</strong><p>{t("An in-app introduction opens first — never a name, phone, or Telegram link.")}</p></div></li>
         </ol>
       </section>
 
-      <div className="quiet-note"><LockIcon size={17} /><p>Kidan will never place a name, phone number, or profile detail in a bot notification.</p></div>
+      <div className="quiet-note"><LockIcon size={17} /><p>{t("Kidan will never place a name, phone number, or profile detail in a bot notification.")}</p></div>
     </main>
   );
 }
@@ -196,7 +198,7 @@ function confirmable(status: string): boolean {
 }
 
 /** Values-only label for the other participant — never a name. */
-function labelFor(connection: ConnectionItem): string {
+function labelFor(connection: ConnectionItem, t: (key: string) => string = (k) => k): string {
   const { age, city, publicCode } = connection.other;
-  return `${age} • ${city || "Ethiopia"} • ${publicCode}`;
+  return `${age} • ${city || t("Ethiopia")} • ${publicCode}`;
 }

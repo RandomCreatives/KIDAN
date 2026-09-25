@@ -8,6 +8,10 @@ export function kidanCspPolicy(environment: CspEnvironment): string {
   const isDev = environment === "development";
   const scriptSources = ["'self'", TELEGRAM_SDK_ORIGIN];
   const connectSources = ["'self'"];
+  // Development only: allow the app to be embedded by local dev tooling and
+  // sandbox preview hosts so the prototype can be reviewed in a browser iframe.
+  // Production keeps the strict Telegram-only frame-ancestors policy.
+  const frameAncestors = isDev ? "*" : TELEGRAM_WEB_ORIGIN;
   if (isDev) {
     scriptSources.push("'unsafe-inline'");
     connectSources.push("ws:", "wss:", "http://localhost:4000", "http://localhost:5173");
@@ -19,7 +23,7 @@ export function kidanCspPolicy(environment: CspEnvironment): string {
     `img-src 'self' data:`,
     `font-src 'self'`,
     `connect-src ${connectSources.join(" ")}`,
-    `frame-ancestors ${TELEGRAM_WEB_ORIGIN}`,
+    `frame-ancestors ${frameAncestors}`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,

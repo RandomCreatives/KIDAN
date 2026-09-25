@@ -1,4 +1,6 @@
 import { XIcon } from "../components/Icons";
+import { useT } from "../i18n/LanguageProvider";
+import { LanguageToggle } from "../i18n/LanguageToggle";
 
 /**
  * Pre-onboarding intro for brand-new candidates (no saved draft).
@@ -30,10 +32,12 @@ const FOUNDING_HEADING = "You’re among our very first.";
 const FOUNDING_COPY = "This first circle shapes what Kidan becomes. Thank you for starting with us.";
 
 function IntroChrome({ onExit, label }: { onExit: () => void; label: string }) {
+  const t = useT();
   return (
     <header className="intro-topline">
-      <span className="section-kicker">{label}</span>
-      <button className="icon-button" type="button" onClick={onExit} aria-label="Exit onboarding">
+      <span className="section-kicker">{t(label)}</span>
+      <LanguageToggle compact />
+      <button className="icon-button" type="button" onClick={onExit} aria-label={t("Exit onboarding")}>
         <XIcon size={19} />
       </button>
     </header>
@@ -41,6 +45,7 @@ function IntroChrome({ onExit, label }: { onExit: () => void; label: string }) {
 }
 
 export function IntroScreens({ stage, onNext, onExit }: IntroScreensProps) {
+  const t = useT();
   if (stage === "splash") {
     return (
       <main className="intro-shell intro-splash">
@@ -48,7 +53,7 @@ export function IntroScreens({ stage, onNext, onExit }: IntroScreensProps) {
           className="intro-splash-tap"
           type="button"
           onClick={onNext}
-          aria-label="Continue to welcome"
+          aria-label={t("Continue to welcome")}
         >
           <span className="intro-bloom">
             <span className="brand-mark intro-brand-mark" aria-hidden="true">
@@ -60,7 +65,7 @@ export function IntroScreens({ stage, onNext, onExit }: IntroScreensProps) {
             Kidan
           </span>
           <span className="intro-tagline intro-fade-up" style={{ animationDelay: "430ms" }}>
-            {SPLASH_TAGLINE}
+            {t(SPLASH_TAGLINE)}
           </span>
         </button>
       </main>
@@ -72,14 +77,14 @@ export function IntroScreens({ stage, onNext, onExit }: IntroScreensProps) {
       <main className="intro-shell">
         <IntroChrome onExit={onExit} label="Welcome" />
         <section className="intro-center">
-          <h1 className="intro-title intro-fade-up">{WELCOME_HEADING}</h1>
+          <h1 className="intro-title intro-fade-up">{t(WELCOME_HEADING)}</h1>
           <p className="intro-copy intro-fade-up" style={{ animationDelay: "90ms" }}>
-            {WELCOME_COPY}
+            {t(WELCOME_COPY)}
           </p>
         </section>
         <div className="intro-footer intro-fade-up" style={{ animationDelay: "180ms" }}>
           <button className="primary-button onboarding-primary" type="button" onClick={onNext}>
-            Begin
+            {t("Begin")}
           </button>
         </div>
       </main>
@@ -90,17 +95,17 @@ export function IntroScreens({ stage, onNext, onExit }: IntroScreensProps) {
     <main className="intro-shell">
       <IntroChrome onExit={onExit} label="Founding cohort" />
       <section className="intro-center">
-        <span className="intro-badge intro-fade-up">Founding cohort</span>
+        <span className="intro-badge intro-fade-up">{t("Founding cohort")}</span>
         <h1 className="intro-title intro-fade-up" style={{ animationDelay: "70ms" }}>
-          {FOUNDING_HEADING}
+          {t(FOUNDING_HEADING)}
         </h1>
         <p className="intro-copy intro-fade-up" style={{ animationDelay: "150ms" }}>
-          {FOUNDING_COPY}
+          {t(FOUNDING_COPY)}
         </p>
       </section>
       <div className="intro-footer intro-fade-up" style={{ animationDelay: "230ms" }}>
         <button className="primary-button onboarding-primary" type="button" onClick={onNext}>
-          Start your profile
+          {t("Start your profile")}
         </button>
       </div>
     </main>

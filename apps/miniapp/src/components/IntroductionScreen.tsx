@@ -6,6 +6,7 @@ import { haptic } from "../lib/telegram";
 import { Brand } from "./Brand";
 import { ArrowLeftIcon, LockIcon, ShieldCheckIcon } from "./Icons";
 import { PairingNextStepCard, PairingScreen } from "./PairingScreen";
+import { useT } from "../i18n/LanguageProvider";
 
 interface IntroductionScreenProps {
   connection: ConnectionItem;
@@ -22,6 +23,7 @@ const CONTACT_HINT = /(https?:\/\/|www\.|t\.me\/|telegram\.me\/|@[a-z0-9_]{3,}|\
  * other party is represented by their values-only discovery profile.
  */
 export function IntroductionScreen({ connection, onBack }: IntroductionScreenProps) {
+  const t = useT();
   const { csrfToken } = useAuth();
   const clientRef = useRef<KidanApiClient | null>(null);
   clientRef.current ??= new KidanApiClient();
@@ -75,7 +77,7 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
     const body = draft.trim();
     if (!body || sending) return;
     if (CONTACT_HINT.test(body)) {
-      setError("Introductions stay in-app for now. Phone numbers, Telegram handles, and links can't be shared here.");
+      setError(t("Introductions stay in-app for now. Phone numbers, Telegram handles, and links can't be shared here."));
       return;
     }
     setError(null);
@@ -88,7 +90,7 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
         load();
         loadPairingJourney();
       })
-      .catch(() => setError("Your message could not be sent. Keep it free of contact details and try again."))
+      .catch(() => setError(t("Your message could not be sent. Keep it free of contact details and try again.")))
       .finally(() => setSending(false));
   }, [draft, sending, connection.id, csrfToken, load]);
 
@@ -107,24 +109,24 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
   return (
     <main className="screen standard-screen introduction-screen">
       <header className="topbar">
-        <button type="button" className="icon-button" onClick={onBack} aria-label="Back to connections">
+        <button type="button" className="icon-button" onClick={onBack} aria-label={t("Back to connections")}>
           <ArrowLeftIcon size={20} />
         </button>
         <Brand />
-        <span className="header-label">Introduction</span>
+        <span className="header-label">{t("Introduction")}</span>
       </header>
 
       <section className="page-intro">
-        <span className="section-kicker"><ShieldCheckIcon size={14} /> Restricted introduction</span>
-        <h1>A private hello</h1>
-        <p>This conversation stays inside Kidan. Names, phone numbers, Telegram handles, and links are not shared — get to know each other through values first.</p>
+        <span className="section-kicker"><ShieldCheckIcon size={14} /> {t("Restricted introduction")}</span>
+        <h1>{t("A private hello")}</h1>
+        <p>{t("This conversation stays inside Kidan. Names, phone numbers, Telegram handles, and links are not shared — get to know each other through values first.")}</p>
       </section>
 
       <section className="introduction-profile status-card pending-card">
         <div className="status-icon green"><ShieldCheckIcon /></div>
         <div className="status-copy">
           <span>{connection.other.publicCode} · {connection.other.age} · {connection.other.city}</span>
-          <strong>Values-only introduction</strong>
+          <strong>{t("Values-only introduction")}</strong>
           {otherSummary?.bio && <p>{otherSummary.bio}</p>}
         </div>
       </section>
@@ -140,14 +142,14 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
 
       <section className="introduction-thread" aria-live="polite">
         {messages === null ? (
-          <p className="quiet-copy">Loading your introduction…</p>
+          <p className="quiet-copy">{t("Loading your introduction…")}</p>
         ) : messages.length === 0 ? (
-          <p className="quiet-copy">No messages yet. Send a brief, values-centered greeting to begin.</p>
+          <p className="quiet-copy">{t("No messages yet. Send a brief, values-centered greeting to begin.")}</p>
         ) : (
           messages.map((message) =>
             message.hidden ? (
               <div key={message.id} className="intro-bubble intro-hidden">
-                <span>This message was removed by a moderator.</span>
+                <span>{t("This message was removed by a moderator.")}</span>
               </div>
             ) : (
               <div key={message.id} className={`intro-bubble ${message.fromMe ? "mine" : "theirs"}`}>
@@ -165,17 +167,17 @@ export function IntroductionScreen({ connection, onBack }: IntroductionScreenPro
           value={draft}
           maxLength={600}
           rows={2}
-          placeholder="Write a short greeting (no contact details)…"
+          placeholder={t("Write a short greeting (no contact details)…")}
           onChange={(event) => setDraft(event.target.value)}
         />
         <button type="button" className="primary-button" disabled={sending || draft.trim().length === 0} onClick={send}>
-          Send
+          {t("Send")}
         </button>
       </section>
 
       <div className="quiet-note">
         <LockIcon size={17} />
-        <p>Contact details are revealed only through a separate, future consent step — never in the pilot introduction.</p>
+        <p>{t("Contact details are revealed only through a separate, future consent step — never in the pilot introduction.")}</p>
       </div>
     </main>
   );
