@@ -61,6 +61,8 @@ Set in the Vercel API project. Missing optional ones are safe (features stay off
 | `ADMIN_ORIGIN` | Origin of the admin console (CORS) | staging console |
 | `MINI_APP_URL` | Deep-link base for bot notifications | — |
 | `APP_ORIGIN` | Candidate Mini App origin (CORS) | — |
+| `INFO_ORIGIN` | Origin of the standalone info hub (apps/info) — browser CORS for it on `POST /v1/public/feedback` + passes the origin gate | — |
+| `INFO_BASE_URL` | Info hub base URL on the **bot** service — adds info-page URL buttons to menu keyboards | — |
 
 `Persistence` requires `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `SESSION_SECRET`,
 `IDENTITY_ENCRYPTION_KEY`, `IDENTITY_LOOKUP_KEY` (all or none).

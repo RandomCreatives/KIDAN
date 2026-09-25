@@ -9,8 +9,11 @@
  */
 
 import type { PersistenceRepository, FeedbackRow } from "../persistence/types.js";
-import type { FeedbackKind } from "@kidan/contracts";
+import type { FeedbackKind, PublicConcernTopic } from "@kidan/contracts";
 import type { AdminNotifier } from "../notifications/adminNotifier.js";
+
+/** Console label for anonymous public-web submissions (passes contracts min-6). */
+export const WEB_FEEDBACK_PUBLIC_CODE = "WEB-PUB";
 
 export interface FeedbackSummary {
   items: FeedbackRow[];
@@ -49,6 +52,44 @@ export class FeedbackService {
         .notify({
           kind: "new_feedback",
           message: `New concern from ${input.publicCode}: ${body.slice(0, 140)}`,
+        })
+        .catch(() => undefined);
+    }
+    return created;
+  }
+
+  /**
+   * Persist a public "Report a concern" from the standalone info hub — no
+   * session, no identity behind it. Boundaries are defence-in-depth (the
+   * zod contract caps already applied at the route; these match the DB CHECKs).
+   * Notifies the operator with a teaser; the body is still never logged.
+   */
+  async submitPublic(input: {
+    topic: PublicConcernTopic;
+    body: string;
+    contact?: string;
+    now?: Date;
+  }): Promise<{ id: string; createdAt: Date }> {
+    const body = input.body.trim();
+    if (body.length < 1) throw new FeedbackError("EMPTY_FEEDBACK");
+    if (body.length > 4000) throw new FeedbackError("FEEDBACK_TOO_LONG");
+    const contact = input.contact?.trim();
+    if (contact && contact.length > 200) throw new FeedbackError("CONTACT_TOO_LONG");
+    const created = await this.repository.createFeedback({
+      userId: null,
+      publicCode: WEB_FEEDBACK_PUBLIC_CODE,
+      kind: "report",
+      body,
+      now: input.now ?? new Date(),
+      source: "web",
+      topic: input.topic,
+      contact: contact || null,
+    });
+    if (this.notifier) {
+      await this.notifier
+        .notify({
+          kind: "new_feedback",
+          message: `New web concern (${input.topic}): ${body.slice(0, 140)}`,
         })
         .catch(() => undefined);
     }

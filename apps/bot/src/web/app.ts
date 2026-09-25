@@ -16,6 +16,8 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const miniAppUrl = process.env.MINI_APP_URL;
 const apiBaseUrl = process.env.BOT_API_URL;
 const botStateSecret = process.env.BOT_STATE_SECRET;
+// Standalone public info hub (optional): menu keyboards link its pages.
+const infoBaseUrl = process.env.INFO_BASE_URL;
 
 if (!token || !miniAppUrl) {
   throw new Error("TELEGRAM_BOT_TOKEN and MINI_APP_URL are required for the webhook.");
@@ -27,7 +29,7 @@ const answerPairing =
   apiBaseUrl && botStateSecret ? createPairingAnswerer({ apiBaseUrl, botStateSecret }) : undefined;
 
 // NOTE: module scope runs once per warm function instance.
-const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing });
+const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing, infoBaseUrl });
 
 // grammY provides the raw Node req/res webhook handler.
 import { webhookCallback } from "grammy";

@@ -23,6 +23,7 @@ import { requestRoutes } from "./routes/requests.js";
 import { healthRoutes } from "./routes/health.js";
 import { onboardingRoutes } from "./routes/onboarding.js";
 import { feedbackRoutes } from "./routes/feedback.js";
+import { publicFeedbackRoutes } from "./routes/publicFeedback.js";
 import type { FeedbackService } from "./feedback/feedbackService.js";
 
 export interface BuildAppOptions {
@@ -420,6 +421,15 @@ export async function buildApp(
       await reply.code(503).send({ error: { code: "SERVICE_NOT_READY", requestId: request.id } });
     };
     app.post("/v1/feedback", feedbackNotReady);
+  }
+
+  // Anonymous "Report a concern" from the standalone info hub — registered
+  // whenever the feedback service exists (needs no session machinery).
+  if (options.feedbackService) {
+    await app.register(publicFeedbackRoutes, {
+      feedbackService: options.feedbackService,
+      allowedOrigins,
+    });
   }
 
   if (options.adminSessionService && options.adminService) {

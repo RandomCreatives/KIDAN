@@ -26,6 +26,13 @@ const environmentSchema = z.object({
     (value) => value === "" ? undefined : value,
     z.url().transform((value) => new URL(value).origin).optional(),
   ),
+  // Standalone public info hub origin (apps/info). Its "Report a concern" form
+  // POSTs to /v1/public/feedback cross-origin, so the route echoes ACAO for
+  // this origin only.
+  INFO_ORIGIN: z.preprocess(
+    (value) => value === "" ? undefined : value,
+    z.url().transform((value) => new URL(value).origin).optional(),
+  ),
   DATABASE_URL: optionalNonEmpty,
   TELEGRAM_BOT_TOKEN: optionalNonEmpty,
   SESSION_SECRET: optionalNonEmpty,

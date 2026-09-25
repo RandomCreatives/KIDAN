@@ -14,6 +14,8 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const miniAppUrl = process.env.MINI_APP_URL;
 const apiBaseUrl = process.env.BOT_API_URL;
 const botStateSecret = process.env.BOT_STATE_SECRET;
+// Standalone public info hub (optional): menu keyboards link its pages.
+const infoBaseUrl = process.env.INFO_BASE_URL;
 
 if (!token || !miniAppUrl) {
   console.error("TELEGRAM_BOT_TOKEN and MINI_APP_URL are required to start the bot.");
@@ -27,6 +29,6 @@ const resolveTier =
 const answerPairing =
   apiBaseUrl && botStateSecret ? createPairingAnswerer({ apiBaseUrl, botStateSecret }) : undefined;
 
-const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing });
+const bot = createBot({ token, miniAppUrl, resolveTier, answerPairing, infoBaseUrl });
 
 bot.start({ onStart: () => console.info("Kidan bot started") });
