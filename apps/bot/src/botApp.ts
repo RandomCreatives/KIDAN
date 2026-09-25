@@ -11,7 +11,7 @@
  */
 
 import { Bot, InlineKeyboard } from "grammy";
-import { CONTENT, menuRows, START_TEXT, type MenuAction, type MenuTier } from "./menu.js";
+import { CONTENT, menuRows, START_TEXT, type ContentKey, type MenuAction, type MenuTier } from "./menu.js";
 import { parsePairingCallback, GENERIC_ACK, type PairingAnswerer } from "./pairingCallbacks.js";
 
 export type TierResolver = (telegramUserId: number) => Promise<MenuTier>;
@@ -24,53 +24,90 @@ export interface BotConfig {
   /** Kidan Completion: apply pairing pulse answers via the API. When absent,
    *  pulse callbacks still clear gracefully with a generic ack. */
   answerPairing?: PairingAnswerer | undefined;
-  /** Base URL of the standalone public info hub (https://…). When set, every
-   *  menu keyboard gains URL buttons opening the hub's full pages. */
+  /** Base URL of the standalone public info hub (https://…). When set, the
+   *  legacy short-note menu buttons (how/rules/privacy/faq) are swapped in
+   *  place for URL buttons opening the hub's full pages. */
   infoBaseUrl?: string | undefined;
 }
 
 /** Info-hub page paths for each linkable button. */
-const INFO_LINKS = {
+/** Hub pages linkable from the menu (every ContentKey except "status", which
+ *  has no hub page and stays a short note). */
+type InfoPageKey = Exclude<ContentKey, "status">;
+
+/** Info-hub page paths for each linkable button. */
+const INFO_LINKS: Record<InfoPageKey | "report", string> = {
   how: "how-it-works.html",
   rules: "rules.html",
   privacy: "privacy.html",
   faq: "faq.html",
   report: "report.html",
-} as const;
+};
+
+/** Legacy short-note content keys the hub now covers with full pages. These
+ *  buttons get swapped in place for URL buttons when the hub is linked; the
+ *  `status` note, `support`, and the guided in-bot "Report a concern" flow
+ *  stay native (no hub equivalents — the web report form serves people
+ *  outside Telegram). */
+const INFO_PAGE_KEYS: readonly InfoPageKey[] = ["how", "rules", "privacy", "faq"];
+const INFO_PAGE_KEY_SET: ReadonlySet<ContentKey> = new Set(INFO_PAGE_KEYS);
+
+function isInfoPageKey(key: ContentKey): key is InfoPageKey {
+  return INFO_PAGE_KEY_SET.has(key);
+}
 
 function infoUrl(base: string, page: string): string {
   return `${base.replace(/\/+$/, "")}/${page}`;
 }
 
-/** URL rows for the public info hub (web pages, work on every platform). */
-function infoRows(kb: InlineKeyboard, infoBaseUrl: string): void {
-  kb.row()
-    .url("ℹ️ How it works", infoUrl(infoBaseUrl, INFO_LINKS.how))
-    .url("📜 Rules", infoUrl(infoBaseUrl, INFO_LINKS.rules));
-  kb.row()
-    .url("🔒 Privacy notice", infoUrl(infoBaseUrl, INFO_LINKS.privacy))
-    .url("❓ FAQ", infoUrl(infoBaseUrl, INFO_LINKS.faq));
-  kb.row().url("⚠️ Report a concern", infoUrl(infoBaseUrl, INFO_LINKS.report));
+/** URL rows (2-wide) for any hub pages this tier's own rows did not already
+ *  link in place — e.g. the active tier omits the new-user explainer buttons.
+ *  Labels come from CONTENT so swapped and appended buttons stay identical. */
+function infoRows(kb: InlineKeyboard, infoBaseUrl: string, missing: readonly InfoPageKey[]): void {
+  for (let i = 0; i < missing.length; i += 2) {
+    const line = kb.row();
+    for (const key of missing.slice(i, i + 2)) {
+      line.url(CONTENT[key].title, infoUrl(infoBaseUrl, INFO_LINKS[key]));
+    }
+  }
 }
 
 /** Build the keyboard rows (as grammY InlineKeyboard) for a tier.
- *  Rows with a hero button become a single full-width web_app button. */
-function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: string): InlineKeyboard {
+ *  Rows with a hero button become a single full-width web_app button. When the
+ *  info hub is linked, legacy short-note buttons covered by hub pages become
+ *  URL buttons IN PLACE (same labels, same positions) — hubs pages a tier
+ *  lacks are appended as extra URL rows. */
+export function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: string): InlineKeyboard {
   const kb = new InlineKeyboard();
   const rows = menuRows(tier, miniAppUrl);
+  const swapped = new Set<InfoPageKey>();
+  let appended = false;
+  const appendMissing = (): void => {
+    if (!appended && infoBaseUrl) infoRows(kb, infoBaseUrl, INFO_PAGE_KEYS.filter((k) => !swapped.has(k)));
+    appended = true;
+  };
   for (const row of rows) {
     const button = row.buttons[0];
     if (row.hero && button) {
+      // menuRows always pushes the hero last, so `swapped` is final here:
+      // appended hub links go ABOVE the web_app call-to-action.
+      appendMissing();
       const target = button.action.kind === "open" ? button.action.target : "home";
       kb.row().webApp(button.text, miniAppUrlFor(miniAppUrl, target));
     } else {
       const line = kb.row();
       for (const button of row.buttons) {
-        line.text(button.text, `kidan:${JSON.stringify(button.action)}`);
+        const key = button.action.kind === "content" ? button.action.key : undefined;
+        if (infoBaseUrl && key && isInfoPageKey(key)) {
+          swapped.add(key);
+          line.url(button.text, infoUrl(infoBaseUrl, INFO_LINKS[key]));
+        } else {
+          line.text(button.text, `kidan:${JSON.stringify(button.action)}`);
+        }
       }
     }
   }
-  if (infoBaseUrl) infoRows(kb, infoBaseUrl);
+  appendMissing();
   return kb;
 }
 
