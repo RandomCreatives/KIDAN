@@ -6,6 +6,10 @@
       "destination": "https://kidan-staging-api.vercel.app/:path*"
     },
     {
+      "source": "/",
+      "destination": "/feedback"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

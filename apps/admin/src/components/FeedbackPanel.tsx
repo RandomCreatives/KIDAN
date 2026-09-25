@@ -15,6 +15,14 @@ const KIND_LABEL: Record<FeedbackItem["kind"], string> = {
   comment: "Comment",
 };
 
+const TOPIC_LABEL: Record<string, string> = {
+  profile_or_behavior: "Profile / behaviour",
+  privacy: "Privacy / data",
+  technical: "Technical",
+  question: "Question",
+  other: "Other",
+};
+
 /**
  * Operator hamburger-drawer: lists ALL candidate feedback / comments /
  * concerns newest-first, with an unread badge and a "mark read" action.
@@ -80,10 +88,14 @@ export function FeedbackPanel({ client, open, onClose, onError }: FeedbackPanelP
               <li key={item.id} className={`feedback-item ${item.readAt ? "" : "is-unread"}`}>
                 <div className="feedback-item-top">
                   <span className="feedback-kind">{KIND_LABEL[item.kind]}</span>
+                  {item.topic ? <span className="feedback-topic">{TOPIC_LABEL[item.topic] ?? item.topic}</span> : null}
                   <span className="feedback-code">{item.publicCode}</span>
                   <span className="feedback-date">{formatDate(item.createdAt)}</span>
                 </div>
                 <p>{item.body}</p>
+                {item.contact ? (
+                  <p className="feedback-contact">Reply via: {item.contact}</p>
+                ) : null}
                 <div className="feedback-item-actions">
                   {item.readAt ? (
                     <span className="feedback-read">Read</span>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Report a concern to the Kidan operator — a safety issue, a privacy question, or something not working. Anonymous; no account needed." />
+  <title>Report a concern — Kidan</title>
+  <link rel="stylesheet" href="assets/site.css" />
+  <script defer src="assets/report.js"></script>
+</head>
+<body>
+<div class="shell">
+  <main class="page">
+
+    <header class="topbar">
+      <a class="brand" href="index.html">
+        <span class="brand-mark"><i class="brand-mark-v"></i><i class="brand-mark-h"></i></span>
+        <span class="brand-name">Kidan</span>
+      </a>
+      <a class="back-link" href="index.html">← All topics</a>
+    </header>
+
+    <div class="privacy-strip"><span>No photos</span><i>&middot;</i><span>No names</span><i>&middot;</i><span>No pressure</span></div>
+
+    <section class="hero">
+      <p class="eyebrow">Something wrong?</p>
+      <h1>Report a concern</h1>
+      <p class="lede">
+        Tell the operator about a safety issue, a privacy worry, behaviour that bothered
+        you, or something that isn't working. Reports go straight to a human operator —
+        you don't need an account, and the person you're reporting is never told who
+        raised it.
+      </p>
+    </section>
+
+    <section class="form-card">
+      <form id="concern-form" novalidate>
+        <label for="topic">What is this about?</label>
+        <select id="topic" name="topic" required>
+          <option value="" disabled selected>Choose a topic…</option>
+          <option value="profile_or_behavior">A member's profile or behaviour</option>
+          <option value="privacy">My privacy or my data</option>
+          <option value="technical">A technical problem</option>
+          <option value="question">A question for the operator</option>
+          <option value="other">Something else</option>
+        </select>
+
+        <label for="body">Tell us what happened</label>
+        <textarea id="body" name="body" maxlength="1500" required
+          placeholder="Describe the concern in your own words. If another member is involved and you know their reference code (KD-…), include it."></textarea>
+        <div class="char-counter" id="body-counter">0 / 1500</div>
+
+        <label for="contact">How can we reach you? (optional)</label>
+        <input id="contact" name="contact" type="text" maxlength="200"
+          placeholder="Telegram username, phone, or email — only if you'd like a reply." />
+        <p class="hint">
+          Leave this empty if you prefer to stay fully anonymous — the report still
+          reaches the operator either way.
+        </p>
+
+        <input class="hp-field" id="website" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" />
+
+        <button class="submit-btn" id="concern-submit" type="submit">Send to the operator</button>
+        <p class="form-status" id="concern-status" role="status" aria-live="polite"></p>
+      </form>
+
+      <noscript>
+        <p class="form-status error">
+          This page needs JavaScript to send the report. If it stays disabled, please
+          reach the operator via the Kidan bot's Support button instead.
+        </p>
+      </noscript>
+    </section>
+
+    <section class="article" id="concern-done" hidden>
+      <h2>Received — thank you.</h2>
+      <p>
+        Your concern has been delivered to the operator, reference
+        <strong id="concern-ref"></strong>. A human will review it. If you left a way to
+        reach you, expect a reply there; anonymous reports are acted on too, but can't be
+        replied to.
+      </p>
+      <p><a href="index.html">Back to the info hub</a></p>
+    </section>
+
+    <footer class="footer">
+      <a href="index.html">← Info hub</a>
+      <a href="privacy.html">Privacy notice</a>
+      <a href="faq.html">FAQ</a>
+    </footer>
+
+  </main>
+</div>
+</body>
+</html>

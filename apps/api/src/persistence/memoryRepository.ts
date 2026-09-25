@@ -69,7 +69,7 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   /** Append-only operational events keyed by id (Track E3): { action, occurredAt }. */
   private readonly operationalEvents = new Map<string, { action: string; occurredAt: Date }>();
   /** Feedback / comments / concerns keyed by id (candidate -> operator). */
-  private readonly feedbackEntries = new Map<string, FeedbackRow & { userId: string }>();
+  private readonly feedbackEntries = new Map<string, FeedbackRow & { userId: string | null }>();
   private operationalEventCounter = 0;
 
   async findOrCreateUserByTelegram(input: {
@@ -1037,21 +1037,27 @@ export class MemoryPersistenceRepository implements PersistenceRepository {
   }
 
   async createFeedback(input: {
-    userId: string;
+    userId: string | null;
     publicCode: string;
     kind: "report" | "feedback" | "comment";
     body: string;
     now: Date;
+    source?: "app" | "web";
+    topic?: string | null;
+    contact?: string | null;
   }): Promise<{ id: string; createdAt: Date }> {
     const id = randomUUID();
     this.feedbackEntries.set(id, {
       id,
-      userId: input.userId,
+      userId: input.userId ?? null,
       publicCode: input.publicCode,
       kind: input.kind,
       body: input.body,
       createdAt: input.now,
       readAt: null,
+      source: input.source ?? "app",
+      topic: input.topic ?? null,
+      contact: input.contact ?? null,
     });
     return { id, createdAt: input.now };
   }

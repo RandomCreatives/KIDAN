@@ -556,6 +556,11 @@ textarea { resize: vertical; }
   padding: 0.1rem 0.45rem; border-radius: 999px; background: rgba(15, 61, 46, 0.1); color: var(--brand);
 }
 .feedback-code { font-weight: 700; letter-spacing: 0.4px; font-size: 0.82rem; }
+.feedback-topic {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.3px;
+  padding: 0.1rem 0.45rem; border-radius: 999px; border: 1px dashed var(--line); color: var(--ink-soft);
+}
+.feedback-contact { font-size: 0.78rem !important; color: var(--brand); font-weight: 600; }
 .feedback-date { font-size: 0.7rem; color: var(--ink-soft); margin-left: auto; }
 .feedback-item p { margin: 0.45rem 0 0; font-size: 0.86rem; line-height: 1.4; white-space: pre-wrap; }
 .feedback-item-actions { margin-top: 0.5rem; }

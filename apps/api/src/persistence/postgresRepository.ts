@@ -1487,17 +1487,29 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
   }
 
   async createFeedback(input: {
-    userId: string;
+    userId: string | null;
     publicCode: string;
     kind: "report" | "feedback" | "comment";
     body: string;
     now: Date;
+    source?: "app" | "web";
+    topic?: string | null;
+    contact?: string | null;
   }): Promise<{ id: string; createdAt: Date }> {
     const result = await this.pool.query<{ id: string; created_at: Date }>(
-      `INSERT INTO feedback (user_id, public_code, kind, body, created_at)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO feedback (user_id, public_code, kind, body, created_at, source, topic, contact)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, created_at`,
-      [input.userId, input.publicCode, input.kind, input.body, input.now],
+      [
+        input.userId,
+        input.publicCode,
+        input.kind,
+        input.body,
+        input.now,
+        input.source ?? "app",
+        input.topic ?? null,
+        input.contact ?? null,
+      ],
     );
     const row = result.rows[0];
     if (!row) throw new Error("FEEDBACK_INSERT_FAILED");
@@ -1508,8 +1520,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
     const result = await this.pool.query<{
       id: string; public_code: string; kind: "report" | "feedback" | "comment";
       body: string; created_at: Date; read_at: Date | null;
+      source: "app" | "web"; topic: string | null; contact: string | null;
     }>(
-      `SELECT id, public_code, kind, body, created_at, read_at
+      `SELECT id, public_code, kind, body, created_at, read_at, source, topic, contact
        FROM feedback ORDER BY created_at DESC`,
     );
     const items = result.rows.map((row) => ({
@@ -1519,6 +1532,9 @@ export class PostgresPersistenceRepository implements PersistenceRepository {
       body: row.body,
       createdAt: row.created_at,
       readAt: row.read_at ?? null,
+      source: row.source ?? "app",
+      topic: row.topic ?? null,
+      contact: row.contact ?? null,
     }));
     const unread = await this.pool.query<{ count: string }>(
       `SELECT count(*)::text AS count FROM feedback WHERE read_at IS NULL`,

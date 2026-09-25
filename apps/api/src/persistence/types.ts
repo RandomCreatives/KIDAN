@@ -358,13 +358,17 @@ export interface PersistenceRepository {
    */
   purgeExpiredIntroductionData(now: Date): Promise<{ expiredRequests: number; deletedRequests: number; deletedSwipes: number }>;
   // --- Feedback / comments / concerns (candidate -> operator) ---
-  /** Stores a feedback entry authored by the user. Returns the stored id. */
+  /** Stores a feedback entry authored by the user, or an anonymous public web
+   *  submission (userId null, source 'web'). Returns the stored id. */
   createFeedback(input: {
-    userId: string;
+    userId: string | null;
     publicCode: string;
     kind: "report" | "feedback" | "comment";
     body: string;
     now: Date;
+    source?: "app" | "web";
+    topic?: string | null;
+    contact?: string | null;
   }): Promise<{ id: string; createdAt: Date }>;
   /** Admin: all feedback newest-first, plus the count of unread items. */
   listFeedback(): Promise<{ items: FeedbackRow[]; unreadCount: number }>;
@@ -401,7 +405,7 @@ export interface PersistenceRepository {
   closeConnection(connectionId: string, now: Date): Promise<boolean>;
 }
 
-/** Feedback row joined with the author's public code. */
+/** Feedback row joined with the author's public code (or 'WEB-PUB' for anonymous web reports). */
 export interface FeedbackRow {
   id: string;
   publicCode: string;
@@ -409,6 +413,12 @@ export interface FeedbackRow {
   body: string;
   createdAt: Date;
   readAt: Date | null;
+  /** 'app' = signed-in member, 'web' = public info-hub report form (no account). */
+  source: "app" | "web";
+  /** Web form dropdown topic; null for in-app entries. */
+  topic: string | null;
+  /** Optional reply channel volunteered by a web reporter; operator-only. */
+  contact: string | null;
 }
 export interface IntroductionRequestRow {
   id: string;

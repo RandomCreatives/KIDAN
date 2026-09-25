@@ -24,11 +24,38 @@ export interface BotConfig {
   /** Kidan Completion: apply pairing pulse answers via the API. When absent,
    *  pulse callbacks still clear gracefully with a generic ack. */
   answerPairing?: PairingAnswerer | undefined;
+  /** Base URL of the standalone public info hub (https://…). When set, every
+   *  menu keyboard gains URL buttons opening the hub's full pages. */
+  infoBaseUrl?: string | undefined;
+}
+
+/** Info-hub page paths for each linkable button. */
+const INFO_LINKS = {
+  how: "how-it-works.html",
+  rules: "rules.html",
+  privacy: "privacy.html",
+  faq: "faq.html",
+  report: "report.html",
+} as const;
+
+function infoUrl(base: string, page: string): string {
+  return `${base.replace(/\/+$/, "")}/${page}`;
+}
+
+/** URL rows for the public info hub (web pages, work on every platform). */
+function infoRows(kb: InlineKeyboard, infoBaseUrl: string): void {
+  kb.row()
+    .url("ℹ️ How it works", infoUrl(infoBaseUrl, INFO_LINKS.how))
+    .url("📜 Rules", infoUrl(infoBaseUrl, INFO_LINKS.rules));
+  kb.row()
+    .url("🔒 Privacy notice", infoUrl(infoBaseUrl, INFO_LINKS.privacy))
+    .url("❓ FAQ", infoUrl(infoBaseUrl, INFO_LINKS.faq));
+  kb.row().url("⚠️ Report a concern", infoUrl(infoBaseUrl, INFO_LINKS.report));
 }
 
 /** Build the keyboard rows (as grammY InlineKeyboard) for a tier.
  *  Rows with a hero button become a single full-width web_app button. */
-function keyboardFor(tier: MenuTier, miniAppUrl: string): InlineKeyboard {
+function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: string): InlineKeyboard {
   const kb = new InlineKeyboard();
   const rows = menuRows(tier, miniAppUrl);
   for (const row of rows) {
@@ -43,6 +70,7 @@ function keyboardFor(tier: MenuTier, miniAppUrl: string): InlineKeyboard {
       }
     }
   }
+  if (infoBaseUrl) infoRows(kb, infoBaseUrl);
   return kb;
 }
 
@@ -68,17 +96,17 @@ export function parseAction(data: string): MenuAction | null {
 }
 
 /** Reply text for a content action (How/Rules/Privacy/FAQ/Status/Back). */
-export function contentReply(action: MenuAction, tier: MenuTier, miniAppUrl: string): { text: string; kb: InlineKeyboard } {
+export function contentReply(action: MenuAction, tier: MenuTier, miniAppUrl: string, infoBaseUrl?: string): { text: string; kb: InlineKeyboard } {
   if (action.kind === "content") {
     const c = CONTENT[action.key];
     const title = c?.title ?? "";
     const body = c?.body ?? "";
-    return { text: `${title}\n\n${body}`, kb: keyboardFor(tier, miniAppUrl) };
+    return { text: `${title}\n\n${body}`, kb: keyboardFor(tier, miniAppUrl, infoBaseUrl) };
   }
   if (action.kind === "open") {
     return {
       text: "Tap below to open Kidan.",
-      kb: keyboardFor(tier, miniAppUrl),
+      kb: keyboardFor(tier, miniAppUrl, infoBaseUrl),
     };
   }
   if (action.kind === "report") {
@@ -87,7 +115,7 @@ export function contentReply(action: MenuAction, tier: MenuTier, miniAppUrl: str
         "Please describe your concern briefly. Type it and send, or open the " +
         "app for more help. Your message goes to the Kidan operator and is " +
         "handled privately.",
-      kb: keyboardFor(tier, miniAppUrl),
+      kb: keyboardFor(tier, miniAppUrl, infoBaseUrl),
     };
   }
   if (action.kind === "support") {
@@ -95,24 +123,24 @@ export function contentReply(action: MenuAction, tier: MenuTier, miniAppUrl: str
       text:
         "For help, open the app or reply here with your question. The operator " +
         "reviews messages privately.",
-      kb: keyboardFor(tier, miniAppUrl),
+      kb: keyboardFor(tier, miniAppUrl, infoBaseUrl),
     };
   }
   if (action.kind === "back") {
-    return { text: START_TEXT, kb: keyboardFor(tier, miniAppUrl) };
+    return { text: START_TEXT, kb: keyboardFor(tier, miniAppUrl, infoBaseUrl) };
   }
-  return { text: START_TEXT, kb: keyboardFor(tier, miniAppUrl) };
+  return { text: START_TEXT, kb: keyboardFor(tier, miniAppUrl, infoBaseUrl) };
 }
 
 export function createBot(config: BotConfig): Bot {
-  const { token, miniAppUrl, resolveTier } = config;
+  const { token, miniAppUrl, resolveTier, infoBaseUrl } = config;
   const bot = new Bot(token);
 
   bot.command("start", async (context) => {
     const from = context.from;
     const tier: MenuTier = from ? await resolveTier(from.id) : "all";
     await context.reply(START_TEXT, {
-      reply_markup: keyboardFor(tier, miniAppUrl),
+      reply_markup: keyboardFor(tier, miniAppUrl, infoBaseUrl),
       protect_content: true,
     });
   });
@@ -148,7 +176,7 @@ export function createBot(config: BotConfig): Bot {
 
     const from = context.from;
     const tier: MenuTier = from ? await resolveTier(from.id) : "all";
-    const reply = contentReply(resolved, tier, miniAppUrl);
+    const reply = contentReply(resolved, tier, miniAppUrl, infoBaseUrl);
 
     const isEdit = resolved.kind !== "report" && resolved.kind !== "support";
     if (isEdit) {

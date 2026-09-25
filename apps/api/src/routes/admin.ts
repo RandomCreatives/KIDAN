@@ -174,6 +174,9 @@ export const adminRoutes: FastifyPluginAsync<AdminRouteOptions> = async (app, op
         body: item.body,
         createdAt: item.createdAt.toISOString(),
         readAt: item.readAt ? item.readAt.toISOString() : null,
+        source: item.source,
+        topic: item.topic ?? null,
+        contact: item.contact ?? null,
       })),
       unreadCount: summary.unreadCount,
     });

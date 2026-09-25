@@ -91,12 +91,15 @@ export async function buildRuntimeApp(
     // pilot staging console so the pilot works without extra env configuration.
     // Production sets ADMIN_ORIGIN to its own domain. With no origins set at
     // all (local development) the gate stays off.
-    ...(environment.APP_ORIGIN || environment.ADMIN_ORIGIN
+    // INFO_ORIGIN (the standalone public info hub) additionally gains browser
+    // CORS on POST /v1/public/feedback and passes this same-origin gate.
+    ...(environment.APP_ORIGIN || environment.ADMIN_ORIGIN || environment.INFO_ORIGIN
       ? {
           allowedOrigins: [
             environment.APP_ORIGIN,
             environment.ADMIN_ORIGIN
               ?? (environment.APP_ORIGIN ? "https://kidan-staging-admin.vercel.app" : undefined),
+            environment.INFO_ORIGIN,
           ].filter((value): value is string => Boolean(value)),
         }
       : {}),
