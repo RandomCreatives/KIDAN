@@ -69,7 +69,7 @@ function infoRows(kb: InlineKeyboard, infoBaseUrl: string, missing: readonly Inf
   for (let i = 0; i < missing.length; i += 2) {
     const line = kb.row();
     for (const key of missing.slice(i, i + 2)) {
-      line.url(CONTENT[key].title, infoUrl(infoBaseUrl, INFO_LINKS[key]));
+      line.webApp(CONTENT[key].title, infoUrl(infoBaseUrl, INFO_LINKS[key]));
     }
   }
 }
@@ -103,9 +103,9 @@ export function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: st
         const key = button.action.kind === "content" ? button.action.key : undefined;
         if (effectiveInfoBaseUrl && key && isInfoPageKey(key)) {
           swapped.add(key);
-          line.url(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS[key]));
+          line.webApp(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS[key]));
         } else if (effectiveInfoBaseUrl && button.action.kind === "report") {
-          line.url(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS["report"]));
+          line.webApp(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS["report"]));
         } else {
           line.text(button.text, `kidan:${JSON.stringify(button.action)}`);
         }
