@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyboardFor, parseAction, miniAppUrlFor } from "./botApp.js";
+import { keyboardFor, parseAction, miniAppUrlFor, DEFAULT_INFO_BASE_URL } from "./botApp.js";
 import type { MenuAction } from "./menu.js";
 
 describe("botApp helpers", () => {
@@ -42,14 +42,14 @@ function buttonsOf(kb: ReturnType<typeof keyboardFor>): Btn[][] {
 const HUB = "https://kidan-staging-info.vercel.app";
 
 describe("keyboardFor info-hub swap-in-place", () => {
-  it("replaces legacy short-note buttons with the hub pages, in place (new tier)", () => {
+  it("replaces legacy short-note buttons and report with the hub pages, in place (new tier)", () => {
     const rows = buttonsOf(keyboardFor("new", "https://x.app/", HUB));
     // Row 0 "How it works" and row 1 "Rules / Privacy notice" keep positions, become URLs.
     expect(rows[0]).toEqual([{ text: "How it works", url: `${HUB}/how-it-works.html` }]);
     expect(rows[1]?.map((b) => b.url)).toEqual([`${HUB}/rules.html`, `${HUB}/privacy.html`]);
-    // FAQ also swaps; "Report a concern" stays the native guided flow.
+    // FAQ + Report a concern also swap to URLs.
     expect(rows[2]?.[0]).toEqual({ text: "FAQ", url: `${HUB}/faq.html` });
-    expect(rows[2]?.[1].callback_data).toContain('"report"');
+    expect(rows[2]?.[1]).toEqual({ text: "Report a concern", url: `${HUB}/report.html` });
     // Every info key is already covered above, so the only remaining row is the hero.
     expect(rows.length).toBe(4);
     expect(rows[3]?.[0].web_app?.url).toContain("tab=onboarding");
@@ -59,13 +59,14 @@ describe("keyboardFor info-hub swap-in-place", () => {
     const rows = buttonsOf(keyboardFor("active", "https://x.app/", HUB));
     // Status / Support row stays fully native.
     expect(rows[0]?.every((b) => typeof b.callback_data === "string")).toBe(true);
-    // FAQ swaps in place; report stays native beside it.
+    // FAQ swaps in place; report also swaps to URL.
     expect(rows[1]?.[0]).toEqual({ text: "FAQ", url: `${HUB}/faq.html` });
-    expect(rows[1]?.[1].callback_data).toContain('"report"');
+    expect(rows[1]?.[1]).toEqual({ text: "Report a concern", url: `${HUB}/report.html` });
     // Missing pages appended as URL rows (how+rules, then privacy), then the hero.
     const allUrls = rows.flat().filter((b) => b.url).map((b) => b.url);
     expect(allUrls).toEqual([
       `${HUB}/faq.html`,
+      `${HUB}/report.html`,
       `${HUB}/how-it-works.html`,
       `${HUB}/rules.html`,
       `${HUB}/privacy.html`,
@@ -73,8 +74,13 @@ describe("keyboardFor info-hub swap-in-place", () => {
     expect(rows[rows.length - 1]?.[0].web_app?.url).toContain("tab=discover");
   });
 
-  it("keeps the legacy short-note menu untouched when no hub is linked", () => {
+  it("uses default info hub URL when infoBaseUrl is undefined", () => {
     const rows = buttonsOf(keyboardFor("new", "https://x.app/"));
+    expect(rows[0]?.[0]?.url).toBe(`${DEFAULT_INFO_BASE_URL}/how-it-works.html`);
+  });
+
+  it("keeps the legacy short-note menu when infoBaseUrl is explicitly empty string", () => {
+    const rows = buttonsOf(keyboardFor("new", "https://x.app/", ""));
     const nonHero = rows.slice(0, -1).flat();
     expect(nonHero.length).toBeGreaterThan(0);
     expect(nonHero.every((b) => typeof b.callback_data === "string" && !b.url)).toBe(true);

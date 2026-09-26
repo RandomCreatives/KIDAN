@@ -16,6 +16,8 @@ import { parsePairingCallback, GENERIC_ACK, type PairingAnswerer } from "./pairi
 
 export type TierResolver = (telegramUserId: number) => Promise<MenuTier>;
 
+export const DEFAULT_INFO_BASE_URL = "https://kidan-staging-info.vercel.app";
+
 export interface BotConfig {
   token: string;
   miniAppUrl: string;
@@ -78,12 +80,13 @@ function infoRows(kb: InlineKeyboard, infoBaseUrl: string, missing: readonly Inf
  *  URL buttons IN PLACE (same labels, same positions) — hubs pages a tier
  *  lacks are appended as extra URL rows. */
 export function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: string): InlineKeyboard {
+  const effectiveInfoBaseUrl = infoBaseUrl === undefined ? DEFAULT_INFO_BASE_URL : infoBaseUrl;
   const kb = new InlineKeyboard();
   const rows = menuRows(tier, miniAppUrl);
   const swapped = new Set<InfoPageKey>();
   let appended = false;
   const appendMissing = (): void => {
-    if (!appended && infoBaseUrl) infoRows(kb, infoBaseUrl, INFO_PAGE_KEYS.filter((k) => !swapped.has(k)));
+    if (!appended && effectiveInfoBaseUrl) infoRows(kb, effectiveInfoBaseUrl, INFO_PAGE_KEYS.filter((k) => !swapped.has(k)));
     appended = true;
   };
   for (const row of rows) {
@@ -98,9 +101,11 @@ export function keyboardFor(tier: MenuTier, miniAppUrl: string, infoBaseUrl?: st
       const line = kb.row();
       for (const button of row.buttons) {
         const key = button.action.kind === "content" ? button.action.key : undefined;
-        if (infoBaseUrl && key && isInfoPageKey(key)) {
+        if (effectiveInfoBaseUrl && key && isInfoPageKey(key)) {
           swapped.add(key);
-          line.url(button.text, infoUrl(infoBaseUrl, INFO_LINKS[key]));
+          line.url(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS[key]));
+        } else if (effectiveInfoBaseUrl && button.action.kind === "report") {
+          line.url(button.text, infoUrl(effectiveInfoBaseUrl, INFO_LINKS["report"]));
         } else {
           line.text(button.text, `kidan:${JSON.stringify(button.action)}`);
         }
