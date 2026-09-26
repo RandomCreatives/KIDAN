@@ -17,7 +17,7 @@ const miniAppUrl = process.env.MINI_APP_URL;
 const apiBaseUrl = process.env.BOT_API_URL;
 const botStateSecret = process.env.BOT_STATE_SECRET;
 // Standalone public info hub (optional): menu keyboards link its pages.
-const infoBaseUrl = process.env.INFO_BASE_URL;
+const infoBaseUrl = process.env.INFO_BASE_URL || "https://kidan-staging-info.vercel.app";
 
 if (!token || !miniAppUrl) {
   throw new Error("TELEGRAM_BOT_TOKEN and MINI_APP_URL are required for the webhook.");
